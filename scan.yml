@@ -1,0 +1,36 @@
+# GitLab workflow template to perform project scan and expose GitLab-formatted results as artifacts
+
+stages:
+  - scan
+
+scan:pipeline:
+  stage: scan
+  image: python:3.11-slim
+  variables:
+    EZ_APPSEC_OUTPUT_DIR: "scan-results"
+    EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
+
+  before_script:
+    - python --version
+    - pip install --no-cache-dir -r requirements.txt
+    - pip install --no-cache-dir -e .
+
+  script:
+    - echo "🔎 Running ez-appsec scan..."
+    - mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
+    - ez-appsec status || true
+    - ez-appsec gitlab-scan . --output "${EZ_APPSEC_REPORT}"
+
+  artifacts:
+    name: "ez-appsec-scan-${CI_COMMIT_SHA}"
+    paths:
+      - "${EZ_APPSEC_REPORT}"
+    expire_in: 7 days
+    when: always
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: manual
