@@ -89,7 +89,7 @@ custom_rules: []
 @main.command()
 @click.argument("path", type=click.Path(exists=True), default=".")
 def check(path):
-    """Quick security check without full AI analysis"""
+    """Quick secrets check using gitleaks only"""
     try:
         scanner = SecurityScanner(Config())
         results = scanner.quick_check(path)
@@ -98,9 +98,35 @@ def check(path):
         click.echo(f"  Files scanned: {results['files_scanned']}")
         click.echo(f"  Potential issues: {results['issue_count']}")
         
+        if results['issue_count'] == 0:
+            click.echo("  ✓ No secrets detected")
+        else:
+            click.echo("  ⚠️  Potential secrets found - review above")
+        
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
         sys.exit(1)
+
+
+@main.command()
+def status():
+    """Check status of all security scanners"""
+    from ez_appsec.external_scanners import ExternalScannerManager
+    
+    manager = ExternalScannerManager()
+    installed = manager.get_installed()
+    
+    click.echo("Scanner Status:")
+    for name, is_installed in installed.items():
+        status = "✓ installed" if is_installed else "✗ not installed"
+        click.echo(f"  {name}: {status}")
+    
+    missing = [name for name, inst in installed.items() if not inst]
+    if missing:
+        click.echo("\nInstall missing scanners:")
+        for line in manager.get_install_instructions().split("\n"):
+            click.echo(f"  {line}")
+
 
 
 if __name__ == "__main__":

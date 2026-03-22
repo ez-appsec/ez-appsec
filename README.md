@@ -8,15 +8,12 @@
 
 ### Key Features
 
-- **🚀 Fast SAST Analysis**: Pattern-based static analysis for common vulnerabilities
-- **🔐 Secrets Detection**: Finds hardcoded API keys, tokens, and credentials
-- **📦 Dependency Scanning**: Identifies vulnerable third-party packages
+- **🚀 External Scanner Integration**: Leverages gitleaks, semgrep, kics, and grype
 - **🤖 AI-Powered Remediation**: LLM-based guidance for fixing security issues
-- **🎯 Multi-Language Support**: Scans Python, JavaScript, Java, Go, Ruby, PHP
+- **🎯 Multi-Language Support**: Supports all languages covered by external scanners
 - **📊 Multiple Output Formats**: JSON, SARIF (GitHub/GitLab compatible)
-- **⚡ Zero Configuration**: Works out of the box, customize as needed
+- **⚡ Zero Configuration**: Works out of the box with external tools
 - **🆓 Free & Open Source**: No cloud dependency, run locally
-- **🔗 External Scanners**: Integrates gitleaks, semgrep, kics, and grype
 
 ## Installation
 
@@ -140,54 +137,21 @@ exclude:
 
 ## Detection Mechanisms
 
-### External Scanners (Recommended)
+ez-appsec relies entirely on industry-leading open-source security scanners:
 
-ez-appsec integrates best-in-class open-source scanners for comprehensive coverage:
+### External Scanners (Primary)
 
 - **[gitleaks](https://github.com/gitleaks/gitleaks)** - Secrets detection with 140+ patterns
 - **[semgrep](https://semgrep.dev/)** - SAST with 1000+ rules across languages
 - **[kics](https://www.kics.io/)** - Infrastructure as code security scanning
 - **[grype](https://github.com/anchore/grype)** - Vulnerability and SBOM analysis
 
-Check scanner status:
-```bash
-ez-appsec status
-```
+### AI Enhancement
 
-Install scanners:
-```bash
-brew install gitleaks semgrep kics grype
-```
-
-### Built-in Detection
-
-Fallback detectors for when external scanners aren't available:
-
-**SAST (Static Application Security Testing)**
-
-Detects common code vulnerabilities:
-- SQL injection patterns
-- Hardcoded credentials
-- Unsafe `eval`/`exec` usage
-- XXE vulnerabilities
-- Insecure deserialization
-
-**Secrets Detection**
-
-Finds exposed secrets:
-- API keys and tokens
-- AWS credentials
-- GitHub personal access tokens
-- Slack webhook URLs
-- Private keys
-
-**Dependency Analysis**
-
-Identifies vulnerable packages in:
-- Python (requirements.txt, setup.py)
-- JavaScript (package.json, package-lock.json)
-- Java (pom.xml)
-- Go (go.mod)
+All findings from external scanners are enhanced with AI-powered analysis when OPENAI_API_KEY is provided, offering:
+- Detailed risk explanations
+- Step-by-step remediation guidance
+- Code examples for fixes
 
 ### AI-Powered Analysis
 

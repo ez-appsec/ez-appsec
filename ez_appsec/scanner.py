@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from ez_appsec.config import Config
 from ez_appsec.detectors import (
     SastDetector,
@@ -10,28 +10,34 @@ from ez_appsec.detectors import (
     SecretsDetector,
 )
 from ez_appsec.ai_analyzer import AIAnalyzer
+from ez_appsec.external_scanners import ExternalScannerManager
 
 
 class SecurityScanner:
     """Main security scanner orchestrating all detection mechanisms"""
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, use_external_scanners: bool = True):
         self.config = config
-        self.sast = SastDetector()
-        self.dependencies = DependencyDetector()
-        self.secrets = SecretsDetector()
+        self.use_external = use_external_scanners
+        
+        # External scanners only - custom detectors removed
+        self.external = ExternalScannerManager() if use_external_scanners else None
+        
+        # AI analyzer
         self.ai = AIAnalyzer(config)
     
     def scan(self, path: str, custom_prompt: str = None) -> Dict[str, Any]:
-        """Execute full security scan with AI analysis"""
+        """Execute full security scan using external scanners only"""
         
         base_path = Path(path)
         issues = []
+        scanner_results = {}
         
-        # Run all detectors
-        issues.extend(self.sast.detect(base_path))
-        issues.extend(self.dependencies.detect(base_path))
-        issues.extend(self.secrets.detect(base_path))
+        # Run external scanners only (custom detectors removed)
+        if self.use_external and self.external:
+            external_issues = self.external.scan_all(path)
+            issues.extend(external_issues)
+            scanner_results["external"] = len(external_issues)
         
         # AI-powered analysis and remediation
         if issues:
@@ -52,16 +58,25 @@ class SecurityScanner:
             "issues": issues,
             "total": len(issues),
             "path": str(base_path),
+            "scanner_results": scanner_results,
         }
     
     def quick_check(self, path: str) -> Dict[str, Any]:
-        """Fast security check without AI analysis"""
+        """Fast security check using external scanners only"""
         
         base_path = Path(path)
         file_count = sum(1 for _ in base_path.rglob("*") if _.is_file())
         
         issues = []
-        issues.extend(self.secrets.detect(base_path))
+        if self.use_external and self.external:
+            # Only run gitleaks for quick secrets check
+            if hasattr(self.external, 'scanners') and 'gitleaks' in self.external.scanners:
+                gitleaks = self.external.scanners['gitleaks']
+                if gitleaks.enabled and gitleaks.is_installed():
+                    try:
+                        issues = gitleaks.scan(path)
+                    except Exception:
+                        pass
         
         return {
             "files_scanned": file_count,
