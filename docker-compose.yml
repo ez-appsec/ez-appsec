@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # Main orchestration container
+  ez-appsec:
+    build:
+      context: .
+      dockerfile: Dockerfile.micro
+    volumes:
+      - .:/scan
+      - ./results:/results
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - semgrep-scanner
+    command: scan /scan --output /results/report.json
+
+  # Separate semgrep container (largest scanner)
+  semgrep-scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile.semgrep
+    volumes:
+      - .:/scan:ro
+      - ./results:/results
+    profiles: ["with-semgrep"]
+
+  # Results aggregator
+  aggregator:
+    image: alpine:latest
+    volumes:
+      - ./results:/results
+    command: sh -c "cat /results/*.json | jq -s 'reduce .[] as \$item ({}; . * \$item)' > /results/merged.json"

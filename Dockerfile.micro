@@ -1,0 +1,28 @@
+# Micro image without semgrep (saves ~150MB)
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    python3 \
+    git \
+    curl \
+    bash \
+    ca-certificates \
+    libffi \
+    openssl
+
+# Copy Python environment (without semgrep)
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install lightweight scanners only
+RUN wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-amd64 -O /usr/local/bin/gitleaks && \
+    chmod +x /usr/local/bin/gitleaks
+
+RUN wget -q https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-amd64 -O /usr/local/bin/kics && \
+    chmod +x /usr/local/bin/kics
+
+RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+WORKDIR /scan
+ENTRYPOINT ["ez-appsec"]
