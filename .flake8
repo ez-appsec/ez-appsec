@@ -1,0 +1,48 @@
+[flake8]
+# Configuration for flake8
+# https://flake8.pycqa.org/en/latest/
+
+# Maximum line length
+max-line-length = 120
+
+# Ignored error codes
+ignore =
+    # E203: whitespace before ':'
+    E203,
+    # E501: line too long (handled by max-line-length)
+    E501,
+    # W503: line break before binary operator
+    W503,
+    # W504: line break after binary operator
+    W504,
+
+# Exclude patterns
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    .eggs,
+    *.egg,
+    build,
+    dist,
+    .pytest_cache,
+    .tox,
+    .mypy_cache,
+    .hypothesis,
+
+# File patterns to include
+filename = *.py
+
+# Enable off-by-default warnings
+enable-extensions =
+    # W601: .has_key() is deprecated
+    W601,
+    # W602: deprecated form of raising exception
+    W602,
+    # W603: '<>' is deprecated, use '!='
+    W603,
+    # W604: backticks are deprecated, use repr()
+    W604,
+    # W605: invalid escape sequence
+    W605,

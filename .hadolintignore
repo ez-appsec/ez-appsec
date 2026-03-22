@@ -1,0 +1,11 @@
+# Hadolint ignore patterns for ez-appsec
+# https://github.com/hadolint/hadolint#dockerfile-linter
+
+# DL3008: Pin versions in apt get (we use --no-cache which is acceptable)
+DL3008
+
+# DL3009: Delete apt-get lists after install (we use --no-cache which is sufficient)
+DL3009
+
+# DL3010: Use EXPOSE with port (we don't expose ports in Dockerfile)
+DL3010

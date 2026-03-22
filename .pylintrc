@@ -1,0 +1,89 @@
+[MASTER]
+# Configuration for pylint
+
+# Use multiple processes
+jobs=0
+
+# Regex for valid module names
+module-naming-style=snake_case
+
+# Regex for valid class names
+class-naming-style=PascalCase
+
+# Regex for valid function names
+function-naming-style=snake_case
+
+# Regex for valid constant names
+const-naming-style=UPPER_CASE
+
+[MESSAGES CONTROL]
+# Disable specific warnings
+disable=
+    # Too many statements
+    too-many-statements,
+    # Too many arguments
+    too-many-arguments,
+    # Too many branches
+    too-many-branches,
+    # Too many instance attributes
+    too-many-instance-attributes,
+    # Too many public methods
+    too-many-public-methods,
+    # Attribute defined outside __init__
+    attribute-defined-outside-init,
+    # W0212: protected-access - sometimes needed for testing
+    protected-access,
+
+[FORMAT]
+# Maximum number of characters on a single line
+max-line-length=120
+
+# Maximum number of lines in module
+max-module-lines=1000
+
+# String formatting style
+string-quote=single-avoid-escape
+
+[DESIGN]
+# Maximum number of arguments
+max-args=6
+
+# Maximum number of attributes
+max-attributes=7
+
+# Maximum number of local variables
+max-locals=15
+
+# Maximum number of branches
+max-branches=12
+
+# Maximum number of statements
+max-statements=50
+
+[SIMILARITIES]
+# Minimum lines for similarity detection
+min-similarity-lines=5
+
+[LOGGING]
+# Format of logging calls
+logging-format-style=new
+
+[BASIC]
+# Good variable names which should always be accepted
+good-names=
+    i,
+    j,
+    k,
+    ex,
+    Run,
+    _,
+    v,
+    x,
+    y,
+    z,
+    id,
+    fd,
+    fp,
+    db,
+    ax,
+    f,

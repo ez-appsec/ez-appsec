@@ -1,15 +1,250 @@
-.gitlab-ci.yml
+# ez-appsec CI/CD Pipeline
+# Stages: lint, test, build, deploy
 
-# Deploy web vulnerability dashboard to GitLab Pages
+stages:
+  - lint
+  - test
+  - build
+  - deploy
+
+# Variables
+variables:
+  REGISTRY_IMAGE: "registry.gitlab.com/${CI_PROJECT_PATH}"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  PYTHON_VERSION: "3.11"
+
+# Default configuration
+default:
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+# ============================================
+# LINT STAGE
+# ============================================
+
+lint:python:
+  stage: lint
+  image: python:${PYTHON_VERSION}-slim
+  before_script:
+    - pip install --no-cache-dir pylint flake8 black isort
+  script:
+    - echo "🔍 Linting Python code with flake8..."
+    - flake8 ez_appsec tests --count --select=E9,F63,F7,F82 --show-source --statistics
+    - echo "✓ flake8 passed"
+    
+    - echo "🔍 Checking code style with black..."
+    - black --check ez_appsec tests || true
+    - echo "ℹ️  black formatting suggestions noted (not enforced)"
+    
+    - echo "🔍 Checking import sorting with isort..."
+    - isort --check-only ez_appsec tests || true
+    - echo "ℹ️  isort suggestions noted (not enforced)"
+    
+    - echo "🔍 Linting with pylint..."
+    - pylint ez_appsec --exit-zero --max-line-length=120
+    - echo "✓ Pylint checks completed"
+  allow_failure: false
+  tags:
+    - docker
+
+lint:docker:
+  stage: lint
+  image: hadolint/hadolint:latest-debian
+  script:
+    - echo "🔍 Linting Dockerfile..."
+    - hadolint Dockerfile
+    - echo "✓ Dockerfile linting passed"
+    
+    - echo "🔍 Linting Dockerfile.slim..."
+    - hadolint Dockerfile.slim
+    - echo "✓ Dockerfile.slim linting passed"
+  allow_failure: true
+  tags:
+    - docker
+
+# ============================================
+# TEST STAGE
+# ============================================
+
+test:unit:
+  stage: test
+  image: python:${PYTHON_VERSION}-slim
+  before_script:
+    - pip install --no-cache-dir -r requirements.txt
+    - pip install --no-cache-dir -e .
+    - pip install --no-cache-dir pytest pytest-cov pytest-xdist
+  script:
+    - echo "🧪 Running unit tests with pytest..."
+    - pytest tests/ -v --cov=ez_appsec --cov-report=term-summary --cov-report=xml --cov-report=html -n auto
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    when: always
+    paths:
+      - htmlcov/
+      - coverage.xml
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+  allow_failure: false
+  tags:
+    - docker
+
+test:security:
+  stage: test
+  image: python:${PYTHON_VERSION}-slim
+  before_script:
+    - pip install --no-cache-dir bandit safety
+  script:
+    - echo "🔒 Running security checks with bandit..."
+    - bandit -r ez_appsec -ll --exit-zero || true
+    - echo "✓ Bandit checks completed"
+    
+    - echo "🔒 Checking dependencies with safety..."
+    - pip install -r requirements.txt
+    - safety check --json || true
+    - echo "✓ Safety checks completed"
+  allow_failure: true
+  tags:
+    - docker
+
+# ============================================
+# BUILD STAGE
+# ============================================
+
+build:docker:standard:
+  stage: build
+  image: docker:24.0-dind
+  services:
+    - docker:24.0-dind
+  before_script:
+    - echo "📦 Building Docker image..."
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - echo "🐳 Building standard Docker image: ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:latest .
+    
+    - echo "📊 Image info:"
+    - docker images ${REGISTRY_IMAGE}
+    
+    - echo "🧪 Testing image functionality..."
+    - docker run --rm ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} --version
+    - docker run --rm ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} --help
+  only:
+    - merge_requests
+    - main
+    - tags
+  tags:
+    - docker
+  allow_failure: false
+
+build:docker:slim:
+  stage: build
+  image: docker:24.0-dind
+  services:
+    - docker:24.0-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - echo "🐳 Building slim Docker image: ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA}"
+    - docker build -f Dockerfile.slim -t ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:slim .
+    
+    - echo "📊 Image info:"
+    - docker images ${REGISTRY_IMAGE}
+  only:
+    - merge_requests
+    - main
+    - tags
+  tags:
+    - docker
+  allow_failure: true
+
+# ============================================
+# DEPLOY STAGE
+# ============================================
+
+publish:docker:
+  stage: deploy
+  image: docker:24.0-dind
+  services:
+    - docker:24.0-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker pull ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} || true
+  script:
+    - echo "📤 Publishing Docker images to registry..."
+    
+    - echo "🏷️  Tagging standard image..."
+    - docker tag ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:latest
+    - docker tag ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}
+    - docker tag ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:v${CI_COMMIT_TAG}
+    
+    - echo "🏷️  Tagging slim image..."
+    - docker tag ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:slim
+    - docker tag ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:slim-${CI_COMMIT_REF_SLUG}
+    
+    - echo "⬆️  Pushing standard images..."
+    - docker push ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
+    - docker push ${REGISTRY_IMAGE}:latest
+    - docker push ${REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}
+    
+    - echo "⬆️  Pushing slim images..."
+    - docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA}
+    - docker push ${REGISTRY_IMAGE}:slim
+    - docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_REF_SLUG}
+    
+    - echo "✅ Docker images published successfully"
+    - echo "Standard image: ${REGISTRY_IMAGE}:latest"
+    - echo "Slim image: ${REGISTRY_IMAGE}:slim"
+  only:
+    - main
+    - tags
+  tags:
+    - docker
+  allow_failure: false
+
+publish:docker:tags:
+  stage: deploy
+  image: docker:24.0-dind
+  services:
+    - docker:24.0-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - echo "📦 Building and publishing tagged release..."
+    - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_TAG} .
+    - docker build -f Dockerfile.slim -t ${REGISTRY_IMAGE}:slim-${CI_COMMIT_TAG} .
+    
+    - docker push ${REGISTRY_IMAGE}:${CI_COMMIT_TAG}
+    - docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_TAG}
+    
+    - echo "✅ Release version published: ${CI_COMMIT_TAG}"
+  only:
+    - tags
+  tags:
+    - docker
+  allow_failure: false
+
+# ============================================
+# PAGES DEPLOYMENT
+# ============================================
+
 pages:
   stage: deploy
+  image: python:${PYTHON_VERSION}-slim
   script:
+    - echo "📄 Preparing GitLab Pages..."
     - mkdir -p public
     - cp -r web/* public/
   artifacts:
     paths:
       - public
-  only:
-    - main
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
+  tags:
+    - docker
+  allow_failure: false
