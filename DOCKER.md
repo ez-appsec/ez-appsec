@@ -20,10 +20,25 @@ docker run --rm -it -v $(pwd):/scan ez-appsec /bin/bash
 
 # Check scanner versions
 ```bash
-docker run --rm ez-appsec gitleaks --version
-docker run --rm ez-appsec semgrep --version
-docker run --rm ez-appsec kics version
-docker run --rm ez-appsec grype --version
+docker run --rm ez-appsec:latest gitleaks version
+docker run --rm ez-appsec:latest semgrep --version
+docker run --rm ez-appsec:latest kics version
+docker run --rm ez-appsec:latest grype version
+```
+
+# Run individual scanners directly
+```bash
+# Gitleaks secrets scan
+docker run --rm -v $(pwd):/scan ez-appsec:latest gitleaks detect --source /scan
+
+# Semgrep SAST scan
+docker run --rm -v $(pwd):/scan ez-appsec:latest semgrep --config=p/security-audit /scan
+
+# KICS IaC scan
+docker run --rm -v $(pwd):/scan ez-appsec:latest kics scan -p /scan
+
+# Grype vulnerability scan
+docker run --rm -v $(pwd):/scan ez-appsec:latest grype dir:/scan
 ```
 
 # Push to Docker Hub

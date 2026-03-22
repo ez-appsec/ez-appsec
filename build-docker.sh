@@ -25,7 +25,11 @@ docker run --rm ez-appsec:slim --version
 echo "✓ Testing scanner availability..."
 docker run --rm ez-appsec:latest status
 docker run --rm ez-appsec:slim status
-
+echo "🧪 Testing individual scanners..."
+docker run --rm ez-appsec:latest gitleaks version
+docker run --rm ez-appsec:latest semgrep --version
+docker run --rm ez-appsec:latest kics version
+docker run --rm ez-appsec:latest grype version
 echo ""
 echo "✅ Docker build complete!"
 echo ""
