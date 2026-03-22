@@ -1,0 +1,59 @@
+# Ultra-lightweight variant using distroless base
+# Build: docker build -f Dockerfile.slim -t ez-appsec:slim .
+# Size target: ~250-300MB
+
+FROM python:3.11-slim as builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git gcc musl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . /app
+WORKDIR /app
+RUN pip install --no-cache-dir -e .
+
+
+FROM python:3.11-slim
+
+# Install only runtime essentials
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates curl wget && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install gitleaks
+RUN wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-arm64 \
+    -O /usr/local/bin/gitleaks 2>/dev/null || \
+    wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-amd64 \
+    -O /usr/local/bin/gitleaks && \
+    chmod +x /usr/local/bin/gitleaks && \
+    gitleaks version
+
+# Install grype
+RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+# Install semgrep
+RUN pip install --no-cache-dir semgrep
+
+# Install kics
+RUN curl -sSL https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-alpine -o /usr/local/bin/kics && \
+    chmod +x /usr/local/bin/kics
+
+COPY --from=builder /opt/venv /opt/venv
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /scan
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s \
+    CMD ez-appsec --version || exit 1
+
+ENTRYPOINT ["ez-appsec"]
+CMD ["--help"]
