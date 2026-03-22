@@ -16,6 +16,7 @@
 - **📊 Multiple Output Formats**: JSON, SARIF (GitHub/GitLab compatible)
 - **⚡ Zero Configuration**: Works out of the box, customize as needed
 - **🆓 Free & Open Source**: No cloud dependency, run locally
+- **🔗 External Scanners**: Integrates gitleaks, semgrep, kics, and grype
 
 ## Installation
 
@@ -25,6 +26,27 @@
 git clone https://github.com/jfelten/ez-appsec.git
 cd ez-appsec
 pip install -e .
+```
+
+### Docker
+
+Pre-built image with all scanners included:
+
+```bash
+# Pull from Docker Hub (coming soon)
+docker pull jfelten/ez-appsec:latest
+
+# Or build locally
+docker build -t ez-appsec:latest .
+
+# Run scan
+docker run --rm -v $(pwd):/scan ez-appsec scan .
+```
+
+Lightweight variant (~300MB):
+```bash
+docker build -f Dockerfile.slim -t ez-appsec:slim .
+docker run --rm -v $(pwd):/scan ez-appsec:slim scan .
 ```
 
 ### From PyPI (Coming Soon)
@@ -39,6 +61,16 @@ pip install ez-appsec
 - OpenAI API key (for AI-powered analysis, optional)
 
 ## Quick Start
+
+### Check Scanner Installation
+
+```bash
+# See which scanners are installed
+ez-appsec status
+
+# Install recommended scanners (macOS)
+brew install gitleaks semgrep kics grype
+```
 
 ### Basic Security Scan
 
@@ -108,7 +140,30 @@ exclude:
 
 ## Detection Mechanisms
 
-### SAST (Static Application Security Testing)
+### External Scanners (Recommended)
+
+ez-appsec integrates best-in-class open-source scanners for comprehensive coverage:
+
+- **[gitleaks](https://github.com/gitleaks/gitleaks)** - Secrets detection with 140+ patterns
+- **[semgrep](https://semgrep.dev/)** - SAST with 1000+ rules across languages
+- **[kics](https://www.kics.io/)** - Infrastructure as code security scanning
+- **[grype](https://github.com/anchore/grype)** - Vulnerability and SBOM analysis
+
+Check scanner status:
+```bash
+ez-appsec status
+```
+
+Install scanners:
+```bash
+brew install gitleaks semgrep kics grype
+```
+
+### Built-in Detection
+
+Fallback detectors for when external scanners aren't available:
+
+**SAST (Static Application Security Testing)**
 
 Detects common code vulnerabilities:
 - SQL injection patterns
@@ -117,7 +172,7 @@ Detects common code vulnerabilities:
 - XXE vulnerabilities
 - Insecure deserialization
 
-### Secrets Detection
+**Secrets Detection**
 
 Finds exposed secrets:
 - API keys and tokens
@@ -126,7 +181,7 @@ Finds exposed secrets:
 - Slack webhook URLs
 - Private keys
 
-### Dependency Analysis
+**Dependency Analysis**
 
 Identifies vulnerable packages in:
 - Python (requirements.txt, setup.py)
@@ -162,24 +217,25 @@ Top Issues:
 
 ```yaml
 - name: Run ez-appsec
+  uses: docker://jfelten/ez-appsec:latest
   env:
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  run: |
-    pip install ez-appsec
-    ez-appsec scan . --output sarif-report.sarif
+  with:
+    args: scan . --output sarif-report.sarif
 ```
 
-### GitLab CI
+### Docker Compose
 
 ```yaml
-security-scan:
-  image: python:3.11
-  script:
-    - pip install ez-appsec
-    - ez-appsec scan . --output results.json
-  artifacts:
-    reports:
-      sast: results.json
+version: '3.8'
+services:
+  security-scan:
+    image: jfelten/ez-appsec:latest
+    volumes:
+      - .:/scan
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    command: scan . --output results.json
 ```
 
 ## API Usage
