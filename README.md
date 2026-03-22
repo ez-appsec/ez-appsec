@@ -11,7 +11,7 @@
 - **🚀 External Scanner Integration**: Leverages gitleaks, semgrep, kics, and grype
 - **🤖 AI-Powered Remediation**: LLM-based guidance for fixing security issues
 - **🎯 Multi-Language Support**: Supports all languages covered by external scanners
-- **📊 Multiple Output Formats**: JSON, SARIF (GitHub/GitLab compatible)
+- **📊 Multiple Output Formats**: JSON, SARIF (GitHub/GitLab compatible), **GitLab Vulnerability Format**
 - **⚡ Zero Configuration**: Works out of the box with external tools
 - **🆓 Free & Open Source**: No cloud dependency, run locally
 
@@ -81,6 +81,26 @@ ez-appsec scan /path/to/project
 # Save results to JSON
 ez-appsec scan . --output results.json
 ```
+
+### GitLab Vulnerability Format
+
+Generate reports compatible with GitLab's security dashboard:
+
+```bash
+# Scan and output in GitLab vulnerability format
+ez-appsec gitlab-scan . --output gitlab-report.json
+
+# With AI analysis and custom prompt
+ez-appsec gitlab-scan . --ai-prompt "Focus on critical issues" --output report.json
+```
+
+The GitLab format includes:
+- Standardized vulnerability schema
+- Severity levels (critical, high, medium, low, info)
+- Location information (file, line numbers)
+- Remediation suggestions
+- Scanner identification
+- CVE references where available
 
 ### Initialize Configuration
 
@@ -204,6 +224,8 @@ services:
 
 ## API Usage
 
+### Basic Scanning
+
 ```python
 from ez_appsec.scanner import SecurityScanner
 from ez_appsec.config import Config
@@ -213,6 +235,33 @@ scanner = SecurityScanner(config)
 
 results = scanner.scan("/path/to/code")
 print(f"Found {results['total']} issues")
+```
+
+### GitLab Vulnerability Format
+
+```python
+from ez_appsec.scanner import SecurityScanner
+from ez_appsec.config import Config
+
+config = Config(severity="high")
+scanner = SecurityScanner(config)
+
+# Generate GitLab-compatible vulnerability report
+gitlab_report = scanner.scan_to_gitlab_format("/path/to/code", "report.json")
+print(f"Generated report with {len(gitlab_report['vulnerabilities'])} vulnerabilities")
+```
+
+### Individual Scanner Output Conversion
+
+```python
+from ez_appsec.converters import VulnerabilityConverters
+
+# Convert gitleaks output to GitLab format
+report = VulnerabilityConverters.convert_scanner_output(
+    "gitleaks", "gitleaks-output.json", "gitlab-report.json"
+)
+
+# Supported scanners: gitleaks, semgrep, kics, grype
 ```
 
 ## Contributing

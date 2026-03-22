@@ -54,6 +54,41 @@ def scan(path, ai_prompt, languages, severity, output):
 
 
 @main.command()
+@click.argument("path", type=click.Path(exists=True), default=".")
+@click.option("--ai-prompt", help="Custom AI prompt for security analysis")
+@click.option("--severity", default="all", help="Minimum severity level to report")
+@click.option("--output", type=click.Path(), help="Output file for GitLab vulnerability report (JSON)")
+def gitlab_scan(path, ai_prompt, severity, output):
+    """Scan a codebase and output results in GitLab vulnerability format
+    
+    PATH: Directory or file to scan (default: current directory)
+    """
+    try:
+        config = Config(severity=severity)
+        
+        scanner = SecurityScanner(config)
+        results = scanner.scan_to_gitlab_format(path, output, ai_prompt)
+        
+        click.echo(f"\n✓ GitLab vulnerability scan completed")
+        click.echo(f"  Total vulnerabilities found: {len(results['vulnerabilities'])}")
+        
+        if results['vulnerabilities']:
+            click.echo("\nTop Vulnerabilities:")
+            for vuln in results['vulnerabilities'][:5]:
+                click.echo(f"  [{vuln['severity']}] {vuln['name']}")
+                click.echo(f"    {vuln['message']}")
+        
+        if output:
+            click.echo(f"\n✓ GitLab report saved to: {output}")
+        else:
+            click.echo("  Use --output to save report to file")
+            
+    except Exception as e:
+        click.echo(f"✗ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@main.command()
 def init():
     """Initialize ez-appsec configuration in current directory"""
     config_path = Path(".ez-appsec.yaml")
