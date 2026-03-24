@@ -125,12 +125,10 @@ build:docker:standard:
     - echo "📦 Building Docker image..."
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
-    - echo "🐳 Building standard Docker image: ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-    - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:latest .
-    
+    - echo "🐳 Building standard Docker image ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:latest
     - echo "📊 Image info:"
     - docker images ${REGISTRY_IMAGE}
-    
     - echo "🧪 Testing image functionality..."
     - docker run --rm ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} --version
     - docker run --rm ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} --help
@@ -150,7 +148,7 @@ build:docker:slim:
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
-    - echo "🐳 Building slim Docker image: ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA}"
+    - echo "🐳 Building slim Docker image ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA}"
     - docker build -f Dockerfile.slim -t ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:slim .
     
     - echo "📊 Image info:"
@@ -198,8 +196,8 @@ publish:docker:
     - docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_REF_SLUG}
     
     - echo "✅ Docker images published successfully"
-    - echo "Standard image: ${REGISTRY_IMAGE}:latest"
-    - echo "Slim image: ${REGISTRY_IMAGE}:slim"
+    - echo "Standard image ${REGISTRY_IMAGE}:latest"
+    - echo "Slim image ${REGISTRY_IMAGE}:slim"
   only:
     - main
     - tags
@@ -222,7 +220,7 @@ publish:docker:tags:
     - docker push ${REGISTRY_IMAGE}:${CI_COMMIT_TAG}
     - docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_TAG}
     
-    - echo "✅ Release version published: ${CI_COMMIT_TAG}"
+    - echo "✅ Release version published ${CI_COMMIT_TAG}"
   only:
     - tags
   tags:
