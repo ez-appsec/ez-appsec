@@ -126,12 +126,14 @@ build:docker:standard:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building standard Docker image ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-    - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:latest .
+    - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} .
     - echo "📊 Image info:"
     - docker images ${REGISTRY_IMAGE}
     - echo "🧪 Testing image functionality..."
     - docker run --rm ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} --version
     - docker run --rm ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} --help
+    - echo "⬆️  Pushing standard image..."
+    - docker push ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
   only:
     - merge_requests
     - main
@@ -149,9 +151,11 @@ build:docker:slim:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building slim Docker image ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA}"
-    - docker build -f Dockerfile.slim -t ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:slim .
+    - docker build -f Dockerfile.slim -t ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} .
     - echo "📊 Image info:"
     - docker images ${REGISTRY_IMAGE}
+    - echo "⬆️  Pushing slim image..."
+    - docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA}
   only:
     - merge_requests
     - main
@@ -169,9 +173,11 @@ build:docker:micro:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building micro Docker image ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA}"
-    - docker build -f Dockerfile.micro -t ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:micro .
+    - docker build -f Dockerfile.micro -t ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} .
     - echo "📊 Image info:"
     - docker images ${REGISTRY_IMAGE}
+    - echo "⬆️  Pushing micro image..."
+    - docker push ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA}
   only:
     - merge_requests
     - main
@@ -189,9 +195,11 @@ build:docker:semgrep:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building semgrep Docker image ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA}"
-    - docker build -f Dockerfile.semgrep -t ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:semgrep .
+    - docker build -f Dockerfile.semgrep -t ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} .
     - echo "📊 Image info:"
     - docker images ${REGISTRY_IMAGE}
+    - echo "⬆️  Pushing semgrep image..."
+    - docker push ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA}
   only:
     - merge_requests
     - main
@@ -211,32 +219,53 @@ publish:docker:
     - docker:24.0-dind
   before_script:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
-    - docker pull ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} || true
+    - docker pull ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
+    - docker pull ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} || true
+    - docker pull ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} || true
+    - docker pull ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} || true
   script:
     - echo "📤 Publishing Docker images to registry..."
-    
-    - echo "🏷️  Tagging standard image..."
+
+    - echo "🏷️  Tagging and pushing standard image..."
     - docker tag ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:latest
     - docker tag ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}
-    - docker tag ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:v${CI_COMMIT_TAG}
-    
-    - echo "🏷️  Tagging slim image..."
-    - docker tag ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:slim
-    - docker tag ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:slim-${CI_COMMIT_REF_SLUG}
-    
-    - echo "⬆️  Pushing standard images..."
-    - docker push ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
     - docker push ${REGISTRY_IMAGE}:latest
     - docker push ${REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}
-    
-    - echo "⬆️  Pushing slim images..."
-    - docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA}
-    - docker push ${REGISTRY_IMAGE}:slim
-    - docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_REF_SLUG}
-    
+
+    - echo "🏷️  Tagging and pushing slim image..."
+    - |
+      if docker image inspect ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} > /dev/null 2>&1; then
+        docker tag ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:slim
+        docker tag ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:slim-${CI_COMMIT_REF_SLUG}
+        docker push ${REGISTRY_IMAGE}:slim
+        docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_REF_SLUG}
+      else
+        echo "⚠️  slim image not found, skipping"
+      fi
+
+    - echo "🏷️  Tagging and pushing micro image..."
+    - |
+      if docker image inspect ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} > /dev/null 2>&1; then
+        docker tag ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:micro
+        docker tag ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:micro-${CI_COMMIT_REF_SLUG}
+        docker push ${REGISTRY_IMAGE}:micro
+        docker push ${REGISTRY_IMAGE}:micro-${CI_COMMIT_REF_SLUG}
+      else
+        echo "⚠️  micro image not found, skipping"
+      fi
+
+    - echo "🏷️  Tagging and pushing semgrep image..."
+    - |
+      if docker image inspect ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} > /dev/null 2>&1; then
+        docker tag ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:semgrep
+        docker tag ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_REF_SLUG}
+        docker push ${REGISTRY_IMAGE}:semgrep
+        docker push ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_REF_SLUG}
+      else
+        echo "⚠️  semgrep image not found, skipping"
+      fi
+
     - echo "✅ Docker images published successfully"
-    - echo "Standard image ${REGISTRY_IMAGE}:latest"
-    - echo "Slim image ${REGISTRY_IMAGE}:slim"
   only:
     - main
     - tags
