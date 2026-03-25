@@ -123,7 +123,7 @@ build:docker:standard:
     - docker:24.0-dind
   before_script:
     - echo "📦 Building Docker image..."
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building standard Docker image ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
     - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:latest
@@ -146,7 +146,7 @@ build:docker:slim:
   services:
     - docker:24.0-dind
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building slim Docker image ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA}"
     - docker build -f Dockerfile.slim -t ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} -t ${REGISTRY_IMAGE}:slim .
@@ -171,7 +171,7 @@ publish:docker:
   services:
     - docker:24.0-dind
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
     - docker pull ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} || true
   script:
     - echo "📤 Publishing Docker images to registry..."
@@ -211,7 +211,7 @@ publish:docker:tags:
   services:
     - docker:24.0-dind
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "📦 Building and publishing tagged release..."
     - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_TAG} .
