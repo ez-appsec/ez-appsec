@@ -1,7 +1,21 @@
 # Micro image without semgrep (saves ~150MB)
+
+# ── builder ───────────────────────────────────────────────────────────────────
+FROM python:3.11-alpine AS builder
+
+RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev git
+
+WORKDIR /app
+COPY requirements.txt .
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+RUN /opt/venv/bin/pip install --no-cache-dir -e .
+
+# ── runtime ───────────────────────────────────────────────────────────────────
 FROM alpine:3.18
 
-# Install runtime dependencies
 RUN apk add --no-cache \
     python3 \
     git \
@@ -11,14 +25,11 @@ RUN apk add --no-cache \
     libffi \
     openssl
 
-# Copy Python environment (without semgrep)
-# hadolint ignore=DL3022
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Install lightweight scanners only
 RUN curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-amd64 -o /usr/local/bin/gitleaks && \
     chmod +x /usr/local/bin/gitleaks
 
