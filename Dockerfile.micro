@@ -1,7 +1,24 @@
 # Micro image without semgrep (saves ~150MB)
-FROM alpine:latest
 
-# Install runtime dependencies
+# Pull kics binary from official image
+FROM checkmarx/kics@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602 AS kics
+
+# ── builder ───────────────────────────────────────────────────────────────────
+FROM python:3.11-alpine AS builder
+
+RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev git
+
+WORKDIR /app
+COPY requirements.txt .
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+RUN /opt/venv/bin/pip install --no-cache-dir -e .
+
+# ── runtime ───────────────────────────────────────────────────────────────────
+FROM alpine:3.18
+
 RUN apk add --no-cache \
     python3 \
     git \
@@ -11,16 +28,19 @@ RUN apk add --no-cache \
     libffi \
     openssl
 
-# Copy Python environment (without semgrep)
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install lightweight scanners only
-RUN wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-amd64 -O /usr/local/bin/gitleaks && \
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz" \
+      -o /tmp/gitleaks.tar.gz && \
+    tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks && \
+    rm /tmp/gitleaks.tar.gz && \
     chmod +x /usr/local/bin/gitleaks
 
-RUN wget -q https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-amd64 -O /usr/local/bin/kics && \
-    chmod +x /usr/local/bin/kics
+COPY --from=kics /app/bin/kics /usr/local/bin/kics
+COPY --from=kics /app/bin/assets /usr/local/bin/assets
 
 RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
 

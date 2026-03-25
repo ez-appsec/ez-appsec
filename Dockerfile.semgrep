@@ -1,12 +1,25 @@
 # Semgrep-only container (isolates the large dependency)
+
+# ── builder ───────────────────────────────────────────────────────────────────
+FROM python:3.11-alpine AS builder
+
+RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev git
+
+WORKDIR /app
+COPY requirements.txt .
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+RUN /opt/venv/bin/pip install --no-cache-dir -e .
+
+# ── runtime ───────────────────────────────────────────────────────────────────
 FROM python:3.11-alpine
 
-# Install semgrep only
 RUN apk add --no-cache gcc musl-dev && \
     pip install --no-cache-dir semgrep && \
     apk del gcc musl-dev
 
-# Copy Python environment
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
