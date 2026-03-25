@@ -1,5 +1,5 @@
 # Micro image without semgrep (saves ~150MB)
-FROM alpine:latest
+FROM alpine:3.18
 
 # Install runtime dependencies
 RUN apk add --no-cache \
@@ -12,14 +12,17 @@ RUN apk add --no-cache \
     openssl
 
 # Copy Python environment (without semgrep)
+# hadolint ignore=DL3022
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # Install lightweight scanners only
-RUN wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-amd64 -O /usr/local/bin/gitleaks && \
+RUN curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-amd64 -o /usr/local/bin/gitleaks && \
     chmod +x /usr/local/bin/gitleaks
 
-RUN wget -q https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-amd64 -O /usr/local/bin/kics && \
+RUN curl -fsSL https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-amd64 -o /usr/local/bin/kics && \
     chmod +x /usr/local/bin/kics
 
 RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin

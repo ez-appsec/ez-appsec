@@ -2,7 +2,7 @@
 # Build: docker build -f Dockerfile.slim -t ez-appsec:slim .
 # Size target: ~250-300MB
 
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git gcc musl-dev && \
@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -23,15 +24,17 @@ FROM python:3.11-slim
 
 # Install only runtime essentials
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git ca-certificates curl wget && \
+    git ca-certificates curl && \
     rm -rf /var/lib/apt/lists/*
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Install gitleaks
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-arm64 -O /usr/local/bin/gitleaks; \
+        curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-arm64 -o /usr/local/bin/gitleaks; \
     else \
-        wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-amd64 -O /usr/local/bin/gitleaks; \
+        curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-amd64 -o /usr/local/bin/gitleaks; \
     fi && \
     chmod +x /usr/local/bin/gitleaks && \
     gitleaks version
@@ -47,9 +50,9 @@ RUN pip install --no-cache-dir semgrep && \
 # Install kics
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        wget -q https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-arm64 -O /usr/local/bin/kics; \
+        curl -fsSL https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-arm64 -o /usr/local/bin/kics; \
     else \
-        wget -q https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-amd64 -O /usr/local/bin/kics; \
+        curl -fsSL https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-amd64 -o /usr/local/bin/kics; \
     fi && \
     chmod +x /usr/local/bin/kics && \
     kics version
