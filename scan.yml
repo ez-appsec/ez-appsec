@@ -1,10 +1,33 @@
 # GitLab workflow template to perform project scan and expose GitLab-formatted results as artifacts
 
 stages:
-  - scan
+  - ez-appsec
+  - deploy
+
+variables:
+  EZ_APPSEC_BRANCH: "ez-appsec-pages"
+
+initialize:web:
+  stage: ez-appsec
+  image: alpine:3.18
+  script:
+    - apk add --no-cache git
+    - git config user.email "ci@ez-appsec.ai"
+    - git config user.name "ez-appsec CI"
+    - git fetch origin "${EZ_APPSEC_BRANCH}" || true
+    - git checkout -B "${EZ_APPSEC_BRANCH}" "origin/${EZ_APPSEC_BRANCH}" 2>/dev/null || git checkout -B "${EZ_APPSEC_BRANCH}"
+    - mkdir -p public
+    - cp -r web/* public/
+    - git add public/
+    - 'git diff --cached --quiet && echo "No changes to web content" || git commit -m "chore: update web content from main"'
+    - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: manual
 
 scan:pipeline:
-  stage: scan
+  stage: ez-appsec
   image: python:3.11-slim
   variables:
     EZ_APPSEC_OUTPUT_DIR: "scan-results"
@@ -34,3 +57,41 @@ scan:pipeline:
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: always
     - when: manual
+
+update:vulns:
+  stage: ez-appsec
+  image: alpine:3.18
+  needs:
+    - job: scan:pipeline
+      artifacts: true
+  script:
+    - apk add --no-cache git
+    - git config user.email "ci@ez-appsec.ai"
+    - git config user.name "ez-appsec CI"
+    - git fetch origin "${EZ_APPSEC_BRANCH}" || true
+    - git checkout -B "${EZ_APPSEC_BRANCH}" "origin/${EZ_APPSEC_BRANCH}" 2>/dev/null || git checkout -B "${EZ_APPSEC_BRANCH}"
+    - mkdir -p public/data
+    - cp "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json" public/data/vulnerabilities.json
+    - git add public/data/vulnerabilities.json
+    - 'git diff --cached --quiet && echo "No vulnerability report changes" || git commit -m "chore: update vulnerability report"'
+    - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
+  variables:
+    EZ_APPSEC_OUTPUT_DIR: "scan-results"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: manual
+
+pages:
+  stage: deploy
+  image: alpine:3.18
+  script:
+    - echo "Deploying public/ to GitLab Pages"
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $EZ_APPSEC_BRANCH'
+      when: always
