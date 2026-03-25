@@ -1,0 +1,11 @@
+ignored:
+  # Pin versions in apt-get — we use --no-install-recommends and clean lists
+  - DL3008
+  # Delete apt-get lists — covered by rm -rf /var/lib/apt/lists/*
+  - DL3009
+  # EXPOSE — no ports needed for a CLI tool
+  - DL3010
+  # Pin pip versions — main deps use requirements.txt; scanner tools are pinned by URL
+  - DL3013
+  # Pin apk versions — same rationale as DL3008
+  - DL3018

@@ -9,3 +9,9 @@ DL3009
 
 # DL3010: Use EXPOSE with port (we don't expose ports in Dockerfile)
 DL3010
+
+# DL3013: Pin pip versions (main deps use requirements.txt; scanner tools pinned by version in URL)
+DL3013
+
+# DL3018: Pin apk add versions (same rationale as DL3008 for apt-get)
+DL3018
