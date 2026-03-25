@@ -9,7 +9,7 @@ stages:
 
 # Variables
 variables:
-  REGISTRY_IMAGE: "registry.gitlab.com/${CI_PROJECT_PATH}"
+  REGISTRY_IMAGE: $CI_REGISTRY_IMAGE
   DOCKER_DRIVER: overlay2
   DOCKER_TLS_CERTDIR: "/certs"
   PYTHON_VERSION: "3.11"
