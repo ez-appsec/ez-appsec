@@ -59,6 +59,16 @@ pip install ez-appsec
 
 ## Quick Start
 
+### Install Claude Code Skill
+
+Add the `/ez-appsec-install` and `/ez-appsec-scan` slash commands to your project:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/skills/install.sh | bash -s -- --project
+```
+
+Then use `/ez-appsec-install` to add ez-appsec scanning to any GitLab project via a `scan.yml` include and merge request.
+
 ### Check Scanner Installation
 
 ```bash
