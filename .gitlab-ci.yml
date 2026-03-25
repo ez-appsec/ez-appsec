@@ -79,7 +79,7 @@ test:unit:
     - pip install --no-cache-dir pytest pytest-cov pytest-xdist
   script:
     - echo "🧪 Running unit tests with pytest..."
-    - pytest tests/ -v --cov=ez_appsec --cov-report=term-summary --cov-report=xml --cov-report=html -n auto
+    - pytest tests/ -v --cov=ez_appsec --cov-report=term-missing --cov-report=xml --cov-report=html -n auto
   coverage: '/TOTAL.*\s+(\d+%)$/'
   artifacts:
     when: always
