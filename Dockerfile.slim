@@ -2,6 +2,9 @@
 # Build: docker build -f Dockerfile.slim -t ez-appsec:slim .
 # Size target: ~250-300MB
 
+# Pull kics binary from official image
+FROM checkmarx/kics@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602 AS kics
+
 FROM python:3.11-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -31,11 +34,15 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Install gitleaks
 RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-arm64 -o /usr/local/bin/gitleaks; \
-    else \
-        curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks-linux-amd64 -o /usr/local/bin/gitleaks; \
-    fi && \
+    case "$ARCH" in \
+      aarch64|arm64) GL_ARCH="arm64" ;; \
+      x86_64)        GL_ARCH="x64" ;; \
+      *) echo "Unsupported arch: $ARCH" && exit 1 ;; \
+    esac && \
+    curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_${GL_ARCH}.tar.gz" \
+      -o /tmp/gitleaks.tar.gz && \
+    tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks && \
+    rm /tmp/gitleaks.tar.gz && \
     chmod +x /usr/local/bin/gitleaks && \
     gitleaks version
 
@@ -47,15 +54,10 @@ RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh |
 RUN pip install --no-cache-dir semgrep && \
     semgrep --version
 
-# Install kics
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        curl -fsSL https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-arm64 -o /usr/local/bin/kics; \
-    else \
-        curl -fsSL https://github.com/Checkmarx/kics/releases/download/v1.6.12/kics-linux-amd64 -o /usr/local/bin/kics; \
-    fi && \
-    chmod +x /usr/local/bin/kics && \
-    kics version
+# Copy kics binary and assets from official image
+COPY --from=kics /app/bin/kics /usr/local/bin/kics
+COPY --from=kics /app/bin/assets /usr/local/bin/assets
+RUN kics version
 
 COPY --from=builder /opt/venv /opt/venv
 
