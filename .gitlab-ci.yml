@@ -6,6 +6,7 @@ stages:
   - test
   - build
   - deploy
+  - release
 
 # Variables
 variables:
@@ -273,30 +274,150 @@ publish:docker:
   #   - docker
   allow_failure: false
 
+# ── Auto-tag from VERSION file ────────────────────────────────────────────────
+# Reads the VERSION file and creates a git tag via the GitLab API if it doesn't
+# already exist. This triggers a tag pipeline which builds + releases the images.
+# Requires a CI variable PROJECT_ACCESS_TOKEN with api scope (Developer+ role).
+
+version:tag:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - VERSION=$(cat VERSION)
+    - echo "Checking for tag v${VERSION}..."
+    - |
+      HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+        --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags/v${VERSION}")
+      if [ "$HTTP_STATUS" = "404" ]; then
+        echo "Creating tag v${VERSION}..."
+        curl --fail --request POST \
+          --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}" \
+          --header "Content-Type: application/json" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags" \
+          --data "{\"tag_name\": \"v${VERSION}\", \"ref\": \"${CI_COMMIT_SHA}\"}"
+        echo "✅ Tag v${VERSION} created — release pipeline triggered"
+      else
+        echo "ℹ️  Tag v${VERSION} already exists, skipping"
+      fi
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  needs: []
+
+# ── Publish versioned Docker images on tag pipeline ───────────────────────────
+# Pulls the SHA-tagged images pushed by the build jobs and retags them with the
+# version tag (e.g. v0.1.0, slim-v0.1.0, …).  Does NOT rebuild.
+
 publish:docker:tags:
   stage: deploy
   image: docker:24.0-dind
   services:
     - docker:24.0-dind
+  needs:
+    - job: build:docker:standard
+    - job: build:docker:slim
+      optional: true
+    - job: build:docker:micro
+      optional: true
+    - job: build:docker:semgrep
+      optional: true
   before_script:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - docker pull ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}
+    - docker pull ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} || true
+    - docker pull ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} || true
+    - docker pull ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} || true
   script:
-    - echo "📦 Building and publishing tagged release..."
-    - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_TAG} .
-    - docker build -f Dockerfile.slim -t ${REGISTRY_IMAGE}:slim-${CI_COMMIT_TAG} .
-    - docker build -f Dockerfile.micro -t ${REGISTRY_IMAGE}:micro-${CI_COMMIT_TAG} .
-    - docker build -f Dockerfile.semgrep -t ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_TAG} .
+    - TAG=${CI_COMMIT_TAG}
+    - echo "📤 Publishing versioned Docker images for ${TAG}..."
 
-    - docker push ${REGISTRY_IMAGE}:${CI_COMMIT_TAG}
-    - docker push ${REGISTRY_IMAGE}:slim-${CI_COMMIT_TAG}
-    - docker push ${REGISTRY_IMAGE}:micro-${CI_COMMIT_TAG}
-    - docker push ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_TAG}
+    - docker tag ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:${TAG}
+    - docker push ${REGISTRY_IMAGE}:${TAG}
+    - echo "✅ Pushed ${REGISTRY_IMAGE}:${TAG}"
 
-    - echo "✅ Release version published ${CI_COMMIT_TAG}"
-  only:
-    - tags
-  # tags:
-  #   - docker
+    - |
+      if docker image inspect ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} > /dev/null 2>&1; then
+        docker tag ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:slim-${TAG}
+        docker push ${REGISTRY_IMAGE}:slim-${TAG}
+        echo "✅ Pushed ${REGISTRY_IMAGE}:slim-${TAG}"
+      else
+        echo "⚠️  slim image not found, skipping"
+      fi
+
+    - |
+      if docker image inspect ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} > /dev/null 2>&1; then
+        docker tag ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:micro-${TAG}
+        docker push ${REGISTRY_IMAGE}:micro-${TAG}
+        echo "✅ Pushed ${REGISTRY_IMAGE}:micro-${TAG}"
+      else
+        echo "⚠️  micro image not found, skipping"
+      fi
+
+    - |
+      if docker image inspect ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} > /dev/null 2>&1; then
+        docker tag ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} ${REGISTRY_IMAGE}:semgrep-${TAG}
+        docker push ${REGISTRY_IMAGE}:semgrep-${TAG}
+        echo "✅ Pushed ${REGISTRY_IMAGE}:semgrep-${TAG}"
+      else
+        echo "⚠️  semgrep image not found, skipping"
+      fi
+
+    - echo "✅ All versioned images published for ${TAG}"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  allow_failure: false
+
+# ============================================
+# RELEASE STAGE
+# ============================================
+
+# Generates release notes from git log and creates a GitLab release.
+# Runs after versioned Docker images are published on tag pipelines.
+
+release:create:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - job: publish:docker:tags
+  before_script:
+    - apk add --no-cache git
+  script:
+    - git fetch --tags --unshallow 2>/dev/null || git fetch --tags || true
+    - VERSION=$(cat VERSION)
+    - |
+      PREV_TAG=$(git tag --sort=-version:refname | grep -v "^v${VERSION}$" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+      echo "## Changes" > RELEASE_NOTES.md
+      echo "" >> RELEASE_NOTES.md
+      if [ -n "$PREV_TAG" ]; then
+        echo "Changes since ${PREV_TAG}:" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        git log "${PREV_TAG}..v${VERSION}" --pretty=format:"- %s" --no-merges >> RELEASE_NOTES.md
+      else
+        echo "Initial release." >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        git log --pretty=format:"- %s" --no-merges | head -30 >> RELEASE_NOTES.md
+      fi
+      echo "" >> RELEASE_NOTES.md
+      echo "" >> RELEASE_NOTES.md
+      echo "## Docker Images" >> RELEASE_NOTES.md
+      echo "" >> RELEASE_NOTES.md
+      echo "| Variant | Tag |" >> RELEASE_NOTES.md
+      echo "|---------|-----|" >> RELEASE_NOTES.md
+      echo "| Standard (all scanners) | \`${REGISTRY_IMAGE}:v${VERSION}\` |" >> RELEASE_NOTES.md
+      echo "| Slim                    | \`${REGISTRY_IMAGE}:slim-v${VERSION}\` |" >> RELEASE_NOTES.md
+      echo "| Micro (no semgrep)      | \`${REGISTRY_IMAGE}:micro-v${VERSION}\` |" >> RELEASE_NOTES.md
+      echo "| Semgrep                 | \`${REGISTRY_IMAGE}:semgrep-v${VERSION}\` |" >> RELEASE_NOTES.md
+      echo "" >> RELEASE_NOTES.md
+      echo "**Full Changelog**: [CHANGELOG.md](CHANGELOG.md)" >> RELEASE_NOTES.md
+    - cat RELEASE_NOTES.md
+  release:
+    name: "Release v$CI_COMMIT_TAG"
+    description: "./RELEASE_NOTES.md"
+    tag_name: "$CI_COMMIT_TAG"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
   allow_failure: false
 
 # ============================================
