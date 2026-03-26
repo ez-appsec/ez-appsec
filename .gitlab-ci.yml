@@ -283,7 +283,7 @@ version:tag:
   stage: deploy
   image: alpine:latest
   before_script:
-    - apk add --no-cache curl
+    - apk add --no-cache curl python3
   script:
     - VERSION=$(cat VERSION)
     - echo "Checking for tag v${VERSION}..."
@@ -291,17 +291,60 @@ version:tag:
       HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
         --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}" \
         "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags/v${VERSION}")
-      if [ "$HTTP_STATUS" = "404" ]; then
-        echo "Creating tag v${VERSION}..."
-        curl --fail --request POST \
-          --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}" \
-          --header "Content-Type: application/json" \
-          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags" \
-          --data "{\"tag_name\": \"v${VERSION}\", \"ref\": \"${CI_COMMIT_SHA}\"}"
-        echo "✅ Tag v${VERSION} created — release pipeline triggered"
-      else
+      if [ "$HTTP_STATUS" != "404" ]; then
         echo "ℹ️  Tag v${VERSION} already exists, skipping"
+        exit 0
       fi
+    - echo "Updating README title to v${VERSION}..."
+    - |
+      python3 << 'EOF'
+      import os, json, base64, re, sys
+      import urllib.request, urllib.parse
+
+      token      = os.environ["PROJECT_ACCESS_TOKEN"]
+      api_url    = os.environ["CI_API_V4_URL"]
+      project_id = urllib.parse.quote(os.environ["CI_PROJECT_ID"], safe="")
+      version    = open("VERSION").read().strip()
+
+      # Fetch current README
+      url = f"{api_url}/projects/{project_id}/repository/files/README.md?ref=main"
+      req = urllib.request.Request(url, headers={"PRIVATE-TOKEN": token})
+      data = json.loads(urllib.request.urlopen(req).read())
+      content = base64.b64decode(data["content"]).decode()
+
+      # Replace version in title line
+      new_content = re.sub(r"^# ez-appsec.*", f"# ez-appsec v{version}", content, flags=re.MULTILINE)
+      if new_content == content:
+          print(f"README already shows v{version}, skipping commit")
+          sys.exit(0)
+
+      # Commit the update — [skip ci] prevents a redundant pipeline
+      payload = json.dumps({
+          "branch": "main",
+          "content": new_content,
+          "commit_message": f"chore: update README version to v{version} [skip ci]",
+      }).encode()
+      url = f"{api_url}/projects/{project_id}/repository/files/README.md"
+      req = urllib.request.Request(url, data=payload, method="PUT", headers={
+          "PRIVATE-TOKEN": token,
+          "Content-Type": "application/json",
+      })
+      urllib.request.urlopen(req)
+      print(f"✅ README updated to v{version}")
+      EOF
+    - echo "Creating tag v${VERSION}..."
+    - |
+      # Tag the latest commit on main (which is now the README update commit)
+      LATEST_SHA=$(curl -s \
+        --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/branches/main" | \
+        python3 -c "import sys,json; print(json.load(sys.stdin)['commit']['id'])")
+      curl --fail --request POST \
+        --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}" \
+        --header "Content-Type: application/json" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags" \
+        --data "{\"tag_name\": \"v${VERSION}\", \"ref\": \"${LATEST_SHA}\"}"
+      echo "✅ Tag v${VERSION} created — release pipeline triggered"
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
   needs: []
