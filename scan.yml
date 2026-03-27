@@ -64,7 +64,9 @@ scan:pipeline:
 
 update:vulns:
   stage: ez-appsec
-  image: alpine:3.18
+  image:
+    name: $EZ_APPSEC_IMAGE
+    entrypoint: [""]
   needs:
     - job: scan:pipeline
       artifacts: true
