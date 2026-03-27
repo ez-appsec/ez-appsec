@@ -109,6 +109,8 @@ pre code { background: none; padding: 0; color: inherit; }
 
 .nav__active { color: var(--accent) !important; }
 
+.nav__version { font-size: .75rem; color: var(--text-muted); font-family: 'SF Mono', 'Fira Code', Consolas, monospace; }
+
 .nav__actions { display: flex; align-items: center; gap: 8px; }
 
 .btn--upgrade { border: 1px solid var(--medium); color: var(--medium); background: rgba(251,191,36,.08); }

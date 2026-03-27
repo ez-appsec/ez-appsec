@@ -32,6 +32,7 @@ initialize:web:
       changes:
         - web/**/*
       when: always
+    - when: manual
 
 scan:pipeline:
   stage: ez-appsec

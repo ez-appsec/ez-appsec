@@ -75,6 +75,11 @@ class VulnerabilityDashboard {
             }
 
             if (this.config.ez_appsec_version) {
+                const versionLabel = document.getElementById('version-label');
+                if (versionLabel) {
+                    versionLabel.textContent = `v${this.config.ez_appsec_version}`;
+                    versionLabel.hidden = false;
+                }
                 this.checkForUpgrade(this.config.gitlab_url);
             }
         } catch (e) { /* config is optional */ }
