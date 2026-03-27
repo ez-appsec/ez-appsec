@@ -89,8 +89,8 @@ class VulnerabilityDashboard {
     }
 
     openConfigModal() {
-        const saved = localStorage.getItem('ez_appsec_trigger_token');
-        document.getElementById('trigger-token-input').value = saved || '';
+        const saved = localStorage.getItem('ez_appsec_trigger_token') || this.config?.trigger_token || '';
+        document.getElementById('trigger-token-input').value = saved;
         const modal = document.getElementById('config-modal');
         modal.setAttribute('aria-hidden', 'false');
         modal.classList.add('modal-overlay--open');
@@ -106,7 +106,7 @@ class VulnerabilityDashboard {
     }
 
     async triggerRescan() {
-        const token = localStorage.getItem('ez_appsec_trigger_token');
+        const token = localStorage.getItem('ez_appsec_trigger_token') || this.config?.trigger_token;
         if (!token) { this.openConfigModal(); return; }
 
         if (!this.config?.project_id) {
