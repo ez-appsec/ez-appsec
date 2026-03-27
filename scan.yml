@@ -36,7 +36,9 @@ initialize:web:
 
 scan:pipeline:
   stage: ez-appsec
-  image: $EZ_APPSEC_IMAGE
+  image:
+    name: $EZ_APPSEC_IMAGE
+    entrypoint: [""]
   variables:
     EZ_APPSEC_OUTPUT_DIR: "scan-results"
     EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
