@@ -82,7 +82,36 @@ stages:
 
 If the project already has a `stages:` key, replace it with the merged list above (retaining any project-specific stages in their natural position). This prevents `chosen stage X does not exist` errors when any included template references a stage not declared in the project.
 
-### 6. Commit and push
+### 6. Set EZ_APPSEC_VERSION CI variable in the target project
+
+Fetch the latest released version of ez-appsec:
+```bash
+LATEST_VERSION=$(glab api "projects/jfelten.work-group%2Fez_appsec%2Fez_appsec/releases/permalink/latest" \
+  --field tag_name 2>/dev/null | tr -d '"v' || echo "")
+```
+
+If `LATEST_VERSION` is empty or `glab` is unavailable, fall back to `"latest"`.
+
+Set it as a CI/CD variable on the target project (masked, not protected, so it applies to all branches):
+```bash
+TARGET_PROJECT_ID=$(glab api "projects/$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=""))' "<TARGET_PROJECT_PATH>")" --field id)
+
+glab api --method POST "projects/${TARGET_PROJECT_ID}/variables" \
+  --field key=EZ_APPSEC_VERSION \
+  --field value="${LATEST_VERSION}" \
+  --field masked=false \
+  --field protected=false \
+  --field variable_type=env_var 2>/dev/null || \
+glab api --method PUT "projects/${TARGET_PROJECT_ID}/variables/EZ_APPSEC_VERSION" \
+  --field value="${LATEST_VERSION}" \
+  --field masked=false \
+  --field protected=false 2>/dev/null || \
+echo "Could not set EZ_APPSEC_VERSION automatically — set it manually in Settings > CI/CD > Variables to the desired ez-appsec image tag (e.g. ${LATEST_VERSION:-latest})"
+```
+
+The target project path can be read from `glab repo view --format='{{.FullName}}'` inside the target directory.
+
+### 7. Commit and push
 
 ```bash
 cd "<TARGET>"
@@ -97,7 +126,7 @@ git pull --rebase origin "$BRANCH"
 git push origin "$BRANCH"
 ```
 
-### 7. Create the merge request
+### 8. Create the merge request
 
 Try with `glab` first:
 ```bash
@@ -133,10 +162,11 @@ To create the merge request manually, visit:
   <GitLab project URL>/-/merge_requests/new?merge_request[source_branch]=<BRANCH>
 ```
 
-### 8. Report outcome
+### 9. Report outcome
 
 Print a summary:
 - Branch pushed: `<BRANCH>`
 - MR URL (if created)
-- Remind the user that the **Rescan button** in the dashboard requires a GitLab Personal Access Token (with `api` scope) entered once in the dashboard settings — it is stored in the browser only and never written to any file
-- Remind the user that `EZ_APPSEC_BRANCH` can be overridden in the project's `variables:` block
+- `EZ_APPSEC_VERSION` set to: `<version>` (or note if it could not be set automatically)
+- Remind the user that the **Rescan button** links to the GitLab pipelines page — no token or secret is required
+- Remind the user that `EZ_APPSEC_BRANCH` and `EZ_APPSEC_VERSION` can be overridden in Settings > CI/CD > Variables

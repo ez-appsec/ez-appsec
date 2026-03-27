@@ -6,7 +6,8 @@ stages:
 
 variables:
   EZ_APPSEC_BRANCH: "ez-appsec-pages"
-  EZ_APPSEC_IMAGE: "registry.gitlab.com/jfelten.work-group/ez_appsec/ez_appsec:micro"
+  EZ_APPSEC_VERSION: "latest"
+  EZ_APPSEC_IMAGE: "registry.gitlab.com/jfelten.work-group/ez_appsec/ez_appsec:$EZ_APPSEC_VERSION"
 
 initialize:web:
   stage: ez-appsec
@@ -86,10 +87,9 @@ update:vulns:
     - mkdir -p public/data
     - cp "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json" public/data/vulnerabilities.json
     - |
-      EZ_VER=$(ez-appsec --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
       printf '{"gitlab_url":"https://%s","project_id":"%s","project_path":"%s","default_branch":"%s","ez_appsec_version":"%s"}\n' \
         "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_PROJECT_PATH}" "${CI_DEFAULT_BRANCH:-main}" \
-        "${EZ_VER}" > public/data/config.json
+        "${EZ_APPSEC_VERSION}" > public/data/config.json
     - git add public/data/vulnerabilities.json public/data/config.json
     - 'git diff --cached --quiet && echo "No vulnerability report changes" || git commit -m "chore: update vulnerability report"'
     - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
@@ -131,10 +131,9 @@ cold:scan:
     - mkdir -p public/data
     - cp "${EZ_APPSEC_REPORT}" public/data/vulnerabilities.json
     - |
-      EZ_VER=$(ez-appsec --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "")
       printf '{"gitlab_url":"https://%s","project_id":"%s","project_path":"%s","default_branch":"%s","ez_appsec_version":"%s"}\n' \
         "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_PROJECT_PATH}" "${CI_DEFAULT_BRANCH:-main}" \
-        "${EZ_VER}" > public/data/config.json
+        "${EZ_APPSEC_VERSION}" > public/data/config.json
     - git add public/data/vulnerabilities.json public/data/config.json
     - 'git diff --cached --quiet && echo "No changes" || git commit -m "chore: cold scan - update vulnerability report"'
     - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
