@@ -10,7 +10,9 @@ variables:
 
 initialize:web:
   stage: ez-appsec
-  image: alpine:3.18
+  image:
+    name: $EZ_APPSEC_IMAGE
+    entrypoint: [""]
   script:
     - apk add --no-cache git
     - git config user.email "ci@ez-appsec.ai"
@@ -18,14 +20,7 @@ initialize:web:
     - git fetch origin "${EZ_APPSEC_BRANCH}" || true
     - git checkout -B "${EZ_APPSEC_BRANCH}" "origin/${EZ_APPSEC_BRANCH}" 2>/dev/null || git checkout -B "${EZ_APPSEC_BRANCH}"
     - mkdir -p public
-    - |
-      if [ -d "web" ]; then
-        cp -r web/* public/
-      else
-        git clone --depth 1 "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/jfelten.work-group/ez_appsec/ez_appsec.git" /tmp/ez-appsec-src
-        cp -r /tmp/ez-appsec-src/web/* public/
-        rm -rf /tmp/ez-appsec-src
-      fi
+    - cp -r /web/* public/
     - git add public/
     - 'git diff --cached --quiet && echo "No changes to web content" || git commit -m "chore: update web content from main"'
     - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
