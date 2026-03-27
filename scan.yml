@@ -22,11 +22,14 @@ initialize:web:
     - mkdir -p public
     - cp -r /web/* public/
     - git add public/
-    - 'git diff --cached --quiet && echo "No changes to web content" || (git commit -m "chore: update web content from main" && git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}")'
+    - 'git diff --cached --quiet && echo "No changes to web content" || git commit -m "chore: update web content from main"'
+    - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
   rules:
     - if: '$CI_COMMIT_BRANCH == $EZ_APPSEC_BRANCH'
       when: never
     - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - web/**/*
       when: always
     - when: manual
 
