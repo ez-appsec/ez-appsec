@@ -30,6 +30,8 @@ initialize:web:
     - 'git diff --cached --quiet && echo "No changes to web content" || git commit -m "chore: update web content from main"'
     - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
   rules:
+    - if: '$CI_COMMIT_BRANCH == $EZ_APPSEC_BRANCH'
+      when: never
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: always
     - when: manual
@@ -57,6 +59,8 @@ scan:pipeline:
     when: always
 
   rules:
+    - if: '$CI_COMMIT_BRANCH == $EZ_APPSEC_BRANCH'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
     - if: '$CI_COMMIT_BRANCH == "main"'
@@ -83,6 +87,8 @@ update:vulns:
   variables:
     EZ_APPSEC_OUTPUT_DIR: "scan-results"
   rules:
+    - if: '$CI_COMMIT_BRANCH == $EZ_APPSEC_BRANCH'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
     - if: '$CI_COMMIT_BRANCH == "main"'
