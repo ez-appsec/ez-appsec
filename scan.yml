@@ -59,6 +59,8 @@ scan:pipeline:
       when: never
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
       when: never
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: never
     - if: '$EZ_APPSEC_COLD_SCAN == "true"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -93,6 +95,8 @@ update:vulns:
     - if: '$CI_COMMIT_BRANCH == $EZ_APPSEC_BRANCH'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "api"'
       when: never
     - if: '$EZ_APPSEC_COLD_SCAN == "true"'
       when: never
@@ -139,6 +143,8 @@ cold:scan:
     when: always
   rules:
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "api"'
       when: always
     - if: '$EZ_APPSEC_COLD_SCAN == "true"'
       when: always
