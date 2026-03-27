@@ -27,7 +27,31 @@ class VulnerabilityDashboard {
 
     async init() {
         this.attachEventListeners();
+        this.initModal();
         await this.loadVulnerabilities();
+    }
+
+    initModal() {
+        const modal = document.getElementById('vuln-modal');
+        const closeBtn = document.getElementById('modal-close');
+        closeBtn.addEventListener('click', () => this.closeModal());
+        modal.addEventListener('click', (e) => { if (e.target === modal) this.closeModal(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') this.closeModal(); });
+    }
+
+    showDetail(vuln) {
+        const modal = document.getElementById('vuln-modal');
+        document.getElementById('modal-content').innerHTML = this.createVulnerabilityCard(vuln);
+        modal.setAttribute('aria-hidden', 'false');
+        modal.classList.add('modal-overlay--open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    closeModal() {
+        const modal = document.getElementById('vuln-modal');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.classList.remove('modal-overlay--open');
+        document.body.style.overflow = '';
     }
 
     attachEventListeners() {
@@ -39,15 +63,14 @@ class VulnerabilityDashboard {
 
     async loadVulnerabilities() {
         try {
-            // Try to load all JSON files from data/ directory
             const response = await fetch('data/vulnerabilities.json');
-            
+
             if (!response.ok) {
                 throw new Error('Could not load vulnerabilities');
             }
-            
+
             const data = await response.json();
-            
+
             // Handle both direct vulnerability array and GitLab report format
             if (Array.isArray(data)) {
                 this.vulnerabilities = data;
@@ -58,18 +81,46 @@ class VulnerabilityDashboard {
             } else {
                 throw new Error('Invalid vulnerability data format');
             }
-            
+
             // Normalize vulnerability data
             this.vulnerabilities = this.vulnerabilities.map(v => this.normalizeVulnerability(v));
-            
+
             // Sort by severity by default
             this.vulnerabilities.sort((a, b) => this.severityValue(b.severity) - this.severityValue(a.severity));
-            
+
+            this.updateScanMeta(data);
+            this.populateScannerFilter();
             this.applyFilters();
         } catch (error) {
             console.error('Error loading vulnerabilities:', error);
             this.showError(`Failed to load vulnerabilities: ${error.message}`);
         }
+    }
+
+    updateScanMeta(data) {
+        const meta = document.getElementById('scan-meta');
+        if (!meta) return;
+        const scanDate = data.scan_date || data.generated_at || null;
+        const project  = data.project || data.project_name || null;
+        const parts = [];
+        if (project) parts.push(`Project: ${project}`);
+        if (scanDate) parts.push(`Scanned: ${new Date(scanDate).toLocaleString()}`);
+        parts.push(`${this.vulnerabilities.length} findings`);
+        meta.textContent = parts.join('  ·  ');
+    }
+
+    populateScannerFilter() {
+        const select = this.scannerFilter;
+        if (!select || select.tagName !== 'SELECT') return;
+        const scanners = [...new Set(this.vulnerabilities.map(v => v.scanner).filter(Boolean))].sort();
+        // Remove existing dynamic options (keep the first "All scanners" option)
+        while (select.options.length > 1) select.remove(1);
+        scanners.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.toLowerCase();
+            opt.textContent = s;
+            select.appendChild(opt);
+        });
     }
 
     normalizeVulnerability(vuln) {
@@ -98,6 +149,7 @@ class VulnerabilityDashboard {
             cve: vuln.cve || '',
             identifiers: vuln.identifiers || [],
             links: vuln.links || [],
+            external_id: vuln.cve || (vuln.identifiers?.[0]?.value) || (vuln.identifiers?.[0]?.name) || '',
             
             // Raw data for flexibility
             raw: vuln
@@ -176,9 +228,43 @@ class VulnerabilityDashboard {
             return;
         }
 
-        this.container.innerHTML = this.filteredVulnerabilities
-            .map(vuln => this.createVulnerabilityCard(vuln))
+        const rows = this.filteredVulnerabilities
+            .map(vuln => this.createTableRow(vuln))
             .join('');
+
+        this.container.innerHTML = `
+            <table class="vuln-table">
+                <thead>
+                    <tr>
+                        <th>Severity</th>
+                        <th>Name</th>
+                        <th>Scanner</th>
+                        <th>Location</th>
+                        <th>External ID</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+
+        this.container.querySelectorAll('.vuln-row').forEach((row, idx) => {
+            row.addEventListener('click', () => this.showDetail(this.filteredVulnerabilities[idx]));
+        });
+    }
+
+    createTableRow(vuln) {
+        const sev = this.getSeverityClass(vuln.severity);
+        const lineInfo = vuln.line ? `:${vuln.line}` : '';
+        const extId = vuln.external_id || '—';
+        return `
+            <tr class="vuln-row vuln-row--${sev}">
+                <td><span class="badge badge-severity badge-${sev}">${vuln.severity.toUpperCase()}</span></td>
+                <td class="vuln-row__name">${this.escapeHtml(vuln.name)}</td>
+                <td>${this.escapeHtml(vuln.scanner)}</td>
+                <td class="vuln-row__location">${this.escapeHtml(vuln.file)}${lineInfo}</td>
+                <td class="vuln-row__extid">${this.escapeHtml(extId)}</td>
+            </tr>
+        `;
     }
 
     createVulnerabilityCard(vuln) {
