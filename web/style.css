@@ -111,6 +111,8 @@ pre code { background: none; padding: 0; color: inherit; }
 
 .nav__actions { display: flex; align-items: center; gap: 8px; }
 
+.btn--upgrade { border: 1px solid var(--medium); color: var(--medium); background: rgba(251,191,36,.08); }
+
 /* ── Footer ─────────────────────────────────────────────────────────────── */
 
 .footer { padding: 40px 0; border-top: 1px solid var(--border); }

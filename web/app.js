@@ -68,11 +68,31 @@ class VulnerabilityDashboard {
             const r = await fetch('data/config.json');
             if (!r.ok) return;
             this.config = await r.json();
-            const btn = document.getElementById('rescan-btn');
-            if (btn && this.config.project_path && this.config.gitlab_url) {
-                btn.href = `${this.config.gitlab_url}/${this.config.project_path}/-/pipelines/new`;
+
+            const rescan = document.getElementById('rescan-btn');
+            if (rescan && this.config.project_path && this.config.gitlab_url) {
+                rescan.href = `${this.config.gitlab_url}/${this.config.project_path}/-/pipelines/new`;
+            }
+
+            const upgrade = document.getElementById('upgrade-btn');
+            if (upgrade && this.isOutdated(this.config.ez_appsec_version, this.config.ez_appsec_latest)) {
+                upgrade.href = `${this.config.gitlab_url}/jfelten.work-group/ez_appsec/ez_appsec/-/releases`;
+                upgrade.title = `Upgrade from ${this.config.ez_appsec_version} to ${this.config.ez_appsec_latest}`;
+                upgrade.textContent = `Upgrade to ${this.config.ez_appsec_latest}`;
+                upgrade.hidden = false;
             }
         } catch (e) { /* config is optional */ }
+    }
+
+    isOutdated(installed, latest) {
+        if (!installed || !latest) return false;
+        const a = installed.split('.').map(Number);
+        const b = latest.split('.').map(Number);
+        for (let i = 0; i < 3; i++) {
+            if ((b[i] || 0) > (a[i] || 0)) return true;
+            if ((b[i] || 0) < (a[i] || 0)) return false;
+        }
+        return false;
     }
 
     async loadVulnerabilities() {
