@@ -59,6 +59,8 @@ scan:pipeline:
       when: never
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
       when: never
+    - if: '$EZ_APPSEC_COLD_SCAN == "true"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
     - if: '$CI_COMMIT_BRANCH == "main"'
@@ -81,7 +83,7 @@ update:vulns:
     - git checkout -B "${EZ_APPSEC_BRANCH}" "origin/${EZ_APPSEC_BRANCH}" 2>/dev/null || git checkout -B "${EZ_APPSEC_BRANCH}"
     - mkdir -p public/data
     - cp "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json" public/data/vulnerabilities.json
-    - printf '{"gitlab_url":"https://%s","project_id":"%s","default_branch":"%s","trigger_token":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_DEFAULT_BRANCH:-main}" "${EZ_APPSEC_TRIGGER_TOKEN:-}" > public/data/config.json
+    - printf '{"gitlab_url":"https://%s","project_id":"%s","default_branch":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_DEFAULT_BRANCH:-main}" > public/data/config.json
     - git add public/data/vulnerabilities.json public/data/config.json
     - 'git diff --cached --quiet && echo "No vulnerability report changes" || git commit -m "chore: update vulnerability report"'
     - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
@@ -91,6 +93,8 @@ update:vulns:
     - if: '$CI_COMMIT_BRANCH == $EZ_APPSEC_BRANCH'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
+      when: never
+    - if: '$EZ_APPSEC_COLD_SCAN == "true"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
@@ -118,7 +122,7 @@ cold:scan:
     - git checkout -B "${EZ_APPSEC_BRANCH}" "origin/${EZ_APPSEC_BRANCH}" 2>/dev/null || git checkout -B "${EZ_APPSEC_BRANCH}"
     - mkdir -p public/data
     - cp "${EZ_APPSEC_REPORT}" public/data/vulnerabilities.json
-    - printf '{"gitlab_url":"https://%s","project_id":"%s","default_branch":"%s","trigger_token":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_DEFAULT_BRANCH:-main}" "${EZ_APPSEC_TRIGGER_TOKEN:-}" > public/data/config.json
+    - printf '{"gitlab_url":"https://%s","project_id":"%s","default_branch":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_DEFAULT_BRANCH:-main}" > public/data/config.json
     - git add public/data/vulnerabilities.json public/data/config.json
     - 'git diff --cached --quiet && echo "No changes" || git commit -m "chore: cold scan - update vulnerability report"'
     - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
@@ -135,6 +139,8 @@ cold:scan:
     when: always
   rules:
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
+      when: always
+    - if: '$EZ_APPSEC_COLD_SCAN == "true"'
       when: always
     - when: never
 

@@ -79,17 +79,17 @@ class VulnerabilityDashboard {
         modal.addEventListener('click', (e) => { if (e.target === modal) this.closeConfigModal(); });
         document.getElementById('save-token-btn').addEventListener('click', () => {
             const val = document.getElementById('trigger-token-input').value.trim();
-            if (val) localStorage.setItem('ez_appsec_trigger_token', val);
+            if (val) localStorage.setItem('ez_appsec_pat', val);
             this.closeConfigModal();
         });
         document.getElementById('clear-token-btn').addEventListener('click', () => {
-            localStorage.removeItem('ez_appsec_trigger_token');
+            localStorage.removeItem('ez_appsec_pat');
             document.getElementById('trigger-token-input').value = '';
         });
     }
 
     openConfigModal() {
-        const saved = localStorage.getItem('ez_appsec_trigger_token') || this.config?.trigger_token || '';
+        const saved = localStorage.getItem('ez_appsec_pat') || '';
         document.getElementById('trigger-token-input').value = saved;
         const modal = document.getElementById('config-modal');
         modal.setAttribute('aria-hidden', 'false');
@@ -106,8 +106,8 @@ class VulnerabilityDashboard {
     }
 
     async triggerRescan() {
-        const token = localStorage.getItem('ez_appsec_trigger_token') || this.config?.trigger_token;
-        if (!token) { this.openConfigModal(); return; }
+        const pat = localStorage.getItem('ez_appsec_pat');
+        if (!pat) { this.openConfigModal(); return; }
 
         if (!this.config?.project_id) {
             alert('No project config found. Run a CI scan first to generate config.json.');
@@ -120,12 +120,13 @@ class VulnerabilityDashboard {
         btn.classList.add('btn--scanning');
 
         try {
-            const url = `${this.config.gitlab_url}/api/v4/projects/${encodeURIComponent(this.config.project_id)}/trigger/pipeline`;
+            const url = `${this.config.gitlab_url}/api/v4/projects/${encodeURIComponent(this.config.project_id)}/pipeline`;
             const body = new FormData();
-            body.append('token', token);
             body.append('ref', this.config.default_branch || 'main');
+            body.append('variables[][key]', 'EZ_APPSEC_COLD_SCAN');
+            body.append('variables[][value]', 'true');
 
-            const r = await fetch(url, { method: 'POST', body });
+            const r = await fetch(url, { method: 'POST', body, headers: { 'PRIVATE-TOKEN': pat } });
             if (!r.ok) throw new Error(`GitLab returned ${r.status}`);
 
             btn.classList.replace('btn--scanning', 'btn--success');

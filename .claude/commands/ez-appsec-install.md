@@ -97,41 +97,7 @@ git pull --rebase origin "$BRANCH"
 git push origin "$BRANCH"
 ```
 
-### 7. Create and store a pipeline trigger token
-
-Create a pipeline trigger token so the Rescan button in the ez-appsec dashboard works automatically without the user having to enter a token manually.
-
-Get the project's URL-encoded path from the git remote:
-```bash
-PROJECT_PATH=$(git remote get-url origin | sed 's|.*[:/]\([^/]*/[^/]*\)\.git$|\1|;s|.*[:/]\([^/]*/[^/]*\)$|\1|')
-ENCODED_PATH=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$PROJECT_PATH")
-```
-
-Create the trigger and extract the token:
-```bash
-TRIGGER=$(glab api --method POST "projects/${ENCODED_PATH}/triggers" \
-  --field description="ez-appsec dashboard rescan")
-TRIGGER_TOKEN=$(echo "$TRIGGER" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
-```
-
-Store it as a masked CI variable (POST to create, PUT to update if it already exists):
-```bash
-glab api --method POST "projects/${ENCODED_PATH}/variables" \
-  --field key="EZ_APPSEC_TRIGGER_TOKEN" \
-  --field value="$TRIGGER_TOKEN" \
-  --field masked=true \
-  --field protected=false 2>/dev/null || \
-glab api --method PUT "projects/${ENCODED_PATH}/variables/EZ_APPSEC_TRIGGER_TOKEN" \
-  --field value="$TRIGGER_TOKEN" \
-  --field masked=true \
-  --field protected=false
-```
-
-If `glab` or `python3` is unavailable, skip this step and note to the user that they should:
-1. Go to **Settings → CI/CD → Pipeline triggers** and create a trigger named "ez-appsec dashboard rescan"
-2. Add the token as a masked CI variable named `EZ_APPSEC_TRIGGER_TOKEN`
-
-### 8. Create the merge request
+### 7. Create the merge request
 
 Try with `glab` first:
 ```bash
@@ -167,10 +133,10 @@ To create the merge request manually, visit:
   <GitLab project URL>/-/merge_requests/new?merge_request[source_branch]=<BRANCH>
 ```
 
-### 9. Report outcome
+### 8. Report outcome
 
 Print a summary:
 - Branch pushed: `<BRANCH>`
 - MR URL (if created)
-- Whether the pipeline trigger token was created and stored as `EZ_APPSEC_TRIGGER_TOKEN`
+- Remind the user that the **Rescan button** in the dashboard requires a GitLab Personal Access Token (with `api` scope) entered once in the dashboard settings — it is stored in the browser only and never written to any file
 - Remind the user that `EZ_APPSEC_BRANCH` can be overridden in the project's `variables:` block
