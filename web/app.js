@@ -74,14 +74,28 @@ class VulnerabilityDashboard {
                 rescan.href = `${this.config.gitlab_url}/${this.config.project_path}/-/pipelines/new`;
             }
 
-            const upgrade = document.getElementById('upgrade-btn');
-            if (upgrade && this.isOutdated(this.config.ez_appsec_version, this.config.ez_appsec_latest)) {
-                upgrade.href = `${this.config.gitlab_url}/jfelten.work-group/ez_appsec/ez_appsec/-/releases`;
-                upgrade.title = `Upgrade from ${this.config.ez_appsec_version} to ${this.config.ez_appsec_latest}`;
-                upgrade.textContent = `Upgrade to ${this.config.ez_appsec_latest}`;
-                upgrade.hidden = false;
+            if (this.config.ez_appsec_version) {
+                this.checkForUpgrade(this.config.gitlab_url);
             }
         } catch (e) { /* config is optional */ }
+    }
+
+    async checkForUpgrade(gitlabUrl) {
+        try {
+            const api = `${gitlabUrl}/api/v4/projects/jfelten.work-group%2Fez_appsec%2Fez_appsec/releases/permalink/latest`;
+            const r = await fetch(api);
+            if (!r.ok) return;
+            const release = await r.json();
+            const latest = (release.tag_name || '').replace(/^v/, '');
+
+            if (this.isOutdated(this.config.ez_appsec_version, latest)) {
+                const btn = document.getElementById('upgrade-btn');
+                btn.href = `${gitlabUrl}/jfelten.work-group/ez_appsec/ez_appsec/-/releases`;
+                btn.title = `Upgrade from ${this.config.ez_appsec_version} to ${latest}`;
+                btn.textContent = `Upgrade to ${latest}`;
+                btn.hidden = false;
+            }
+        } catch (e) { /* project not yet public or network unavailable */ }
     }
 
     isOutdated(installed, latest) {
