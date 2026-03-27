@@ -378,18 +378,16 @@ version:tag:
       urllib.request.urlopen(req)
       print(f"✅ README updated to v{version}")
       EOF
-    - echo "Creating tag v${VERSION}..."
+    - echo "Creating tag v${VERSION} on ${CI_COMMIT_SHA}..."
     - |
-      # Tag the latest commit on main (which is now the README update commit)
-      LATEST_SHA=$(curl -s \
-        --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}" \
-        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/branches/main" | \
-        python3 -c "import sys,json; print(json.load(sys.stdin)['commit']['id'])")
+      # Tag the current commit (the version bump commit), NOT the latest branch
+      # tip — the README update commit that follows has [skip ci] which would
+      # cause the tag pipeline to be skipped.
       curl --fail --request POST \
         --header "PRIVATE-TOKEN: ${PROJECT_ACCESS_TOKEN}" \
         --header "Content-Type: application/json" \
         "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags" \
-        --data "{\"tag_name\": \"v${VERSION}\", \"ref\": \"${LATEST_SHA}\"}"
+        --data "{\"tag_name\": \"v${VERSION}\", \"ref\": \"${CI_COMMIT_SHA}\"}"
       echo "✅ Tag v${VERSION} created — release pipeline triggered"
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
