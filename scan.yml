@@ -31,7 +31,6 @@ initialize:web:
       changes:
         - web/**/*
       when: always
-    - when: manual
 
 scan:pipeline:
   stage: ez-appsec
@@ -58,6 +57,8 @@ scan:pipeline:
   rules:
     - if: '$CI_COMMIT_BRANCH == $EZ_APPSEC_BRANCH'
       when: never
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
     - if: '$CI_COMMIT_BRANCH == "main"'
@@ -80,7 +81,8 @@ update:vulns:
     - git checkout -B "${EZ_APPSEC_BRANCH}" "origin/${EZ_APPSEC_BRANCH}" 2>/dev/null || git checkout -B "${EZ_APPSEC_BRANCH}"
     - mkdir -p public/data
     - cp "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json" public/data/vulnerabilities.json
-    - git add public/data/vulnerabilities.json
+    - printf '{"gitlab_url":"https://%s","project_id":"%s","default_branch":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_DEFAULT_BRANCH:-main}" > public/data/config.json
+    - git add public/data/vulnerabilities.json public/data/config.json
     - 'git diff --cached --quiet && echo "No vulnerability report changes" || git commit -m "chore: update vulnerability report"'
     - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
   variables:
@@ -88,11 +90,53 @@ update:vulns:
   rules:
     - if: '$CI_COMMIT_BRANCH == $EZ_APPSEC_BRANCH'
       when: never
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: always
     - when: manual
+
+cold:scan:
+  stage: ez-appsec
+  image:
+    name: $EZ_APPSEC_IMAGE
+    entrypoint: [""]
+  variables:
+    EZ_APPSEC_OUTPUT_DIR: "scan-results"
+    EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
+  script:
+    - echo "🔎 Running cold scan..."
+    - mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
+    - ez-appsec status || true
+    - ez-appsec gitlab-scan . --output "${EZ_APPSEC_REPORT}"
+    - apk add --no-cache git curl
+    - git config user.email "ci@ez-appsec.ai"
+    - git config user.name "ez-appsec CI"
+    - git fetch origin "${EZ_APPSEC_BRANCH}" || true
+    - git checkout -B "${EZ_APPSEC_BRANCH}" "origin/${EZ_APPSEC_BRANCH}" 2>/dev/null || git checkout -B "${EZ_APPSEC_BRANCH}"
+    - mkdir -p public/data
+    - cp "${EZ_APPSEC_REPORT}" public/data/vulnerabilities.json
+    - printf '{"gitlab_url":"https://%s","project_id":"%s","default_branch":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_DEFAULT_BRANCH:-main}" > public/data/config.json
+    - git add public/data/vulnerabilities.json public/data/config.json
+    - 'git diff --cached --quiet && echo "No changes" || git commit -m "chore: cold scan - update vulnerability report"'
+    - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
+    - |
+      curl --silent --request POST \
+        --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        --form "ref=${EZ_APPSEC_BRANCH}" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipeline" || echo "Could not trigger pages deploy pipeline"
+  artifacts:
+    name: "ez-appsec-cold-scan-${CI_COMMIT_SHA}"
+    paths:
+      - "${EZ_APPSEC_REPORT}"
+    expire_in: 7 days
+    when: always
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+      when: always
+    - when: never
 
 pages:
   stage: deploy

@@ -20,6 +20,10 @@
         <a href="dependencies.html">Dependencies (SBOM)</a>
         <a href="threat-model.html">Threat Model</a>
       </nav>
+      <div class="nav__actions">
+        <button id="rescan-btn" class="btn btn--primary btn--sm">Rescan</button>
+        <button id="config-btn" class="btn btn--outline btn--sm nav__config-btn" title="Configure trigger token">&#9881;</button>
+      </div>
     </div>
   </header>
 
@@ -100,6 +104,25 @@
       </div>
     </div>
   </main>
+
+  <!-- ── Config Modal ────────────────────────────────────────────────────── -->
+  <div id="config-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-panel modal-panel--sm" role="dialog" aria-modal="true">
+      <button class="modal-close" id="config-modal-close" aria-label="Close settings">&times;</button>
+      <h2 style="font-size:1.1rem; font-weight:700; margin-bottom:8px;">Rescan Settings</h2>
+      <p style="font-size:.85rem; color:var(--text-muted); margin-bottom:16px;">
+        Enter a GitLab <a href="https://docs.gitlab.com/ee/ci/triggers/" target="_blank" style="color:var(--accent)">pipeline trigger token</a>
+        to enable one-click rescanning. The token is stored in your browser only.
+      </p>
+      <label style="font-size:.8rem; color:var(--text-muted); display:block; margin-bottom:6px;">Trigger Token</label>
+      <input id="trigger-token-input" type="password" class="filter-input filter-input--search"
+             placeholder="glptt-…" autocomplete="off" />
+      <div style="display:flex; gap:8px; margin-top:14px;">
+        <button id="save-token-btn" class="btn btn--primary btn--sm">Save</button>
+        <button id="clear-token-btn" class="btn btn--outline btn--sm">Clear</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ── Detail Modal ────────────────────────────────────────────────────── -->
   <div id="vuln-modal" class="modal-overlay" aria-hidden="true">

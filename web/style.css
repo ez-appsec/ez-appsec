@@ -109,6 +109,15 @@ pre code { background: none; padding: 0; color: inherit; }
 
 .nav__active { color: var(--accent) !important; }
 
+.nav__actions { display: flex; align-items: center; gap: 8px; }
+.nav__config-btn { font-size: 1rem; padding: 8px 10px; }
+
+.btn--scanning { opacity: .7; cursor: wait; }
+.btn--success  { background: var(--low) !important; color: #000 !important; }
+.btn--error    { background: var(--critical) !important; color: #fff !important; }
+
+.modal-panel--sm { max-width: 420px; }
+
 /* ── Footer ─────────────────────────────────────────────────────────────── */
 
 .footer { padding: 40px 0; border-top: 1px solid var(--border); }
