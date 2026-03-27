@@ -29,7 +29,6 @@ class VulnerabilityDashboard {
     async init() {
         this.attachEventListeners();
         this.initModal();
-        this.initConfigModal();
         await this.loadConfig();
         await this.loadVulnerabilities();
     }
@@ -62,90 +61,18 @@ class VulnerabilityDashboard {
         this.scannerFilter.addEventListener('change', () => this.applyFilters());
         this.searchFilter.addEventListener('input', () => this.applyFilters());
         this.resetButton.addEventListener('click', () => this.resetFilters());
-        document.getElementById('rescan-btn').addEventListener('click', () => this.triggerRescan());
-        document.getElementById('config-btn').addEventListener('click', () => this.openConfigModal());
     }
 
     async loadConfig() {
         try {
             const r = await fetch('data/config.json');
-            if (r.ok) this.config = await r.json();
+            if (!r.ok) return;
+            this.config = await r.json();
+            const btn = document.getElementById('rescan-btn');
+            if (btn && this.config.project_path && this.config.gitlab_url) {
+                btn.href = `${this.config.gitlab_url}/${this.config.project_path}/-/pipelines/new`;
+            }
         } catch (e) { /* config is optional */ }
-    }
-
-    initConfigModal() {
-        const modal = document.getElementById('config-modal');
-        document.getElementById('config-modal-close').addEventListener('click', () => this.closeConfigModal());
-        modal.addEventListener('click', (e) => { if (e.target === modal) this.closeConfigModal(); });
-        document.getElementById('save-token-btn').addEventListener('click', () => {
-            const val = document.getElementById('trigger-token-input').value.trim();
-            if (val) localStorage.setItem('ez_appsec_pat', val);
-            this.closeConfigModal();
-        });
-        document.getElementById('clear-token-btn').addEventListener('click', () => {
-            localStorage.removeItem('ez_appsec_pat');
-            document.getElementById('trigger-token-input').value = '';
-        });
-    }
-
-    openConfigModal() {
-        const saved = localStorage.getItem('ez_appsec_pat') || '';
-        document.getElementById('trigger-token-input').value = saved;
-        const modal = document.getElementById('config-modal');
-        modal.setAttribute('aria-hidden', 'false');
-        modal.classList.add('modal-overlay--open');
-        document.body.style.overflow = 'hidden';
-        document.getElementById('trigger-token-input').focus();
-    }
-
-    closeConfigModal() {
-        const modal = document.getElementById('config-modal');
-        modal.setAttribute('aria-hidden', 'true');
-        modal.classList.remove('modal-overlay--open');
-        document.body.style.overflow = '';
-    }
-
-    async triggerRescan() {
-        const pat = localStorage.getItem('ez_appsec_pat');
-        if (!pat) { this.openConfigModal(); return; }
-
-        if (!this.config?.project_id) {
-            alert('No project config found. Run a CI scan first to generate config.json.');
-            return;
-        }
-
-        const btn = document.getElementById('rescan-btn');
-        btn.disabled = true;
-        btn.textContent = 'Scanning\u2026';
-        btn.classList.add('btn--scanning');
-
-        try {
-            const url = `${this.config.gitlab_url}/api/v4/projects/${encodeURIComponent(this.config.project_id)}/pipeline`;
-            const body = new FormData();
-            body.append('ref', this.config.default_branch || 'main');
-            body.append('variables[][key]', 'EZ_APPSEC_COLD_SCAN');
-            body.append('variables[][value]', 'true');
-
-            const r = await fetch(url, { method: 'POST', body, headers: { 'PRIVATE-TOKEN': pat } });
-            if (!r.ok) throw new Error(`GitLab returned ${r.status}`);
-
-            btn.classList.replace('btn--scanning', 'btn--success');
-            btn.textContent = 'Triggered \u2713';
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.classList.remove('btn--success');
-                btn.textContent = 'Rescan';
-            }, 4000);
-        } catch (e) {
-            console.error('Rescan trigger failed:', e);
-            btn.classList.replace('btn--scanning', 'btn--error');
-            btn.textContent = 'Failed \u2717';
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.classList.remove('btn--error');
-                btn.textContent = 'Rescan';
-            }, 4000);
-        }
     }
 
     async loadVulnerabilities() {
