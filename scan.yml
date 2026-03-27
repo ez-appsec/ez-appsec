@@ -6,6 +6,7 @@ stages:
 
 variables:
   EZ_APPSEC_BRANCH: "ez-appsec-pages"
+  EZ_APPSEC_IMAGE: "registry.gitlab.com/jfelten.work-group/ez_appsec/ez_appsec:micro"
 
 initialize:web:
   stage: ez-appsec
@@ -17,7 +18,14 @@ initialize:web:
     - git fetch origin "${EZ_APPSEC_BRANCH}" || true
     - git checkout -B "${EZ_APPSEC_BRANCH}" "origin/${EZ_APPSEC_BRANCH}" 2>/dev/null || git checkout -B "${EZ_APPSEC_BRANCH}"
     - mkdir -p public
-    - cp -r web/* public/
+    - |
+      if [ -d "web" ]; then
+        cp -r web/* public/
+      else
+        git clone --depth 1 "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/jfelten.work-group/ez_appsec/ez_appsec.git" /tmp/ez-appsec-src
+        cp -r /tmp/ez-appsec-src/web/* public/
+        rm -rf /tmp/ez-appsec-src
+      fi
     - git add public/
     - 'git diff --cached --quiet && echo "No changes to web content" || git commit -m "chore: update web content from main"'
     - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "${EZ_APPSEC_BRANCH}"
@@ -28,15 +36,10 @@ initialize:web:
 
 scan:pipeline:
   stage: ez-appsec
-  image: python:3.11-slim
+  image: $EZ_APPSEC_IMAGE
   variables:
     EZ_APPSEC_OUTPUT_DIR: "scan-results"
     EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
-
-  before_script:
-    - python --version
-    - pip install --no-cache-dir -r requirements.txt
-    - pip install --no-cache-dir -e .
 
   script:
     - echo "🔎 Running ez-appsec scan..."
