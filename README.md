@@ -1,4 +1,4 @@
-# ez-appsec v0.1.1
+# ez-appsec v0.1.2
 
 **AI-powered application security scanning** — A free, open-source replacement for GitLab and GitHub security scanning.
 
