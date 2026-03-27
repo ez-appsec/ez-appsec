@@ -18,6 +18,9 @@ GLOBAL_CLAUDE_DIR="${HOME}/.claude/commands"
 PROJECT_CLAUDE_DIR=".claude/commands"
 SKILL_NAME="ez-appsec-scan"
 INSTALL_SKILL_NAME="ez-appsec-install"
+PIPELINE_SCAN_SKILL_NAME="ez-appsec-pipeline-scan"
+UPDATE_VULNS_SKILL_NAME="ez-appsec-update-vulns"
+LOCAL_SCAN_SKILL_NAME="ez-appsec-local-scan"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -56,22 +59,40 @@ install_claude_global() {
   mkdir -p "${GLOBAL_CLAUDE_DIR}"
   cp "${SKILL_DIR}/claude/${SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${SKILL_NAME}.md"
   cp "${SKILL_DIR}/claude/${INSTALL_SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${PIPELINE_SCAN_SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${PIPELINE_SCAN_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${UPDATE_VULNS_SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${UPDATE_VULNS_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${LOCAL_SCAN_SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${LOCAL_SCAN_SKILL_NAME}.md"
   green "✓ Claude Code skills installed globally"
   echo "  Location : ${GLOBAL_CLAUDE_DIR}/${SKILL_NAME}.md"
   echo "  Location : ${GLOBAL_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md"
-  echo "  Usage    : /ez-appsec-scan [path]       — run a security scan"
-  echo "  Usage    : /ez-appsec-install [path]    — install into a GitLab project"
+  echo "  Location : ${GLOBAL_CLAUDE_DIR}/${PIPELINE_SCAN_SKILL_NAME}.md"
+  echo "  Location : ${GLOBAL_CLAUDE_DIR}/${UPDATE_VULNS_SKILL_NAME}.md"
+  echo "  Location : ${GLOBAL_CLAUDE_DIR}/${LOCAL_SCAN_SKILL_NAME}.md"
+  echo "  Usage    : /ez-appsec-local-scan [path]    — run a local scan via Docker"
+  echo "  Usage    : /ez-appsec-scan [path]          — run a local security scan"
+  echo "  Usage    : /ez-appsec-install [path]       — install into a GitLab project"
+  echo "  Usage    : /ez-appsec-pipeline-scan [path] — trigger and report scan:pipeline"
+  echo "  Usage    : /ez-appsec-update-vulns [path]  — trigger update:vulns to publish report"
 }
 
 install_claude_project() {
   mkdir -p "${PROJECT_CLAUDE_DIR}"
   cp "${SKILL_DIR}/claude/${SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${SKILL_NAME}.md"
   cp "${SKILL_DIR}/claude/${INSTALL_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${PIPELINE_SCAN_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${PIPELINE_SCAN_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${UPDATE_VULNS_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${UPDATE_VULNS_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${LOCAL_SCAN_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${LOCAL_SCAN_SKILL_NAME}.md"
   green "✓ Claude Code skills installed for this project"
   echo "  Location : ${PROJECT_CLAUDE_DIR}/${SKILL_NAME}.md"
   echo "  Location : ${PROJECT_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md"
+  echo "  Location : ${PROJECT_CLAUDE_DIR}/${PIPELINE_SCAN_SKILL_NAME}.md"
+  echo "  Location : ${PROJECT_CLAUDE_DIR}/${UPDATE_VULNS_SKILL_NAME}.md"
+  echo "  Location : ${PROJECT_CLAUDE_DIR}/${LOCAL_SCAN_SKILL_NAME}.md"
+  echo "  Usage    : /ez-appsec-local-scan [path]"
   echo "  Usage    : /ez-appsec-scan [path]"
   echo "  Usage    : /ez-appsec-install [path]"
+  echo "  Usage    : /ez-appsec-pipeline-scan [path]"
+  echo "  Usage    : /ez-appsec-update-vulns [path]"
 }
 
 install_copilot() {
@@ -103,7 +124,7 @@ install_cursor() {
 uninstall() {
   local removed=0
 
-  for f in "${GLOBAL_CLAUDE_DIR}/${SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md"; do
+  for f in "${GLOBAL_CLAUDE_DIR}/${SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${PIPELINE_SCAN_SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${UPDATE_VULNS_SKILL_NAME}.md" "${GLOBAL_CLAUDE_DIR}/${LOCAL_SCAN_SKILL_NAME}.md"; do
     if [[ -f "${f}" ]]; then
       rm "${f}"
       green "✓ Removed ${f}"
@@ -111,7 +132,7 @@ uninstall() {
     fi
   done
 
-  for f in "${PROJECT_CLAUDE_DIR}/${SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md"; do
+  for f in "${PROJECT_CLAUDE_DIR}/${SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${PIPELINE_SCAN_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${UPDATE_VULNS_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${LOCAL_SCAN_SKILL_NAME}.md"; do
     if [[ -f "${f}" ]]; then
       rm "${f}"
       green "✓ Removed ${f}"

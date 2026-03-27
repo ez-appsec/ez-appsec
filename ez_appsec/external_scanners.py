@@ -46,7 +46,7 @@ class GitleaksScanner(ScannerWrapper):
     def is_installed(self) -> bool:
         """Check if gitleaks is installed"""
         try:
-            subprocess.run(["gitleaks", "--version"], capture_output=True, check=True)
+            subprocess.run(["gitleaks", "version"], capture_output=True, check=True)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
@@ -136,11 +136,24 @@ class SemgrepScanner(ScannerWrapper):
             raw_output_path = temp_file.name
         
         try:
+            # Prefer bundled GitLab SAST rules (language subdirs + ruby pack); fall back to registry
+            sast_rules_root = "/usr/local/share/sast-rules"
+            sast_langs = ["c", "csharp", "go", "java", "javascript", "python", "scala"]
+            config_flags = [
+                f"--config={os.path.join(sast_rules_root, lang)}"
+                for lang in sast_langs
+                if os.path.isdir(os.path.join(sast_rules_root, lang))
+            ]
+            ruby_rules = os.path.join(sast_rules_root, "ruby.yml")
+            if os.path.isfile(ruby_rules):
+                config_flags.append(f"--config={ruby_rules}")
+            if not config_flags:
+                config_flags = ["--config=p/security-audit"]
             result = subprocess.run(
-                ["semgrep", "--config=p/security-audit", "--json", "--output", raw_output_path, path],
+                ["semgrep"] + config_flags + ["--json", "--output", raw_output_path, path],
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=300
             )
             
             try:
@@ -158,7 +171,11 @@ class SemgrepScanner(ScannerWrapper):
                     "description": result_item.get("extra", {}).get("message", "Code pattern security issue"),
                     "file": result_item.get("path", "unknown"),
                     "line": result_item.get("start", {}).get("line", 1),
-                    "severity": self._map_severity(result_item.get("extra", {}).get("severity")),
+                    "severity": self._map_severity(
+                        result_item.get("extra", {}).get("severity"),
+                        result_item.get("extra", {}).get("metadata", {}).get("security-severity", "")
+                        or result_item.get("extra", {}).get("metadata", {}).get("impact", ""),
+                    ),
                     "scanner": "semgrep",
                 })
             
@@ -173,14 +190,21 @@ class SemgrepScanner(ScannerWrapper):
             logger.error(f"semgrep scan failed: {e}")
             return [], raw_output_path
     
-    def _map_severity(self, semgrep_severity: str) -> str:
-        """Map semgrep severity to standard levels"""
+    def _map_severity(self, semgrep_severity: str, security_severity: str = "") -> str:
+        """Map semgrep severity + GitLab security-severity metadata to standard levels.
+        ERROR + High → critical; WARNING + High → high; otherwise by semgrep level."""
+        sev = (semgrep_severity or "").upper()
+        ssev = security_severity.lower()
+        if sev == "ERROR" and ssev == "high":
+            return "critical"
+        if ssev == "high":
+            return "high"
         mapping = {
             "ERROR": "high",
             "WARNING": "medium",
             "INFO": "low",
         }
-        return mapping.get(semgrep_severity, "medium")
+        return mapping.get(sev, "medium")
 
 
 class KicsScanner(ScannerWrapper):
@@ -208,27 +232,26 @@ class KicsScanner(ScannerWrapper):
         if not self.is_installed():
             logger.warning("kics not installed")
             return [], ""
-        
-        # Create temporary file for raw output
-        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
-            raw_output_path = temp_file.name
-        
+
+        # kics -o expects a directory; it writes results.json inside it
+        output_dir = tempfile.mkdtemp()
+        raw_output_path = os.path.join(output_dir, "results.json")
+
         try:
-            result = subprocess.run(
-                ["kics", "scan", "-p", path, "-f", "json", "-o", raw_output_path],
+            subprocess.run(
+                ["kics", "scan", "-p", path, "-f", "json", "-o", output_dir],
                 capture_output=True,
                 text=True,
                 timeout=120
             )
-            
+
             try:
                 with open(raw_output_path) as f:
                     data = json.load(f)
             except FileNotFoundError:
                 return [], raw_output_path
-            
+
             issues = []
-            
             for query in data.get("queries", []):
                 for result_item in query.get("results", []):
                     issues.append({
@@ -240,7 +263,7 @@ class KicsScanner(ScannerWrapper):
                         "severity": self._map_severity(query.get("severity")),
                         "scanner": "kics",
                     })
-            
+
             return issues, raw_output_path
         except subprocess.TimeoutExpired:
             logger.error("kics scan timed out")
@@ -278,6 +301,29 @@ class GrypeScanner(ScannerWrapper):
         """Return installation command"""
         return "brew install grype  # or: curl https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh"
     
+    def _install_dependencies(self, path: str) -> None:
+        """Install project dependencies so grype/syft can enumerate packages."""
+        from pathlib import Path
+        p = Path(path)
+        installers = [
+            (p / "package-lock.json", None),  # lockfile already present, no install needed
+            (p / "yarn.lock",         None),  # yarn lockfile already present
+            (p / "package.json",      ["npm", "install", "--ignore-scripts", "--package-lock-only"]),
+            (p / "Pipfile.lock",      ["pipenv", "install", "--deploy"]),
+            (p / "requirements.txt",  ["pip", "install", "-r", str(p / "requirements.txt"), "--target", str(p / ".grype-deps")]),
+            (p / "go.sum",            ["go", "mod", "download"]),
+            (p / "Gemfile.lock",      ["bundle", "install"]),
+        ]
+        for marker, cmd in installers:
+            if marker.exists():
+                if cmd is None:
+                    return  # lockfile already present, grype can use it directly
+                logger.info(f"Generating dependency manifest via: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, cwd=path, timeout=300)
+                if result.returncode != 0:
+                    logger.warning(f"Dependency manifest generation failed: {result.stderr[:200]}")
+                return  # only run the first matching installer
+
     def scan(self, path: str) -> List[Dict[str, Any]]:
         """Run grype scan"""
         issues, _ = self.scan_with_raw_output(path)
@@ -294,11 +340,20 @@ class GrypeScanner(ScannerWrapper):
             raw_output_path = temp_file.name
         
         try:
+            # Ensure the vulnerability database is present before scanning
+            db_check = subprocess.run(["grype", "db", "status"], capture_output=True)
+            if db_check.returncode != 0:
+                logger.info("grype database missing, updating...")
+                subprocess.run(["grype", "db", "update"], capture_output=True, timeout=120)
+
+            # Install dependencies so grype/syft can enumerate packages
+            self._install_dependencies(path)
+
             result = subprocess.run(
                 ["grype", "dir:" + path, "-o", "json", "--file", raw_output_path],
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=300
             )
             
             try:

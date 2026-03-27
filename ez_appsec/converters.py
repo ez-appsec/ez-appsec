@@ -75,7 +75,7 @@ class GitleaksConverter:
 
         for finding in gitleaks_data:
             # Map gitleaks severity to GitLab severity
-            severity = GitleaksConverter._map_severity(finding.get("Info", {}).get("Severity", "medium"))
+            severity = GitleaksConverter._map_severity(finding.get("Info", {}).get("Severity", "critical"))
 
             vulnerability = GitLabVulnerabilityFormat.create_vulnerability(
                 name=f"Secret: {finding.get('Description', 'Unknown secret')}",
@@ -141,9 +141,12 @@ class SemgrepConverter:
             start_line = result.get("start", {}).get("line", 1)
             end_line = result.get("end", {}).get("line", start_line)
 
-            # Map semgrep severity
+            # Map semgrep severity — promote ERROR + High security-severity to critical
+            extra = result.get("extra", {})
+            metadata = extra.get("metadata", {})
             severity = SemgrepConverter._map_severity(
-                result.get("extra", {}).get("severity", "medium")
+                extra.get("severity", "medium"),
+                metadata.get("security-severity", "") or metadata.get("impact", "")
             )
 
             vulnerability = GitLabVulnerabilityFormat.create_vulnerability(
@@ -176,14 +179,21 @@ class SemgrepConverter:
         return GitLabVulnerabilityFormat.create_report(vulnerabilities, "semgrep")
 
     @staticmethod
-    def _map_severity(semgrep_severity: str) -> str:
-        """Map semgrep severity to GitLab severity levels"""
+    def _map_severity(semgrep_severity: str, security_severity: str = "") -> str:
+        """Map semgrep severity + GitLab security-severity metadata to GitLab severity levels.
+        ERROR + High → critical; WARNING/ERROR + High → high; otherwise by semgrep level."""
+        sev = semgrep_severity.upper()
+        ssev = security_severity.lower()
+        if sev == "ERROR" and ssev == "high":
+            return "critical"
+        if ssev == "high":
+            return "high"
         mapping = {
             "ERROR": "high",
             "WARNING": "medium",
             "INFO": "low"
         }
-        return mapping.get(semgrep_severity.upper(), "medium")
+        return mapping.get(sev, "medium")
 
 
 class KicsConverter:

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ez-appsec.ai — Security Dashboard</title>
+  <meta name="description" content="Application security dashboard powered by ez-appsec" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Navigation ─────────────────────────────────────────────────────── -->
+  <header class="nav">
+    <div class="container nav__inner">
+      <a href="https://ez-appsec.ai" class="nav__logo">ez-appsec<span>.ai</span></a>
+      <nav class="nav__links">
+        <a href="index.html" class="nav__active">Findings</a>
+        <a href="remediated.html">Remediated</a>
+        <a href="false-positives.html">False Positives</a>
+        <a href="dependencies.html">Dependencies (SBOM)</a>
+        <a href="threat-model.html">Threat Model</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ── Dashboard header ───────────────────────────────────────────────── -->
+  <section class="dash-header">
+    <div class="container">
+      <h1 class="dash-header__title">Vulnerability Scan Results</h1>
+      <p class="dash-header__sub" id="scan-meta">Loading scan data…</p>
+    </div>
+  </section>
+
+  <!-- ── Stats bar ──────────────────────────────────────────────────────── -->
+  <section class="stats-bar">
+    <div class="container stats-bar__inner">
+      <div class="stat-card stat-card--total">
+        <div class="stat-card__value" id="total-count">—</div>
+        <div class="stat-card__label">Total</div>
+      </div>
+      <div class="stat-card stat-card--critical">
+        <div class="stat-card__value" id="critical-count">—</div>
+        <div class="stat-card__label">Critical</div>
+      </div>
+      <div class="stat-card stat-card--high">
+        <div class="stat-card__value" id="high-count">—</div>
+        <div class="stat-card__label">High</div>
+      </div>
+      <div class="stat-card stat-card--medium">
+        <div class="stat-card__value" id="medium-count">—</div>
+        <div class="stat-card__label">Medium</div>
+      </div>
+      <div class="stat-card stat-card--low">
+        <div class="stat-card__value" id="low-count">—</div>
+        <div class="stat-card__label">Low</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Filters ────────────────────────────────────────────────────────── -->
+  <section class="filter-bar">
+    <div class="container filter-bar__inner">
+      <select id="severity-filter" class="filter-input" aria-label="Filter by severity">
+        <option value="">All severities</option>
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+        <option value="info">Info</option>
+      </select>
+
+      <select id="scanner-filter" class="filter-input" aria-label="Filter by scanner">
+        <option value="">All scanners</option>
+        <option value="gitleaks">Gitleaks</option>
+        <option value="semgrep">Semgrep</option>
+        <option value="grype">Grype</option>
+        <option value="kics">KICS</option>
+      </select>
+
+      <input
+        type="search"
+        id="search-filter"
+        class="filter-input filter-input--search"
+        placeholder="Search findings…"
+        aria-label="Search vulnerabilities"
+      />
+
+      <button id="reset-filters" class="btn btn--outline btn--sm">Reset</button>
+    </div>
+  </section>
+
+  <!-- ── Vulnerability list ─────────────────────────────────────────────── -->
+  <main class="dash-main">
+    <div class="container">
+      <div id="vulnerabilities-container">
+        <div class="empty-state">
+          <h3>Loading vulnerabilities…</h3>
+          <p>Fetching data from <code>data/vulnerabilities.json</code></p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Detail Modal ────────────────────────────────────────────────────── -->
+  <div id="vuln-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button class="modal-close" id="modal-close" aria-label="Close detail">&times;</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <!-- ── Footer ─────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <span class="nav__logo">ez-appsec<span>.ai</span></span>
+      <nav class="footer__links">
+        <a href="mailto:hello@ez-appsec.ai">Contact</a>
+      </nav>
+      <p class="footer__copy">&copy; 2026 ez-appsec.ai. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

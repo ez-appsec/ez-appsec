@@ -205,5 +205,74 @@ def web_report(path, output):
         sys.exit(1)
 
 
+@main.command("update-web")
+@click.argument("vulns_file", type=click.Path(exists=True))
+@click.option(
+    "--web-dir",
+    type=click.Path(),
+    default=None,
+    help="Web dashboard directory (default: /web if present, else ./web)",
+)
+@click.option("--serve", is_flag=True, help="Serve the dashboard on a local HTTP server after updating")
+@click.option("--port", default=8000, show_default=True, help="Port for --serve")
+def update_web(vulns_file, web_dir, serve, port):
+    """Update the web dashboard with a vulnerabilities.json file
+
+    \b
+    VULNS_FILE: path to a GitLab-format vulnerabilities.json produced by gitlab-scan
+    """
+    import json
+    import shutil
+    import webbrowser
+    from pathlib import Path as PL
+
+    # Resolve web directory: explicit arg → /web (Docker) → ./web
+    if web_dir:
+        resolved = PL(web_dir)
+    elif PL("/web/data").exists() or PL("/web/index.html").exists():
+        resolved = PL("/web")
+    else:
+        resolved = PL("./web")
+
+    data_dir = resolved / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    dest = data_dir / "vulnerabilities.json"
+    shutil.copy2(vulns_file, dest)
+
+    # Quick summary from the copied file
+    try:
+        with open(dest) as fh:
+            report = json.load(fh)
+        vulns = report.get("vulnerabilities", [])
+        from collections import Counter
+        by_sev = Counter(v.get("severity", "unknown") for v in vulns)
+        click.echo(f"Vulnerabilities copied to: {dest}")
+        click.echo(f"  Total : {len(vulns)}")
+        for sev in ("critical", "high", "medium", "low", "info"):
+            if by_sev.get(sev):
+                click.echo(f"  {sev.capitalize():8}: {by_sev[sev]}")
+    except Exception:
+        click.echo(f"Copied {vulns_file} → {dest}")
+
+    if serve:
+        import http.server
+        import functools
+        import threading
+
+        handler = functools.partial(
+            http.server.SimpleHTTPRequestHandler,
+            directory=str(resolved),
+        )
+        server = http.server.HTTPServer(("", port), handler)
+        url = f"http://localhost:{port}"
+        click.echo(f"\nServing dashboard at {url}  (Ctrl-C to stop)")
+        webbrowser.open(url)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+
+
 if __name__ == "__main__":
     main()
