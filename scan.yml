@@ -17,20 +17,17 @@ scan:pipeline:
   variables:
     EZ_APPSEC_OUTPUT_DIR: "scan-results"
     EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
-
   script:
     - echo "Running ez-appsec scan..."
     - mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
     - ez-appsec status || true
     - ez-appsec gitlab-scan . --output "${EZ_APPSEC_REPORT}"
-
   artifacts:
     name: "ez-appsec-scan-${CI_COMMIT_SHA}"
     paths:
       - "${EZ_APPSEC_REPORT}"
     expire_in: 7 days
     when: always
-
   rules:
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
       when: never
@@ -56,17 +53,92 @@ update:vulns:
     EZ_APPSEC_OUTPUT_DIR: "scan-results"
     EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
   script:
-    - apk add --no-cache git python3
-    - git config --global user.email "ci@ez-appsec.ai"
-    - git config --global user.name "ez-appsec CI"
-    - git clone "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${EZ_APPSEC_DASHBOARD_PROJECT}.git" /tmp/dash-work
-    - mkdir -p "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}"
-    - cp "${CI_PROJECT_DIR}/${EZ_APPSEC_REPORT}" "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}/vulnerabilities.json"
-    - printf '{"gitlab_url":"https://%s","project_id":"%s","project_path":"%s","ez_appsec_version":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_PROJECT_PATH}" "${EZ_APPSEC_VERSION:-latest}" > "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}/config.json"
-    - 'EZ_APPSEC_REPORT="/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}/vulnerabilities.json" python3 -c "import json,os;from datetime import datetime,timezone;r=json.load(open(os.environ[\"EZ_APPSEC_REPORT\"]));v=r.get(\"vulnerabilities\",[]);s={\"total\":len(v),\"critical\":sum(1 for x in v if x.get(\"severity\")==\"critical\"),\"high\":sum(1 for x in v if x.get(\"severity\")==\"high\"),\"medium\":sum(1 for x in v if x.get(\"severity\")==\"medium\"),\"low\":sum(1 for x in v if x.get(\"severity\")==\"low\")};e={\"slug\":os.environ[\"CI_PROJECT_PATH_SLUG\"],\"name\":os.environ[\"CI_PROJECT_NAME\"],\"path\":os.environ[\"CI_PROJECT_PATH\"],\"last_updated\":datetime.now(timezone.utc).strftime(\"%Y-%m-%dT%H:%M:%SZ\"),\"summary\":s};f=\"/tmp/dash-work/public/data/index.json\";d=json.load(open(f)) if os.path.exists(f) else {\"projects\":[]};d[\"projects\"]=[p for p in d.get(\"projects\",[]) if p.get(\"slug\")!=e[\"slug\"]]+[e];d[\"last_updated\"]=e[\"last_updated\"];json.dump(d,open(f,\"w\"),indent=2)"'
-    - git -C /tmp/dash-work add public/data/
-    - 'git -C /tmp/dash-work diff --cached --quiet && echo "No changes" || git -C /tmp/dash-work commit -m "chore: ingest scan results from ${CI_PROJECT_PATH}"'
-    - git -C /tmp/dash-work push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${EZ_APPSEC_DASHBOARD_PROJECT}.git" main
+    - apk add --no-cache curl python3
+    - |
+      python3 << 'PYEOF'
+      import json, os, base64, urllib.parse, urllib.request, urllib.error
+      from datetime import datetime, timezone
+
+      API      = os.environ["CI_API_V4_URL"]
+      TOKEN    = os.environ["CI_JOB_TOKEN"]
+      DASH     = urllib.parse.quote(os.environ["EZ_APPSEC_DASHBOARD_PROJECT"], safe="")
+      SLUG     = os.environ["CI_PROJECT_PATH_SLUG"]
+      REPORT   = os.environ["EZ_APPSEC_REPORT"]
+      HEADERS  = {"JOB-TOKEN": TOKEN, "Content-Type": "application/json"}
+
+      def api(method, path, body=None):
+          req = urllib.request.Request(f"{API}/projects/{DASH}/{path}",
+                data=json.dumps(body).encode() if body else None,
+                headers=HEADERS, method=method)
+          try:
+              return json.loads(urllib.request.urlopen(req).read())
+          except urllib.error.HTTPError as e:
+              raise RuntimeError(f"{method} {path} → {e.code}: {e.read().decode()}")
+
+      def get_file(file_path):
+          enc = urllib.parse.quote(file_path, safe="")
+          try:
+              r = api("GET", f"repository/files/{enc}?ref=main")
+              return base64.b64decode(r["content"]).decode(), r["last_commit_id"]
+          except RuntimeError:
+              return None, None
+
+      # Load scan report
+      vulns = json.load(open(REPORT))
+      v = vulns.get("vulnerabilities", [])
+      summary = {
+          "total":    len(v),
+          "critical": sum(1 for x in v if x.get("severity") == "critical"),
+          "high":     sum(1 for x in v if x.get("severity") == "high"),
+          "medium":   sum(1 for x in v if x.get("severity") == "medium"),
+          "low":      sum(1 for x in v if x.get("severity") == "low"),
+      }
+      now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+      entry = {
+          "slug":         SLUG,
+          "name":         os.environ["CI_PROJECT_NAME"],
+          "path":         os.environ["CI_PROJECT_PATH"],
+          "last_updated": now,
+          "summary":      summary,
+      }
+
+      # Read current index.json
+      idx_content, _ = get_file("public/data/index.json")
+      idx = json.loads(idx_content) if idx_content else {"projects": []}
+      idx["projects"] = [p for p in idx.get("projects", []) if p.get("slug") != SLUG] + [entry]
+      idx["last_updated"] = now
+
+      config_content = json.dumps({
+          "gitlab_url":       f"https://{os.environ['CI_SERVER_HOST']}",
+          "project_id":       os.environ["CI_PROJECT_ID"],
+          "project_path":     os.environ["CI_PROJECT_PATH"],
+          "ez_appsec_version": os.environ.get("EZ_APPSEC_VERSION", "latest"),
+      })
+
+      vuln_b64   = base64.b64encode(open(REPORT, "rb").read()).decode()
+      idx_b64    = base64.b64encode(json.dumps(idx, indent=2).encode()).decode()
+      config_b64 = base64.b64encode(config_content.encode()).decode()
+
+      # Check which files already exist (create vs update action)
+      def action(path, content_b64):
+          existing, _ = get_file(path)
+          return {"action": "update" if existing else "create",
+                  "file_path": path, "content": content_b64, "encoding": "base64"}
+
+      actions = [
+          action(f"public/data/projects/{SLUG}/vulnerabilities.json", vuln_b64),
+          action(f"public/data/projects/{SLUG}/config.json",          config_b64),
+          action("public/data/index.json",                             idx_b64),
+      ]
+
+      result = api("POST", "repository/commits", {
+          "branch":         "main",
+          "commit_message": f"chore: ingest scan results from {os.environ['CI_PROJECT_PATH']}",
+          "actions":        actions,
+      })
+      print(f"Dashboard updated: {result['web_url']}")
+      print(f"Vulnerabilities: {summary}")
+      PYEOF
   rules:
     - if: '$EZ_APPSEC_DASHBOARD_PROJECT == null'
       when: never
@@ -95,17 +167,89 @@ cold:scan:
     - mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
     - ez-appsec status || true
     - ez-appsec gitlab-scan . --output "${EZ_APPSEC_REPORT}"
-    - apk add --no-cache git python3
-    - git config --global user.email "ci@ez-appsec.ai"
-    - git config --global user.name "ez-appsec CI"
-    - git clone "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${EZ_APPSEC_DASHBOARD_PROJECT}.git" /tmp/dash-work
-    - mkdir -p "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}"
-    - cp "${CI_PROJECT_DIR}/${EZ_APPSEC_REPORT}" "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}/vulnerabilities.json"
-    - printf '{"gitlab_url":"https://%s","project_id":"%s","project_path":"%s","ez_appsec_version":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_PROJECT_PATH}" "${EZ_APPSEC_VERSION:-latest}" > "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}/config.json"
-    - 'EZ_APPSEC_REPORT="/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}/vulnerabilities.json" python3 -c "import json,os;from datetime import datetime,timezone;r=json.load(open(os.environ[\"EZ_APPSEC_REPORT\"]));v=r.get(\"vulnerabilities\",[]);s={\"total\":len(v),\"critical\":sum(1 for x in v if x.get(\"severity\")==\"critical\"),\"high\":sum(1 for x in v if x.get(\"severity\")==\"high\"),\"medium\":sum(1 for x in v if x.get(\"severity\")==\"medium\"),\"low\":sum(1 for x in v if x.get(\"severity\")==\"low\")};e={\"slug\":os.environ[\"CI_PROJECT_PATH_SLUG\"],\"name\":os.environ[\"CI_PROJECT_NAME\"],\"path\":os.environ[\"CI_PROJECT_PATH\"],\"last_updated\":datetime.now(timezone.utc).strftime(\"%Y-%m-%dT%H:%M:%SZ\"),\"summary\":s};f=\"/tmp/dash-work/public/data/index.json\";d=json.load(open(f)) if os.path.exists(f) else {\"projects\":[]};d[\"projects\"]=[p for p in d.get(\"projects\",[]) if p.get(\"slug\")!=e[\"slug\"]]+[e];d[\"last_updated\"]=e[\"last_updated\"];json.dump(d,open(f,\"w\"),indent=2)"'
-    - git -C /tmp/dash-work add public/data/
-    - 'git -C /tmp/dash-work diff --cached --quiet && echo "No changes" || git -C /tmp/dash-work commit -m "chore: ingest scan results from ${CI_PROJECT_PATH}"'
-    - git -C /tmp/dash-work push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${EZ_APPSEC_DASHBOARD_PROJECT}.git" main
+    - apk add --no-cache python3
+    - |
+      python3 << 'PYEOF'
+      import json, os, base64, urllib.parse, urllib.request, urllib.error
+      from datetime import datetime, timezone
+
+      API      = os.environ["CI_API_V4_URL"]
+      TOKEN    = os.environ["CI_JOB_TOKEN"]
+      DASH     = urllib.parse.quote(os.environ["EZ_APPSEC_DASHBOARD_PROJECT"], safe="")
+      SLUG     = os.environ["CI_PROJECT_PATH_SLUG"]
+      REPORT   = os.environ["EZ_APPSEC_REPORT"]
+      HEADERS  = {"JOB-TOKEN": TOKEN, "Content-Type": "application/json"}
+
+      def api(method, path, body=None):
+          req = urllib.request.Request(f"{API}/projects/{DASH}/{path}",
+                data=json.dumps(body).encode() if body else None,
+                headers=HEADERS, method=method)
+          try:
+              return json.loads(urllib.request.urlopen(req).read())
+          except urllib.error.HTTPError as e:
+              raise RuntimeError(f"{method} {path} → {e.code}: {e.read().decode()}")
+
+      def get_file(file_path):
+          enc = urllib.parse.quote(file_path, safe="")
+          try:
+              r = api("GET", f"repository/files/{enc}?ref=main")
+              return base64.b64decode(r["content"]).decode(), r["last_commit_id"]
+          except RuntimeError:
+              return None, None
+
+      vulns = json.load(open(REPORT))
+      v = vulns.get("vulnerabilities", [])
+      summary = {
+          "total":    len(v),
+          "critical": sum(1 for x in v if x.get("severity") == "critical"),
+          "high":     sum(1 for x in v if x.get("severity") == "high"),
+          "medium":   sum(1 for x in v if x.get("severity") == "medium"),
+          "low":      sum(1 for x in v if x.get("severity") == "low"),
+      }
+      now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+      entry = {
+          "slug":         SLUG,
+          "name":         os.environ["CI_PROJECT_NAME"],
+          "path":         os.environ["CI_PROJECT_PATH"],
+          "last_updated": now,
+          "summary":      summary,
+      }
+
+      idx_content, _ = get_file("public/data/index.json")
+      idx = json.loads(idx_content) if idx_content else {"projects": []}
+      idx["projects"] = [p for p in idx.get("projects", []) if p.get("slug") != SLUG] + [entry]
+      idx["last_updated"] = now
+
+      config_content = json.dumps({
+          "gitlab_url":        f"https://{os.environ['CI_SERVER_HOST']}",
+          "project_id":        os.environ["CI_PROJECT_ID"],
+          "project_path":      os.environ["CI_PROJECT_PATH"],
+          "ez_appsec_version": os.environ.get("EZ_APPSEC_VERSION", "latest"),
+      })
+
+      vuln_b64   = base64.b64encode(open(REPORT, "rb").read()).decode()
+      idx_b64    = base64.b64encode(json.dumps(idx, indent=2).encode()).decode()
+      config_b64 = base64.b64encode(config_content.encode()).decode()
+
+      def action(path, content_b64):
+          existing, _ = get_file(path)
+          return {"action": "update" if existing else "create",
+                  "file_path": path, "content": content_b64, "encoding": "base64"}
+
+      actions = [
+          action(f"public/data/projects/{SLUG}/vulnerabilities.json", vuln_b64),
+          action(f"public/data/projects/{SLUG}/config.json",          config_b64),
+          action("public/data/index.json",                             idx_b64),
+      ]
+
+      result = api("POST", "repository/commits", {
+          "branch":         "main",
+          "commit_message": f"chore: ingest scan results from {os.environ['CI_PROJECT_PATH']}",
+          "actions":        actions,
+      })
+      print(f"Dashboard updated: {result['web_url']}")
+      print(f"Vulnerabilities: {summary}")
+      PYEOF
   artifacts:
     name: "ez-appsec-cold-scan-${CI_COMMIT_SHA}"
     paths:
