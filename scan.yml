@@ -143,11 +143,18 @@ dashboard:ingest:
     - git clone "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" /tmp/dash-work
     - cd /tmp/dash-work
     - mkdir -p "public/data/projects/${EZ_INGEST_SOURCE_SLUG}"
+    - echo "Downloading artifact from project=${EZ_INGEST_PROJECT_ID} job=${EZ_INGEST_JOB_ID}"
     - |
-      curl -sfL \
+      RESP_FILE=$(mktemp)
+      HTTP_STATUS=$(curl -sLw "%{http_code}" \
         --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         "${CI_API_V4_URL}/projects/${EZ_INGEST_PROJECT_ID}/jobs/${EZ_INGEST_JOB_ID}/artifacts/scan-results/vulnerabilities.json" \
-        -o "public/data/projects/${EZ_INGEST_SOURCE_SLUG}/vulnerabilities.json"
+        -o "${RESP_FILE}")
+      echo "HTTP status: ${HTTP_STATUS}"
+      if [ "${HTTP_STATUS}" != "200" ]; then
+        echo "Response body:"; cat "${RESP_FILE}"; rm -f "${RESP_FILE}"; exit 1
+      fi
+      mv "${RESP_FILE}" "public/data/projects/${EZ_INGEST_SOURCE_SLUG}/vulnerabilities.json"
     - |
       printf '{"gitlab_url":"https://%s","project_id":"%s","project_path":"%s","ez_appsec_version":"%s"}\n' \
         "${EZ_INGEST_SERVER_HOST}" "${EZ_INGEST_PROJECT_ID}" "${EZ_INGEST_SOURCE_PROJECT}" \
