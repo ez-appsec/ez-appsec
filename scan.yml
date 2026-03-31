@@ -9,6 +9,43 @@ variables:
   EZ_APPSEC_VERSION: "latest"
   EZ_APPSEC_IMAGE: "registry.gitlab.com/jfelten.work-group/ez_appsec/ez_appsec:$EZ_APPSEC_VERSION"
 
+# Shared steps: push scan results from the current project into the dashboard repo.
+# The consuming project's CI_JOB_TOKEN is used to clone and push to the dashboard
+# because the dashboard project's inbound job-token allowlist grants Developer access
+# to whitelisted source projects.
+.push-to-dashboard:
+  script:
+    - apk add --no-cache git python3
+    - git config --global user.email "ci@ez-appsec.ai"
+    - git config --global user.name "ez-appsec CI"
+    - DASH_CLONE_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${EZ_APPSEC_DASHBOARD_PROJECT}.git"
+    - git clone "${DASH_CLONE_URL}" /tmp/dash-work
+    - cd /tmp/dash-work
+    - mkdir -p "public/data/projects/${CI_PROJECT_PATH_SLUG}"
+    - cp "${CI_PROJECT_DIR}/${EZ_APPSEC_REPORT}" "public/data/projects/${CI_PROJECT_PATH_SLUG}/vulnerabilities.json"
+    - |
+      printf '{"gitlab_url":"https://%s","project_id":"%s","project_path":"%s","ez_appsec_version":"%s"}\n' \
+        "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_PROJECT_PATH}" \
+        "${EZ_APPSEC_VERSION:-latest}" > "public/data/projects/${CI_PROJECT_PATH_SLUG}/config.json"
+    - |
+      EZ_APPSEC_REPORT="public/data/projects/${CI_PROJECT_PATH_SLUG}/vulnerabilities.json" \
+      python3 -c "
+      import json,os
+      from datetime import datetime,timezone
+      r=json.load(open(os.environ['EZ_APPSEC_REPORT']))
+      v=r.get('vulnerabilities',[])
+      s={'total':len(v),'critical':sum(1 for x in v if x.get('severity')=='critical'),'high':sum(1 for x in v if x.get('severity')=='high'),'medium':sum(1 for x in v if x.get('severity')=='medium'),'low':sum(1 for x in v if x.get('severity')=='low')}
+      e={'slug':os.environ['CI_PROJECT_PATH_SLUG'],'name':os.environ['CI_PROJECT_NAME'],'path':os.environ['CI_PROJECT_PATH'],'last_updated':datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),'summary':s}
+      f='public/data/index.json'
+      d=json.load(open(f)) if os.path.exists(f) else {'projects':[]}
+      d['projects']=[p for p in d.get('projects',[]) if p.get('slug')!=e['slug']]+[e]
+      d['last_updated']=e['last_updated']
+      json.dump(d,open(f,'w'),indent=2)
+      "
+    - git add public/data/
+    - git diff --cached --quiet && echo "No changes to push" || git commit -m "chore: ingest scan results from ${CI_PROJECT_PATH}"
+    - git push "${DASH_CLONE_URL}" main
+
 scan:pipeline:
   stage: ez-appsec
   image:
@@ -52,24 +89,11 @@ update:vulns:
   needs:
     - job: scan:pipeline
       artifacts: true
-  script:
-    - apk add --no-cache curl
-    - |
-      curl -sf --request POST \
-        --form "ref=main" \
-        --form "token=${EZ_APPSEC_DASHBOARD_TRIGGER_TOKEN}" \
-        --form "variables[EZ_INGEST_SOURCE_PROJECT]=${CI_PROJECT_PATH}" \
-        --form "variables[EZ_INGEST_SOURCE_SLUG]=${CI_PROJECT_PATH_SLUG}" \
-        --form "variables[EZ_INGEST_SOURCE_NAME]=${CI_PROJECT_NAME}" \
-        --form "variables[EZ_INGEST_JOB_ID]=${CI_JOB_ID}" \
-        --form "variables[EZ_INGEST_PROJECT_ID]=${CI_PROJECT_ID}" \
-        --form "variables[EZ_INGEST_SERVER_HOST]=${CI_SERVER_HOST}" \
-        --form "variables[EZ_INGEST_VERSION]=${EZ_APPSEC_VERSION:-latest}" \
-        "https://${CI_SERVER_HOST}/api/v4/projects/${EZ_APPSEC_DASHBOARD_PROJECT_ID}/trigger/pipeline" || \
-      echo "WARNING: could not trigger dashboard ingest — ensure EZ_APPSEC_DASHBOARD_TRIGGER_TOKEN and EZ_APPSEC_DASHBOARD_PROJECT_ID are set in group variables"
   variables:
     EZ_APPSEC_OUTPUT_DIR: "scan-results"
     EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
+  script:
+    - !reference [.push-to-dashboard, script]
   rules:
     - if: '$EZ_APPSEC_DASHBOARD_PROJECT == null'
       when: never
@@ -95,24 +119,10 @@ cold:scan:
     EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
   script:
     - echo "Running cold scan..."
-    - apk add --no-cache curl
     - mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
     - ez-appsec status || true
     - ez-appsec gitlab-scan . --output "${EZ_APPSEC_REPORT}"
-    # Trigger dashboard ingest pipeline
-    - |
-      curl -sf --request POST \
-        --form "ref=main" \
-        --form "token=${EZ_APPSEC_DASHBOARD_TRIGGER_TOKEN}" \
-        --form "variables[EZ_INGEST_SOURCE_PROJECT]=${CI_PROJECT_PATH}" \
-        --form "variables[EZ_INGEST_SOURCE_SLUG]=${CI_PROJECT_PATH_SLUG}" \
-        --form "variables[EZ_INGEST_SOURCE_NAME]=${CI_PROJECT_NAME}" \
-        --form "variables[EZ_INGEST_JOB_ID]=${CI_JOB_ID}" \
-        --form "variables[EZ_INGEST_PROJECT_ID]=${CI_PROJECT_ID}" \
-        --form "variables[EZ_INGEST_SERVER_HOST]=${CI_SERVER_HOST}" \
-        --form "variables[EZ_INGEST_VERSION]=${EZ_APPSEC_VERSION:-latest}" \
-        "https://${CI_SERVER_HOST}/api/v4/projects/${EZ_APPSEC_DASHBOARD_PROJECT_ID}/trigger/pipeline" || \
-      echo "WARNING: could not trigger dashboard ingest — ensure EZ_APPSEC_DASHBOARD_TRIGGER_TOKEN and EZ_APPSEC_DASHBOARD_PROJECT_ID are set in group variables"
+    - !reference [.push-to-dashboard, script]
   artifacts:
     name: "ez-appsec-cold-scan-${CI_COMMIT_SHA}"
     paths:
@@ -127,43 +137,5 @@ cold:scan:
     - if: '$CI_PIPELINE_SOURCE == "api"'
       when: always
     - if: '$EZ_APPSEC_COLD_SCAN == "true"'
-      when: always
-    - when: never
-
-# ── Dashboard ingest job — runs only in the dashboard project ──────────────
-# Triggered by cold:scan in consuming projects. Downloads the scan artifact
-# and commits it to public/data/ so GitLab Pages serves updated results.
-dashboard:ingest:
-  stage: ez-appsec
-  image: alpine:3.18
-  script:
-    - apk add --no-cache git curl python3
-    - git config --global user.email "ci@ez-appsec.ai"
-    - git config --global user.name "ez-appsec CI"
-    - git clone "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" /tmp/dash-work
-    - cd /tmp/dash-work
-    - mkdir -p "public/data/projects/${EZ_INGEST_SOURCE_SLUG}"
-    - echo "Downloading artifact from project=${EZ_INGEST_PROJECT_ID} job=${EZ_INGEST_JOB_ID}"
-    - |
-      RESP_FILE=$(mktemp)
-      HTTP_STATUS=$(curl -sLw "%{http_code}" \
-        --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-        "${CI_API_V4_URL}/projects/${EZ_INGEST_PROJECT_ID}/jobs/${EZ_INGEST_JOB_ID}/artifacts/scan-results/vulnerabilities.json" \
-        -o "${RESP_FILE}")
-      echo "HTTP status: ${HTTP_STATUS}"
-      if [ "${HTTP_STATUS}" != "200" ]; then
-        echo "Response body:"; cat "${RESP_FILE}"; rm -f "${RESP_FILE}"; exit 1
-      fi
-      mv "${RESP_FILE}" "public/data/projects/${EZ_INGEST_SOURCE_SLUG}/vulnerabilities.json"
-    - |
-      printf '{"gitlab_url":"https://%s","project_id":"%s","project_path":"%s","ez_appsec_version":"%s"}\n' \
-        "${EZ_INGEST_SERVER_HOST}" "${EZ_INGEST_PROJECT_ID}" "${EZ_INGEST_SOURCE_PROJECT}" \
-        "${EZ_INGEST_VERSION}" > "public/data/projects/${EZ_INGEST_SOURCE_SLUG}/config.json"
-    - 'EZ_APPSEC_REPORT="public/data/projects/${EZ_INGEST_SOURCE_SLUG}/vulnerabilities.json" CI_PROJECT_PATH_SLUG="${EZ_INGEST_SOURCE_SLUG}" CI_PROJECT_NAME="${EZ_INGEST_SOURCE_NAME}" CI_PROJECT_PATH="${EZ_INGEST_SOURCE_PROJECT}" python3 -c "import json,os;from datetime import datetime,timezone;r=json.load(open(os.environ[\"EZ_APPSEC_REPORT\"]));v=r.get(\"vulnerabilities\",[]);s={\"total\":len(v),\"critical\":sum(1 for x in v if x.get(\"severity\")==\"critical\"),\"high\":sum(1 for x in v if x.get(\"severity\")==\"high\"),\"medium\":sum(1 for x in v if x.get(\"severity\")==\"medium\"),\"low\":sum(1 for x in v if x.get(\"severity\")==\"low\")};e={\"slug\":os.environ[\"CI_PROJECT_PATH_SLUG\"],\"name\":os.environ[\"CI_PROJECT_NAME\"],\"path\":os.environ[\"CI_PROJECT_PATH\"],\"last_updated\":datetime.now(timezone.utc).strftime(\"%Y-%m-%dT%H:%M:%SZ\"),\"summary\":s};f=\"public/data/index.json\";d=json.load(open(f)) if os.path.exists(f) else {\"projects\":[]};d[\"projects\"]=[p for p in d.get(\"projects\",[]) if p.get(\"slug\")!=e[\"slug\"]]+[e];d[\"last_updated\"]=e[\"last_updated\"];json.dump(d,open(f,\"w\"),indent=2)"'
-    - git add public/data/
-    - 'git diff --cached --quiet && echo "No changes" || git commit -m "chore: ingest scan results from ${EZ_INGEST_SOURCE_PROJECT}"'
-    - git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" main
-  rules:
-    - if: '$EZ_INGEST_SOURCE_SLUG != null && $CI_PIPELINE_SOURCE == "trigger"'
       when: always
     - when: never
