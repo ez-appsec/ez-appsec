@@ -148,7 +148,7 @@ dashboard:ingest:
     - cd /tmp/dash-work
     - mkdir -p "public/data/projects/${EZ_INGEST_SOURCE_SLUG}"
     - |
-      curl -sf \
+      curl -sfL \
         --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         "${CI_API_V4_URL}/projects/${EZ_INGEST_PROJECT_ID}/jobs/${EZ_INGEST_JOB_ID}/artifacts/scan-results/vulnerabilities.json" \
         -o "public/data/projects/${EZ_INGEST_SOURCE_SLUG}/vulnerabilities.json"
