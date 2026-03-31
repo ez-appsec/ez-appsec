@@ -105,23 +105,18 @@ cold:scan:
     # Resolve dashboard project ID from path, then trigger its ingest pipeline
     - apk add --no-cache curl
     - |
-      DASH_ENCODED=$(python3 -c "import urllib.parse,os; print(urllib.parse.quote(os.environ['EZ_APPSEC_DASHBOARD_PROJECT'],safe=''))")
-      DASH_ID=$(curl -sf --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-        "${CI_API_V4_URL}/projects/${DASH_ENCODED}" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-      JOB_ARTIFACT_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${CI_JOB_ID}/artifacts/${EZ_APPSEC_REPORT}"
       curl -sf --request POST \
-        --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         --form "ref=main" \
-        --form "variables[][key]=EZ_INGEST_SOURCE_PROJECT=${CI_PROJECT_PATH}" \
-        --form "variables[][key]=EZ_INGEST_SOURCE_SLUG=${CI_PROJECT_PATH_SLUG}" \
-        --form "variables[][key]=EZ_INGEST_SOURCE_NAME=${CI_PROJECT_NAME}" \
-        --form "variables[][key]=EZ_INGEST_JOB_ID=${CI_JOB_ID}" \
-        --form "variables[][key]=EZ_INGEST_PROJECT_ID=${CI_PROJECT_ID}" \
-        --form "variables[][key]=EZ_INGEST_SERVER_HOST=${CI_SERVER_HOST}" \
-        --form "variables[][key]=EZ_INGEST_VERSION=${EZ_APPSEC_VERSION:-latest}" \
-        "${CI_API_V4_URL}/projects/${DASH_ID}/trigger/pipeline" \
-        --form "token=${EZ_APPSEC_DASHBOARD_TRIGGER_TOKEN}" || \
-      echo "WARNING: could not trigger dashboard ingest — set EZ_APPSEC_DASHBOARD_TRIGGER_TOKEN in group variables"
+        --form "token=${EZ_APPSEC_DASHBOARD_TRIGGER_TOKEN}" \
+        --form "variables[EZ_INGEST_SOURCE_PROJECT]=${CI_PROJECT_PATH}" \
+        --form "variables[EZ_INGEST_SOURCE_SLUG]=${CI_PROJECT_PATH_SLUG}" \
+        --form "variables[EZ_INGEST_SOURCE_NAME]=${CI_PROJECT_NAME}" \
+        --form "variables[EZ_INGEST_JOB_ID]=${CI_JOB_ID}" \
+        --form "variables[EZ_INGEST_PROJECT_ID]=${CI_PROJECT_ID}" \
+        --form "variables[EZ_INGEST_SERVER_HOST]=${CI_SERVER_HOST}" \
+        --form "variables[EZ_INGEST_VERSION]=${EZ_APPSEC_VERSION:-latest}" \
+        "https://${CI_SERVER_HOST}/api/v4/projects/${EZ_APPSEC_DASHBOARD_PROJECT_ID}/trigger/pipeline" || \
+      echo "WARNING: could not trigger dashboard ingest — ensure EZ_APPSEC_DASHBOARD_TRIGGER_TOKEN and EZ_APPSEC_DASHBOARD_PROJECT_ID are set in group variables"
   artifacts:
     name: "ez-appsec-cold-scan-${CI_COMMIT_SHA}"
     paths:
