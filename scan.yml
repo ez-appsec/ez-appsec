@@ -99,11 +99,11 @@ cold:scan:
     EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
   script:
     - echo "Running cold scan..."
+    - apk add --no-cache curl
     - mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
     - ez-appsec status || true
     - ez-appsec gitlab-scan . --output "${EZ_APPSEC_REPORT}"
-    # Resolve dashboard project ID from path, then trigger its ingest pipeline
-    - apk add --no-cache curl
+    # Trigger dashboard ingest pipeline
     - |
       curl -sf --request POST \
         --form "ref=main" \
