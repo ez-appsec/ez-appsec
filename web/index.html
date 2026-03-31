@@ -31,7 +31,7 @@
   <!-- ── Dashboard header ───────────────────────────────────────────────── -->
   <section class="dash-header">
     <div class="container">
-      <h1 class="dash-header__title">Vulnerability Scan Results</h1>
+      <h1 class="dash-header__title" id="dash-title">Vulnerability Scan Results</h1>
       <p class="dash-header__sub" id="scan-meta">Loading scan data…</p>
     </div>
   </section>
@@ -62,49 +62,63 @@
     </div>
   </section>
 
-  <!-- ── Filters ────────────────────────────────────────────────────────── -->
-  <section class="filter-bar">
-    <div class="container filter-bar__inner">
-      <select id="severity-filter" class="filter-input" aria-label="Filter by severity">
-        <option value="">All severities</option>
-        <option value="critical">Critical</option>
-        <option value="high">High</option>
-        <option value="medium">Medium</option>
-        <option value="low">Low</option>
-        <option value="info">Info</option>
-      </select>
+  <!-- ── Dashboard layout: sidebar + content ───────────────────────────── -->
+  <div class="dashboard-layout">
 
-      <select id="scanner-filter" class="filter-input" aria-label="Filter by scanner">
-        <option value="">All scanners</option>
-        <option value="gitleaks">Gitleaks</option>
-        <option value="semgrep">Semgrep</option>
-        <option value="grype">Grype</option>
-        <option value="kics">KICS</option>
-      </select>
+    <!-- Sidebar (hidden until index.json loads with projects) -->
+    <aside class="sidebar" id="sidebar" hidden>
+      <div class="sidebar__header">Projects</div>
+      <nav class="project-tree" id="project-tree">
+        <p class="tree-loading">Loading projects…</p>
+      </nav>
+    </aside>
 
-      <input
-        type="search"
-        id="search-filter"
-        class="filter-input filter-input--search"
-        placeholder="Search findings…"
-        aria-label="Search vulnerabilities"
-      />
+    <div class="dashboard-content">
 
-      <button id="reset-filters" class="btn btn--outline btn--sm">Reset</button>
-    </div>
-  </section>
+      <!-- ── Filters ──────────────────────────────────────────────────── -->
+      <section class="filter-bar">
+        <div class="filter-bar__inner">
+          <select id="severity-filter" class="filter-input" aria-label="Filter by severity">
+            <option value="">All severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="info">Info</option>
+          </select>
 
-  <!-- ── Vulnerability list ─────────────────────────────────────────────── -->
-  <main class="dash-main">
-    <div class="container">
-      <div id="vulnerabilities-container">
-        <div class="empty-state">
-          <h3>Loading vulnerabilities…</h3>
-          <p>Fetching data from <code>data/vulnerabilities.json</code></p>
+          <select id="scanner-filter" class="filter-input" aria-label="Filter by scanner">
+            <option value="">All scanners</option>
+            <option value="gitleaks">Gitleaks</option>
+            <option value="semgrep">Semgrep</option>
+            <option value="grype">Grype</option>
+            <option value="kics">KICS</option>
+          </select>
+
+          <input
+            type="search"
+            id="search-filter"
+            class="filter-input filter-input--search"
+            placeholder="Search findings…"
+            aria-label="Search vulnerabilities"
+          />
+
+          <button id="reset-filters" class="btn btn--outline btn--sm">Reset</button>
         </div>
-      </div>
-    </div>
-  </main>
+      </section>
+
+      <!-- ── Vulnerability list ────────────────────────────────────────── -->
+      <main class="dash-main">
+        <div id="vulnerabilities-container">
+          <div class="empty-state">
+            <h3>Loading vulnerabilities…</h3>
+            <p>Fetching data from <code>data/vulnerabilities.json</code></p>
+          </div>
+        </div>
+      </main>
+
+    </div><!-- /.dashboard-content -->
+  </div><!-- /.dashboard-layout -->
 
   <!-- ── Detail Modal ────────────────────────────────────────────────────── -->
   <div id="vuln-modal" class="modal-overlay" aria-hidden="true">
