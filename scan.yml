@@ -9,6 +9,7 @@ variables:
   EZ_APPSEC_VERSION: "latest"
   EZ_APPSEC_IMAGE: "registry.gitlab.com/jfelten.work-group/ez_appsec/ez_appsec:$EZ_APPSEC_VERSION"
 
+
 # Push scan results to the dashboard repo via SSH deploy key.
 # EZ_APPSEC_DASHBOARD_DEPLOY_KEY: base64-encoded ed25519 private key (env var, not file type).
 # The dashboard project's CI then aggregates index.json and deploys Pages.
