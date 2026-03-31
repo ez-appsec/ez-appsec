@@ -148,7 +148,12 @@ class VulnerabilityDashboard {
                 this.multiProject = true;
                 this.sidebar.removeAttribute('hidden');
                 this.renderSidebar();
-                await this.selectProject('all');
+
+                // Honour ?project= query param for linkable URLs
+                const params = new URLSearchParams(window.location.search);
+                const requested = params.get('project');
+                const valid = requested && this.projects.some(p => p.slug === requested);
+                await this.selectProject(valid ? requested : 'all');
                 return;
             }
         } catch (e) { /* no index.json — single-project fallback */ }
@@ -189,16 +194,34 @@ class VulnerabilityDashboard {
             <span class="tree-node__icon">${isAll ? '◈' : '◦'}</span>
             <span class="tree-node__name">${this.escapeHtml(name)}</span>
             ${badges}
+            ${!isAll ? `<button class="tree-node__link" title="Copy link" data-slug="${this.escapeHtml(slug)}">⎘</button>` : ''}
         `;
 
-        el.addEventListener('click', () => this.selectProject(slug));
+        el.addEventListener('click', e => {
+            if (e.target.closest('.tree-node__link')) return; // handled separately
+            this.selectProject(slug);
+        });
+
+        if (!isAll) {
+            el.querySelector('.tree-node__link').addEventListener('click', e => {
+                e.stopPropagation();
+                const url = new URL(window.location.href);
+                url.searchParams.set('project', slug);
+                navigator.clipboard.writeText(url.toString()).then(() => {
+                    const btn = e.currentTarget;
+                    btn.textContent = '✓';
+                    setTimeout(() => { btn.textContent = '⎘'; }, 1500);
+                });
+            });
+        }
+
         return el;
     }
 
     async selectProject(slug) {
         this.currentSlug = slug;
 
-        // Update active state
+        // Update active state in sidebar
         this.projectTree.querySelectorAll('.tree-node').forEach(el => {
             el.classList.toggle('tree-node--active', el.dataset.slug === slug);
         });
@@ -212,6 +235,15 @@ class VulnerabilityDashboard {
                 this.dashTitle.textContent = proj ? proj.name : slug;
             }
         }
+
+        // Update URL so this view is linkable
+        const url = new URL(window.location.href);
+        if (slug === 'all') {
+            url.searchParams.delete('project');
+        } else {
+            url.searchParams.set('project', slug);
+        }
+        history.replaceState(null, '', url.toString());
 
         if (slug === 'all') {
             await this.loadAllProjects();

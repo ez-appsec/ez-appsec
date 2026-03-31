@@ -196,6 +196,22 @@ pre code { background: none; padding: 0; color: inherit; }
 .tree-node__icon { font-size: .7rem; color: var(--text-muted); flex-shrink: 0; }
 .tree-node__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.tree-node__link {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: .75rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: .6;
+}
+.tree-node__link:hover { opacity: 1; color: var(--accent); }
+.tree-node:hover .tree-node__link { display: inline-flex; }
+
 .tree-node__badges { display: flex; gap: 3px; flex-shrink: 0; }
 
 .tree-badge {
