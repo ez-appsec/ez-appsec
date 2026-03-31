@@ -12,6 +12,8 @@ class VulnerabilityDashboard {
         this.currentSlug = 'all';           // 'all' | project slug
         this.multiProject = false;
         this.config = null;
+        this.falsePositives = new Set();
+        this.remediationModal = null;
 
         // DOM elements
         this.severityFilter = document.getElementById('severity-filter');
@@ -37,6 +39,7 @@ class VulnerabilityDashboard {
     async init() {
         this.attachEventListeners();
         this.initModal();
+        this.initRemediationModal();
         await this.loadConfig();
         await this.loadIndex();
     }
@@ -63,6 +66,117 @@ class VulnerabilityDashboard {
         const modal = document.getElementById('vuln-modal');
         modal.setAttribute('aria-hidden', 'true');
         modal.classList.remove('modal-overlay--open');
+        document.body.style.overflow = '';
+    }
+
+    // ── Remediation Modal ──────────────────────────────────────────────────
+
+    initRemediationModal() {
+        const modal = document.createElement('div');
+        modal.id = 'remediation-modal';
+        modal.className = 'modal-overlay';
+        modal.setAttribute('aria-hidden', 'true');
+        modal.innerHTML = `
+            <div class="modal-panel remediation-panel" role="dialog" aria-modal="true">
+                <button class="modal-close" id="remediation-modal-close" aria-label="Close">&times;</button>
+                <div id="remediation-content"></div>
+            </div>`;
+        document.body.appendChild(modal);
+        this.remediationModal = modal;
+
+        modal.querySelector('#remediation-modal-close').addEventListener('click', () => this.closeRemediationModal());
+        modal.addEventListener('click', e => { if (e.target === modal) this.closeRemediationModal(); });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && modal.classList.contains('modal-overlay--open')) this.closeRemediationModal();
+        });
+    }
+
+    showRemediationModal(vuln) {
+        const key  = vuln.id || vuln.name;
+        const isFp = this.falsePositives.has(key);
+        const sev  = this.getSeverityClass(vuln.severity);
+        const loc  = `${vuln.file}${vuln.line ? ':' + vuln.line : ''}`;
+
+        const verifyPrompt = [
+            'Please analyze whether this vulnerability is a false positive:',
+            '',
+            `Name: ${vuln.name}`,
+            `Severity: ${vuln.severity}`,
+            `File: ${loc}`,
+            `Scanner: ${vuln.scanner}`,
+            `Description: ${vuln.description || vuln.message}`,
+        ].join('\n');
+
+        const fixPrompt = [
+            '/ez-appsec fix',
+            '',
+            `Name: ${vuln.name}`,
+            `Severity: ${vuln.severity}`,
+            `File: ${loc}`,
+            `Scanner: ${vuln.scanner}`,
+            `Description: ${vuln.description || vuln.message}`,
+            ...(vuln.solution ? [`Suggested fix: ${vuln.solution}`] : []),
+        ].join('\n');
+
+        document.getElementById('remediation-content').innerHTML = `
+            <div class="remediation-header">
+                <span class="badge badge-severity badge-${sev}">${vuln.severity.toUpperCase()}</span>
+                <h2 class="remediation-title">${this.escapeHtml(vuln.name)}</h2>
+                <p class="remediation-location">${this.escapeHtml(loc)}</p>
+            </div>
+            <div class="remediation-actions">
+                <button class="remediation-option${isFp ? ' remediation-option--active' : ''}" id="rem-fp">
+                    <span class="rem-icon">🚫</span>
+                    <span class="rem-label">${isFp ? 'Unmark False Positive' : 'Mark False Positive'}</span>
+                    <span class="rem-desc">${isFp ? 'Currently flagged as FP' : 'Flag finding as a false positive'}</span>
+                </button>
+                <button class="remediation-option" id="rem-verify">
+                    <span class="rem-icon">🔍</span>
+                    <span class="rem-label">Verify with AI</span>
+                    <span class="rem-desc">Copy prompt to check if this is a false positive</span>
+                </button>
+                <button class="remediation-option" id="rem-fix">
+                    <span class="rem-icon">🔧</span>
+                    <span class="rem-label">Fix with AI</span>
+                    <span class="rem-desc">Copy /ez-appsec fix prompt for the AI chat</span>
+                </button>
+            </div>
+            <div class="remediation-copy-area" id="rem-copy-area" hidden>
+                <div class="rem-copy-label">Copy this prompt into your AI chat:</div>
+                <pre class="rem-copy-text" id="rem-copy-text"></pre>
+                <button class="btn btn--primary btn--sm" id="rem-copy-btn">Copy to Clipboard</button>
+            </div>`;
+
+        document.getElementById('rem-fp').addEventListener('click', () => {
+            if (this.falsePositives.has(key)) { this.falsePositives.delete(key); }
+            else { this.falsePositives.add(key); }
+            this.closeRemediationModal();
+            this.applyFilters();
+        });
+
+        const showCopy = (text) => {
+            document.getElementById('rem-copy-text').textContent = text;
+            document.getElementById('rem-copy-area').removeAttribute('hidden');
+            document.getElementById('rem-copy-btn').onclick = () => {
+                navigator.clipboard.writeText(text).then(() => {
+                    const btn = document.getElementById('rem-copy-btn');
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => { btn.textContent = 'Copy to Clipboard'; }, 2000);
+                });
+            };
+        };
+
+        document.getElementById('rem-verify').addEventListener('click', () => showCopy(verifyPrompt));
+        document.getElementById('rem-fix').addEventListener('click', () => showCopy(fixPrompt));
+
+        this.remediationModal.setAttribute('aria-hidden', 'false');
+        this.remediationModal.classList.add('modal-overlay--open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    closeRemediationModal() {
+        this.remediationModal.setAttribute('aria-hidden', 'true');
+        this.remediationModal.classList.remove('modal-overlay--open');
         document.body.style.overflow = '';
     }
 
@@ -248,6 +362,8 @@ class VulnerabilityDashboard {
         if (slug === 'all') {
             await this.loadAllProjects();
         } else {
+            const summary = document.getElementById('project-summary');
+            if (summary) summary.remove();
             await this.loadVulnerabilities(`data/projects/${slug}/vulnerabilities.json`);
         }
     }
@@ -258,21 +374,28 @@ class VulnerabilityDashboard {
         const results = await Promise.allSettled(
             this.projects.map(async p => {
                 const r = await fetch(`data/projects/${p.slug}/vulnerabilities.json`);
-                if (!r.ok) return [];
+                if (!r.ok) return { vulns: [], project: p };
                 const data = await r.json();
                 const vulns = Array.isArray(data)
                     ? data
                     : (data.vulnerabilities || data.issues || []);
-                return vulns.map(v => ({ ...v, _project: p.name, _project_slug: p.slug }));
+                return { vulns: vulns.map(v => ({ ...v, _project: p.name, _project_slug: p.slug })), project: p };
             })
         );
 
-        const allVulns = results
-            .filter(r => r.status === 'fulfilled')
-            .flatMap(r => r.value);
+        const projectStats = [];
+        const allVulns = [];
+        results.forEach(r => {
+            if (r.status !== 'fulfilled') return;
+            const { vulns, project } = r.value;
+            const normalized = vulns.map(v => this.normalizeVulnerability(v));
+            allVulns.push(...normalized);
+            const stats = { total: normalized.length, critical: 0, high: 0, medium: 0, low: 0 };
+            normalized.forEach(v => { if (v.severity in stats) stats[v.severity]++; });
+            projectStats.push({ project, stats });
+        });
 
         this.allVulnerabilities = allVulns
-            .map(v => this.normalizeVulnerability(v))
             .sort((a, b) => this.severityValue(b.severity) - this.severityValue(a.severity));
 
         if (this.scanMeta) {
@@ -280,8 +403,49 @@ class VulnerabilityDashboard {
                 `${this.projects.length} projects  ·  ${this.allVulnerabilities.length} total findings`;
         }
 
+        this.renderProjectSummaryTable(projectStats);
         this.populateScannerFilter();
         this.applyFilters();
+    }
+
+    renderProjectSummaryTable(projectStats) {
+        const existing = document.getElementById('project-summary');
+        if (existing) existing.remove();
+
+        const el = document.createElement('div');
+        el.id = 'project-summary';
+        el.className = 'project-summary';
+
+        const rows = projectStats.map(({ project, stats }) => `
+            <tr class="project-summary-row" data-slug="${this.escapeHtml(project.slug)}">
+                <td class="ps-name">${this.escapeHtml(project.name)}</td>
+                <td class="ps-num ps-critical">${stats.critical || '—'}</td>
+                <td class="ps-num ps-high">${stats.high || '—'}</td>
+                <td class="ps-num ps-medium">${stats.medium || '—'}</td>
+                <td class="ps-num ps-low">${stats.low || '—'}</td>
+                <td class="ps-num ps-total">${stats.total}</td>
+            </tr>`).join('');
+
+        el.innerHTML = `
+            <table class="project-summary-table">
+                <thead>
+                    <tr>
+                        <th>Project</th>
+                        <th class="ps-num">Critical</th>
+                        <th class="ps-num">High</th>
+                        <th class="ps-num">Medium</th>
+                        <th class="ps-num">Low</th>
+                        <th class="ps-num">Total</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+
+        this.container.parentElement.insertBefore(el, this.container);
+
+        el.querySelectorAll('.project-summary-row').forEach(row => {
+            row.addEventListener('click', () => this.selectProject(row.dataset.slug));
+        });
     }
 
     // ── Data loading ───────────────────────────────────────────────────────
@@ -423,13 +587,14 @@ class VulnerabilityDashboard {
         const projectHeader = showProject ? '<th>Project</th>' : '';
 
         const rows = this.filteredVulnerabilities
-            .map(v => this.createTableRow(v, showProject))
+            .map((v, i) => this.createTableRow(v, showProject, i))
             .join('');
 
         this.container.innerHTML = `
             <table class="vuln-table">
                 <thead>
                     <tr>
+                        <th class="th-rem"></th>
                         <th>Severity</th>
                         <th>Name</th>
                         <th>Scanner</th>
@@ -444,17 +609,27 @@ class VulnerabilityDashboard {
         this.container.querySelectorAll('.vuln-row').forEach((row, idx) => {
             row.addEventListener('click', () => this.showDetail(this.filteredVulnerabilities[idx]));
         });
+
+        this.container.querySelectorAll('.btn-remediate').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                const idx = parseInt(btn.dataset.idx, 10);
+                this.showRemediationModal(this.filteredVulnerabilities[idx]);
+            });
+        });
     }
 
-    createTableRow(vuln, showProject = false) {
+    createTableRow(vuln, showProject = false, idx = 0) {
         const sev      = this.getSeverityClass(vuln.severity);
         const lineInfo = vuln.line ? `:${vuln.line}` : '';
         const extId    = vuln.external_id || '—';
+        const isFp     = this.falsePositives.has(vuln.id || vuln.name);
         const projectCell = showProject
             ? `<td class="vuln-row__project">${this.escapeHtml(vuln.project || '—')}</td>`
             : '';
         return `
-            <tr class="vuln-row vuln-row--${sev}">
+            <tr class="vuln-row vuln-row--${sev}${isFp ? ' vuln-row--fp' : ''}">
+                <td class="td-rem"><button class="btn-remediate" data-idx="${idx}" title="Remediate">⚕</button></td>
                 <td><span class="badge badge-severity badge-${sev}">${vuln.severity.toUpperCase()}</span></td>
                 <td class="vuln-row__name">${this.escapeHtml(vuln.name)}</td>
                 <td>${this.escapeHtml(vuln.scanner)}</td>

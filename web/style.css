@@ -376,11 +376,33 @@ pre code { background: none; padding: 0; color: inherit; }
 }
 .vuln-row:hover { background: var(--bg-2); }
 
-.vuln-row--critical td:first-child { border-left: 3px solid var(--critical); }
-.vuln-row--high     td:first-child { border-left: 3px solid var(--high); }
-.vuln-row--medium   td:first-child { border-left: 3px solid var(--medium); }
-.vuln-row--low      td:first-child { border-left: 3px solid var(--low); }
-.vuln-row--info     td:first-child { border-left: 3px solid var(--text-muted); }
+.vuln-row--critical td:nth-child(2) { border-left: 3px solid var(--critical); }
+.vuln-row--high     td:nth-child(2) { border-left: 3px solid var(--high); }
+.vuln-row--medium   td:nth-child(2) { border-left: 3px solid var(--medium); }
+.vuln-row--low      td:nth-child(2) { border-left: 3px solid var(--low); }
+.vuln-row--info     td:nth-child(2) { border-left: 3px solid var(--text-muted); }
+
+.vuln-row--fp { opacity: .55; }
+.vuln-row--fp .vuln-row__name::after { content: ' (FP)'; font-size: .7rem; color: var(--text-muted); font-weight: 400; }
+
+/* Remediate button column */
+.th-rem { width: 36px !important; padding: 6px 4px 6px 10px !important; }
+.td-rem { width: 36px; padding: 6px 4px 6px 10px !important; }
+
+.btn-remediate {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: .9rem;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity .15s, border-color .15s, color .15s;
+  line-height: 1;
+}
+.vuln-row:hover .btn-remediate { opacity: .55; }
+.btn-remediate:hover { opacity: 1 !important; color: var(--accent); border-color: var(--accent); }
 
 .vuln-row__name { font-weight: 600; max-width: 340px; word-break: break-word; }
 
@@ -399,6 +421,92 @@ pre code { background: none; padding: 0; color: inherit; }
   font-size: .78rem;
   color: var(--accent);
 }
+
+/* ── Project summary table (All Projects view) ──────────────────────────── */
+
+.project-summary {
+  margin-bottom: 24px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.project-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+}
+
+.project-summary-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--text-muted);
+  background: var(--bg-3);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.project-summary-table .ps-num { text-align: right; width: 80px; }
+
+.project-summary-row {
+  cursor: pointer;
+  transition: background .12s;
+}
+.project-summary-row:hover { background: var(--bg-3); }
+.project-summary-row td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.project-summary-row:last-child td { border-bottom: none; }
+
+.ps-name { font-weight: 600; }
+.ps-num  { text-align: right; font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: .82rem; }
+.ps-critical { color: var(--critical); }
+.ps-high     { color: var(--high); }
+.ps-medium   { color: var(--medium); }
+.ps-low      { color: var(--low); }
+.ps-total    { color: var(--text); font-weight: 700; }
+
+/* ── Remediation modal ───────────────────────────────────────────────────── */
+
+.remediation-panel { max-width: 520px; }
+
+.remediation-header { margin-bottom: 20px; }
+.remediation-title  { font-size: 1rem; font-weight: 700; margin: 8px 0 4px; word-break: break-word; }
+.remediation-location { font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: .78rem; color: var(--text-muted); }
+
+.remediation-actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+
+.remediation-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: border-color .15s, background .15s;
+  width: 100%;
+}
+.remediation-option:hover { border-color: var(--accent); background: rgba(79,156,249,.05); }
+.remediation-option--active { border-color: var(--medium); background: rgba(251,191,36,.05); }
+
+.rem-icon  { font-size: 1.2rem; flex-shrink: 0; }
+.rem-label { font-weight: 700; font-size: .9rem; flex: 1; }
+.rem-desc  { font-size: .78rem; color: var(--text-muted); }
+
+.remediation-copy-area {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+}
+.rem-copy-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 8px; }
+.rem-copy-text  { font-size: .78rem; white-space: pre-wrap; word-break: break-word; color: var(--text); margin-bottom: 12px; font-family: 'SF Mono', 'Fira Code', Consolas, monospace; max-height: 180px; overflow-y: auto; }
 
 /* ── Modal ──────────────────────────────────────────────────────────────── */
 
