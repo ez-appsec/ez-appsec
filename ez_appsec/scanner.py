@@ -183,8 +183,118 @@ class SecurityScanner:
         """Filter GitLab vulnerabilities by minimum severity level"""
         severity_levels = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
         min_level = severity_levels.get(min_severity, 0)
-        
+
         return [
             vuln for vuln in vulnerabilities
             if severity_levels.get(vuln.get("severity", "medium"), 1) >= min_level
         ]
+
+    def scan_to_github_format(self, path: str, output_file: str = None, custom_prompt: str = None) -> Dict[str, Any]:
+        """Execute full security scan and output in GitHub SARIF format"""
+
+        base_path = Path(path)
+        scanner_results = {}
+        raw_outputs = {}
+
+        # Run external scanners with raw output capture
+        if self.use_external and self.external:
+            issues, raw_outputs = self.external.scan_all_with_raw_outputs(path)
+            scanner_results["external"] = len(issues)
+
+        # Convert raw outputs to GitHub SARIF format
+        github_reports = []
+        for scanner_name, raw_path in raw_outputs.items():
+            if os.path.exists(raw_path):
+                try:
+                    report = VulnerabilityConverters.convert_to_github_format(scanner_name, raw_path)
+                    github_reports.append(report)
+                except Exception as e:
+                    print(f"Error converting {scanner_name} output to SARIF: {e}")
+                finally:
+                    # Clean up temporary file
+                    try:
+                        os.unlink(raw_path)
+                    except:
+                        pass
+
+        # Merge all SARIF reports
+        if github_reports:
+            merged_report = VulnerabilityConverters.merge_github_reports(github_reports)
+        else:
+            from ez_appsec.converters import GitHubSarifFormat
+            merged_report = GitHubSarifFormat.create_report([], "ez-appsec")
+
+        # AI-powered analysis and remediation (optional for GitHub format)
+        merged_results = merged_report.get("runs", [{}])[0].get("results", [])
+        if merged_results and self.ai:
+            # Convert SARIF format back to internal format for AI analysis
+            internal_issues = []
+            for result in merged_results:
+                # Extract location info
+                locations = result.get("locations", [])
+                if locations:
+                    physical_loc = locations[0].get("physicalLocation", {})
+                    file_path = physical_loc.get("artifactLocation", {}).get("uri", "unknown")
+                    region = physical_loc.get("region", {})
+                    line = region.get("startLine", 1)
+                else:
+                    file_path = "unknown"
+                    line = 1
+
+                # Map SARIF level back to severity
+                level = result.get("level", "warning")
+                level_to_severity = {"error": "high", "warning": "medium", "note": "low"}
+                severity = level_to_severity.get(level, "medium")
+
+                internal_issues.append({
+                    "type": result.get("ruleId", "unknown"),
+                    "title": result.get("ruleId", ""),
+                    "description": result.get("message", {}).get("text", ""),
+                    "file": file_path,
+                    "line": line,
+                    "severity": severity,
+                    "scanner": "github-converted"
+                })
+
+            ai_results = self.ai.analyze(internal_issues, base_path, custom_prompt)
+
+            # Update SARIF report with AI-enhanced descriptions
+            for i, result in enumerate(merged_results):
+                if i < len(ai_results.get("enhanced_issues", [])):
+                    enhanced = ai_results["enhanced_issues"][i]
+                    # Update message with AI-enhanced description
+                    result["message"]["text"] = enhanced.get("description", result["message"]["text"])
+                    # Note: SARIF doesn't have a simple "solution" field, but we could add fixes
+
+        # Filter by severity - need to filter results based on their level
+        if self.config.severity != "all":
+            merged_results = self._filter_sarif_results_by_severity(merged_results, self.config.severity)
+            merged_report["runs"][0]["results"] = merged_results
+
+        # Save to file if requested
+        if output_file:
+            import json
+            with open(output_file, 'w') as f:
+                json.dump(merged_report, f, indent=2)
+
+        return merged_report
+
+    def _filter_sarif_results_by_severity(self, results: List[Dict], min_severity: str) -> List[Dict]:
+        """Filter SARIF results by minimum severity level"""
+        from ez_appsec.converters import GitHubSarifFormat
+
+        # Map severity levels to numeric values
+        severity_levels = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+        min_level = severity_levels.get(min_severity, 0)
+
+        filtered = []
+        for result in results:
+            level = result.get("level", "warning")
+            # Map SARIF level back to severity for comparison
+            level_to_severity = {"error": "critical", "warning": "medium", "note": "low"}
+            severity = level_to_severity.get(level, "medium")
+
+            if severity_levels.get(severity, 0) >= min_level:
+                filtered.append(result)
+
+        return filtered

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ez-appsec — GitHub Security Dashboard</title>
+  <meta name="description" content="Application security dashboard powered by ez-appsec" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Navigation ─────────────────────────────────────────────────────── -->
+  <header class="nav">
+    <div class="container nav__inner">
+      <a href="https://github.com/jfelten/ez-appsec" class="nav__logo">ez-appsec<span>.ai</span></a>
+      <nav class="nav__links">
+        <span id="version-label" class="nav__version" hidden></span>
+        <a href="index.html" class="nav__active">Findings</a>
+        <a href="https://github.com/jfelten/ez-appsec/issues" target="_blank">Issues</a>
+      </nav>
+      <div class="nav__actions">
+        <a id="upgrade-btn" class="btn btn--upgrade btn--sm" target="_blank" rel="noopener" hidden>Upgrade</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Dashboard header ───────────────────────────────────────────────── -->
+  <section class="dash-header">
+    <div class="dash-header__inner">
+      <div class="dash-header__left">
+        <h1 class="dash-header__title" id="dash-title">Vulnerability Scan Results</h1>
+        <p class="dash-header__sub" id="scan-meta">Loading scan data…</p>
+        <a id="rescan-btn" class="rescan-btn" target="_blank" rel="noopener" title="Trigger a new security scan">
+          <span class="rescan-btn__icon">▶</span>
+          <span class="rescan-btn__label">Run Scan</span>
+        </a>
+      </div>
+      <div class="dash-header__right">
+        <div id="stats-chart" class="stats-chart"></div>
+        <div class="stat-cards">
+          <div class="stat-card stat-card--critical">
+            <div class="stat-card__value" id="critical-count">—</div>
+            <div class="stat-card__label">Critical</div>
+          </div>
+          <div class="stat-card stat-card--high">
+            <div class="stat-card__value" id="high-count">—</div>
+            <div class="stat-card__label">High</div>
+          </div>
+          <div class="stat-card stat-card--medium">
+            <div class="stat-card__value" id="medium-count">—</div>
+            <div class="stat-card__label">Medium</div>
+          </div>
+          <div class="stat-card stat-card--low">
+            <div class="stat-card__value" id="low-count">—</div>
+            <div class="stat-card__label">Low</div>
+          </div>
+          <div class="stat-card stat-card--age">
+            <div class="stat-card__value" id="age-count">—</div>
+            <div class="stat-card__label">Avg Age</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Dashboard layout: sidebar + content ───────────────────────────── -->
+  <div class="dashboard-layout">
+
+    <!-- Sidebar (hidden until index.json loads with projects) -->
+    <aside class="sidebar" id="sidebar" hidden>
+      <div class="sidebar__header">Projects</div>
+      <nav class="project-tree" id="project-tree">
+        <p class="tree-loading">Loading projects…</p>
+      </nav>
+    </aside>
+
+    <div class="dashboard-content">
+
+      <!-- ── Filters ──────────────────────────────────────────────────── -->
+      <section class="filter-bar">
+        <div class="filter-bar__inner">
+          <select id="severity-filter" class="filter-input" aria-label="Filter by severity">
+            <option value="">All severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="info">Info</option>
+          </select>
+
+          <select id="scanner-filter" class="filter-input" aria-label="Filter by scanner">
+            <option value="">All scanners</option>
+            <option value="gitleaks">Gitleaks</option>
+            <option value="semgrep">Semgrep</option>
+            <option value="grype">Grype</option>
+            <option value="kics">KICS</option>
+          </select>
+
+          <input
+            type="search"
+            id="search-filter"
+            class="filter-input filter-input--search"
+            placeholder="Search findings…"
+            aria-label="Search vulnerabilities"
+          />
+
+          <button id="reset-filters" class="btn btn--outline btn--sm">Reset</button>
+        </div>
+      </section>
+
+      <!-- ── Vulnerability list ────────────────────────────────────────── -->
+      <main class="dash-main">
+        <div id="vulnerabilities-container">
+          <div class="empty-state">
+            <h3>Loading vulnerabilities…</h3>
+            <p>Fetching data from <code>data/vulnerabilities.json</code></p>
+          </div>
+        </div>
+      </main>
+
+    </div><!-- /.dashboard-content -->
+  </div><!-- /.dashboard-layout -->
+
+  <!-- ── Detail Modal ────────────────────────────────────────────────────── -->
+  <div id="vuln-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button class="modal-close" id="modal-close" aria-label="Close detail">&times;</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <!-- ── Footer ─────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <span class="nav__logo">ez-appsec<span>.ai</span></span>
+      <nav class="footer__links">
+        <a href="https://github.com/jfelten/ez-appsec/discussions" target="_blank">Discussions</a>
+      </nav>
+      <p class="footer__copy">&copy; 2026 ez-appsec.ai. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script src="app-github.js"></script>
+</body>
+</html>

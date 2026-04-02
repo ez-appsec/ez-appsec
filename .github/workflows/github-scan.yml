@@ -1,0 +1,189 @@
+# GitHub Actions workflow to perform project scan and publish results to GitHub Pages dashboard.
+# Requires EZ_APPSEC_DASHBOARD_REPO to be set for dashboard updates.
+# Run /ez-appsec-install-github to set up dashboard project.
+
+name: ez-appsec Security Scan
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+  security-events: write  # Required for SARIF upload to Security tab
+  actions: read
+
+env:
+  EZ_APPSEC_VERSION: "0.1.17"
+  EZ_APPSEC_IMAGE: "jfelten/ez-appsec:${{ env.EZ_APPSEC_VERSION }}"
+
+jobs:
+  scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ env.EZ_APPSEC_IMAGE }}
+    outputs:
+      findings-count: ${{ steps.summary.outputs.findings-count }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ez-appsec scan
+        id: scan
+        env:
+          EZ_APPSEC_OUTPUT_DIR: "scan-results"
+          EZ_APPSEC_REPORT: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/vulnerabilities.json"
+          EZ_APPSEC_SARIF: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/ez-appsec.sarif"
+        run: |
+          echo "Running ez-appsec scan..."
+          mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
+          ez-appsec status || true
+          ez-appsec github-scan . --output "${EZ_APPSEC_SARIF}" --severity ${{ github.event_name == 'pull_request' && 'all' || 'medium' }}
+
+      - name: Count findings
+        id: summary
+        run: |
+          if [ -f "${EZ_APPSEC_SARIF}" ]; then
+            COUNT=$(python3 -c "import json; print(len(json.load(open('${EZ_APPSEC_SARIF}'))['runs'][0]['results']))")
+            echo "findings-count=$COUNT" >> $GITHUB_OUTPUT
+            echo "Found $COUNT security findings"
+          else
+            echo "findings-count=0" >> $GITHUB_OUTPUT
+            echo "No findings found"
+          fi
+
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ env.EZ_APPSEC_OUTPUT_DIR }}/ez-appsec.sarif
+        continue-on-error: true
+
+      - name: Upload scan results as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ez-appsec-scan-${{ github.sha }}
+          path: |
+            ${{ env.EZ_APPSEC_OUTPUT_DIR }}/ez-appsec.sarif
+            ${{ env.EZ_APPSEC_OUTPUT_DIR }}/vulnerabilities.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Comment on PR with findings
+        if: github.event_name == 'pull_request' && steps.scan.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const count = '${{ steps.summary.outputs.findings-count }}';
+            const artifactUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+
+            let body = `## 🔒 Security Scan Results\n\n`;
+            body += `**Findings:** ${count}\n\n`;
+            body += `📊 [View full scan results](${artifactUrl})\n\n`;
+            body += `💡 Use \`/ez-appsec-scan\` in your local environment for detailed analysis.\n`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('🔒 Security Scan Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+  update-dashboard:
+    name: Update Dashboard
+    needs:
+      - scan
+    runs-on: ubuntu-latest
+    if: >
+      vars.EZ_APPSEC_DASHBOARD_REPO != '' &&
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') &&
+      needs.scan.result == 'success'
+
+    steps:
+      - name: Checkout dashboard repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.EZ_APPSEC_DASHBOARD_REPO }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: dashboard
+
+      - name: Download scan results
+        uses: actions/download-artifact@v4
+        with:
+          name: ez-appsec-scan-${{ github.sha }}
+          path: dashboard/temp
+
+      - name: Prepare dashboard data
+        env:
+          DASHBOARD_DATA_DIR: "dashboard/public/data/projects/${{ github.repository }}/${{ github.run_id }}"
+        run: |
+          mkdir -p "${DASHBOARD_DATA_DIR}"
+
+          # Copy vulnerabilities.json
+          if [ -f "dashboard/temp/ez-appsec-report/vulnerabilities.json" ]; then
+            cp "dashboard/temp/ez-appsec-report/vulnerabilities.json" "${DASHBOARD_DATA_DIR}/vulnerabilities.json"
+          elif [ -f "dashboard/temp/vulnerabilities.json" ]; then
+            cp "dashboard/temp/vulnerabilities.json" "${DASHBOARD_DATA_DIR}/vulnerabilities.json"
+          else
+            echo '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"ez-appsec"}},"results":[]}]}' > "${DASHBOARD_DATA_DIR}/vulnerabilities.json"
+          fi
+
+          # Create/update meta.json
+          cat > "${DASHBOARD_DATA_DIR}/meta.json" << EOF
+          {
+            "project_url": "${{ github.server_url }}/${{ github.repository }}",
+            "default_branch": "${{ github.ref_name }}",
+            "github_url": "${{ github.server_url }}/${{ github.repository }}",
+            "project_id": "${{ github.repository_id }}",
+            "project_path": "${{ github.repository }}",
+            "project_name": "${{ github.repository_name }}",
+            "ez_appsec_version": "${{ env.EZ_APPSEC_VERSION }}",
+            "scan_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "findings_count": "${{ needs.scan.outputs.findings-count }}"
+          }
+          EOF
+
+      - name: Commit and push to dashboard
+        working-directory: dashboard
+        env:
+          GIT_AUTHOR_NAME: "ez-appsec CI"
+          GIT_AUTHOR_EMAIL: "ci@ez-appsec.ai"
+          GIT_COMMITTER_NAME: "ez-appsec CI"
+          GIT_COMMITTER_EMAIL: "ci@ez-appsec.ai"
+        run: |
+          git config user.name "$GIT_AUTHOR_NAME"
+          git config user.email "$GIT_AUTHOR_EMAIL"
+
+          git add public/data/
+          if git diff --cached --quiet; then
+            echo "No changes to dashboard"
+          else
+            git commit -m "chore: update scan results from ${{ github.repository }} (${{ github.sha }})"
+            git push origin main
+          fi

@@ -69,6 +69,18 @@ curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/skills/insta
 
 Then use `/ez-appsec-install` to add ez-appsec scanning to any GitLab project via a `scan.yml` include and merge request.
 
+For GitHub projects, use `/ez-appsec-install-github` to add GitHub Actions workflow integration:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/skills/install.sh | bash -s --github
+```
+
+This will:
+- Add `.github/workflows/github-scan.yml` to your repository
+- Set up version control variables
+- Configure GitHub Pages dashboard integration (optional)
+- Create a pull request for review
+
 ### Check Scanner Installation
 
 ```bash
@@ -111,6 +123,28 @@ The GitLab format includes:
 - Remediation suggestions
 - Scanner identification
 - CVE references where available
+
+### GitHub SARIF Format
+
+Generate reports compatible with GitHub Advanced Security:
+
+```bash
+# Scan and output in SARIF format
+ez-appsec github-scan . --output ez-appsec.sarif
+
+# With AI analysis and custom prompt
+ez-appsec github-scan . --ai-prompt "Focus on critical issues" --output report.sarif
+```
+
+The SARIF format includes:
+- Standardized SARIF 2.1.0 schema
+- Severity levels mapped to SARIF levels (error, warning, note)
+- Location information (file, line numbers, regions)
+- Rule definitions with help URIs
+- Scanner identification
+- CVE references where available
+
+**Note**: To view SARIF results in GitHub Security tab, use the GitHub Actions workflow which includes SARIF upload. GitHub Advanced Security license is required for Security tab display.
 
 ### Initialize Configuration
 
@@ -232,6 +266,30 @@ services:
     command: scan . --output results.json
 ```
 
+### GitHub Pages Dashboard
+
+For multi-project security dashboards, ez-appsec supports GitHub Pages:
+
+```bash
+# Clone the dashboard template
+git clone https://github.com/jfelten/ez-appsec-dashboard.git
+cd ez-appsec-dashboard
+
+# Configure the aggregation script
+# The dashboard automatically aggregates data from multiple projects
+# Projects send scan results to: data/projects/{REPO}/{RUN_ID}/
+
+# Enable GitHub Pages
+gh api --method PUT repos/OWNER/ez-appsec-dashboard/pages -f '{"source":{"branch":"main"}}'
+```
+
+**Features:**
+- Per-project vulnerability tracking
+- Aggregate statistics across all projects
+- Project-based filtering
+- Last scan date tracking
+- GitHub-style navigation and metadata
+
 ## API Usage
 
 ### Basic Scanning
@@ -260,6 +318,24 @@ scanner = SecurityScanner(config)
 gitlab_report = scanner.scan_to_gitlab_format("/path/to/code", "report.json")
 print(f"Generated report with {len(gitlab_report['vulnerabilities'])} vulnerabilities")
 ```
+
+### GitHub SARIF Format
+
+Generate reports compatible with GitHub Advanced Security:
+
+```python
+from ez_appsec.scanner import SecurityScanner
+from ez_appsec.config import Config
+
+config = Config(severity="high")
+scanner = SecurityScanner(config)
+
+# Generate SARIF report
+github_report = scanner.scan_to_github_format("/path/to/code", "report.json")
+print(f"Generated SARIF report with {len(github_report['runs'][0]['results'])} findings")
+```
+
+The SARIF format is compatible with GitHub's security features and can be uploaded via the GitHub Actions workflow.
 
 ### Individual Scanner Output Conversion
 

@@ -21,6 +21,7 @@ INSTALL_SKILL_NAME="ez-appsec-install"
 PIPELINE_SCAN_SKILL_NAME="ez-appsec-pipeline-scan"
 UPDATE_VULNS_SKILL_NAME="ez-appsec-update-vulns"
 LOCAL_SCAN_SKILL_NAME="ez-appsec-local-scan"
+GITHUB_INSTALL_SKILL_NAME="ez-appsec-install-github"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -41,9 +42,10 @@ Options:
   --uninstall    Remove all files installed by this script
   -h, --help     Show this help
 
-Installs two Claude Code slash commands:
-  /ez-appsec-scan     Run a security scan on a directory
-  /ez-appsec-install  Install ez-appsec into a GitLab project via scan.yml include + MR
+Installs Claude Code slash commands:
+  /ez-appsec-scan       Run a security scan on a directory
+  /ez-appsec-install       Install ez-appsec into a GitLab project via scan.yml include + MR
+  /ez-appsec-install-github  Install ez-appsec into a GitHub project via GitHub Actions workflow
 
 Examples:
   ./skills/install.sh
@@ -88,11 +90,28 @@ install_claude_project() {
   echo "  Location : ${PROJECT_CLAUDE_DIR}/${PIPELINE_SCAN_SKILL_NAME}.md"
   echo "  Location : ${PROJECT_CLAUDE_DIR}/${UPDATE_VULNS_SKILL_NAME}.md"
   echo "  Location : ${PROJECT_CLAUDE_DIR}/${LOCAL_SCAN_SKILL_NAME}.md"
-  echo "  Usage    : /ez-appsec-local-scan [path]"
-  echo "  Usage    : /ez-appsec-scan [path]"
   echo "  Usage    : /ez-appsec-install [path]"
+  echo "  Usage    : /ez-appsec-install-github [path]"
   echo "  Usage    : /ez-appsec-pipeline-scan [path]"
   echo "  Usage    : /ez-appsec-update-vulns [path]"
+}
+
+install_claude_github() {
+  mkdir -p "${PROJECT_CLAUDE_DIR}"
+  cp "${SKILL_DIR}/claude/${SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${INSTALL_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${PIPELINE_SCAN_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${PIPELINE_SCAN_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${UPDATE_VULNS_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${UPDATE_VULNS_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${LOCAL_SCAN_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${LOCAL_SCAN_SKILL_NAME}.md"
+  cp "${SKILL_DIR}/claude/${GITHUB_INSTALL_SKILL_NAME}.md" "${PROJECT_CLAUDE_DIR}/${GITHUB_INSTALL_SKILL_NAME}.md"
+  green "✓ GitHub Code skills installed for this project"
+  echo "  Location : ${PROJECT_CLAUDE_DIR}/${SKILL_NAME}.md"
+  echo "  Location : ${PROJECT_CLAUDE_DIR}/${INSTALL_SKILL_NAME}.md"
+  echo "  Location : ${PROJECT_CLAUDE_DIR}/${PIPELINE_SCAN_SKILL_NAME}.md"
+  echo "  Location : ${PROJECT_CLAUDE_DIR}/${UPDATE_VULNS_SKILL_NAME}.md"
+  echo "  Location : ${PROJECT_CLAUDE_DIR}/${LOCAL_SCAN_SKILL_NAME}.md"
+  echo "  Location : ${PROJECT_CLAUDE_DIR}/${GITHUB_INSTALL_SKILL_NAME}.md"
+  echo "  Usage    : /ez-appsec-install-github [path]"
 }
 
 install_copilot() {
@@ -190,5 +209,6 @@ fi
 
 $MODE_GLOBAL  && install_claude_global
 $MODE_PROJECT && install_claude_project
+$MODE_GITHUB   && install_claude_github
 $MODE_COPILOT && install_copilot
 $MODE_CURSOR  && install_cursor
