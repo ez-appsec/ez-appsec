@@ -364,6 +364,107 @@ jobs:
   # RELEASE STAGE
   # ============================================
 
+  # ── Auto-bump patch version on push to main ───────────────────────────────────
+  # Increments the patch component of VERSION (e.g. 0.1.0 → 0.1.1) and commits
+  # it via GitHub API. The resulting commit triggers a new workflow
+  # where version:tag picks up the new version and creates the git tag.
+
+  version-bump:
+    name: Bump Version
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore: bump version')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          VERSION=$(cat VERSION)
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+          NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          echo "Bumping VERSION ${VERSION} → ${NEW_VERSION}..."
+          echo "${NEW_VERSION}" > VERSION
+          echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Commit and push VERSION bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }}"
+          git push
+
+  # ── Auto-tag from VERSION file ────────────────────────────────────────────────
+  # Reads the VERSION file and creates a git tag via GitHub API if it doesn't
+  # already exist. This triggers a tag workflow which builds + releases the images.
+
+  version-tag:
+    name: Create Version Tag
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore: update README version')
+    needs: [version-bump]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Get current version
+        id: version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "ℹ️  Tag ${TAG} already exists, skipping"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update README with version
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i "s/^# ez-appsec.*/# ez-appsec v${VERSION}/" README.md
+
+      - name: Commit README update
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update README version to v${VERSION} [skip ci]"
+            git push
+          fi
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Create and push git tag
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          echo "Creating tag ${TAG}..."
+          git tag -a "${TAG}" -m "Release v${VERSION}"
+          git push origin "${TAG}"
+          echo "✅ Tag ${TAG} created — release workflow triggered"
+
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
