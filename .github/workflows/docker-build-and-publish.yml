@@ -1,5 +1,6 @@
-# GitHub Actions workflow to build and publish Docker images to Docker Hub
+# GitHub Actions workflow to build and publish Docker images to GitHub Container Registry
 # Replaces GitLab CI pipeline with equivalent functionality
+# Requires: packages: write permission (already set in permissions section)
 
 name: Docker Build and Publish
 
@@ -16,8 +17,8 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  DOCKER_HUB_ORG: ez-appsec
-  IMAGE_NAME: ez-appsec
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 permissions:
   contents: read
@@ -177,18 +178,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -214,8 +216,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           echo "🧪 Testing image functionality..."
-          docker run --rm ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --version
-          docker run --rm ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --help
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --version
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --help
 
   build-docker-slim:
     name: Build Slim Docker Image
@@ -230,18 +232,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch,suffix=-slim
             type=ref,event=pr,suffix=-slim
@@ -276,18 +279,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch,suffix=-micro
             type=ref,event=pr,suffix=-micro
@@ -322,18 +326,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch,suffix=-semgrep
             type=ref,event=pr,suffix=-semgrep
@@ -406,10 +411,10 @@ jobs:
             echo ""
             echo "| Variant | Tag |"
             echo "|---------|-----|"
-            echo "| Standard (all scanners) | \`${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:v${VERSION}\` |"
-            echo "| Slim                    | \`${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:slim-v${VERSION}\` |"
-            echo "| Micro (no semgrep)      | \`${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:micro-v${VERSION}\` |"
-            echo "| Semgrep                 | \`${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:semgrep-v${VERSION}\` |"
+            echo "| Standard (all scanners) | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${VERSION}\` |"
+            echo "| Slim                    | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:slim-v${VERSION}\` |"
+            echo "| Micro (no semgrep)      | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:micro-v${VERSION}\` |"
+            echo "| Semgrep                 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:semgrep-v${VERSION}\` |"
             echo ""
             echo "**Full Changelog**: [CHANGELOG.md](CHANGELOG.md)"
           } > RELEASE_NOTES.md
