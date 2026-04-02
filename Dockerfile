@@ -58,8 +58,8 @@ RUN ARCH=$(uname -m) && \
 RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin && \
     grype version
 
-# semgrep via pip with pinned version
-RUN pip install --no-cache-dir semgrep==1.34.0 && \
+# semgrep via pip with flexible version for better compatibility
+RUN pip install --no-cache-dir semgrep && \
     semgrep --version
 
 # Bundle GitLab SAST rules (language dirs only — offline use, richer severity metadata)
