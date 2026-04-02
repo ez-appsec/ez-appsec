@@ -40,6 +40,14 @@ for vuln_file in sorted(PROJECTS_DIR.glob("*/vulnerabilities.json")):
     name = meta.get("project_name") or slug
     path = meta.get("project_path") or slug
 
+    # project_url: canonical link to the project (platform-agnostic).
+    # GitLab sets it explicitly; fallback constructs from gitlab_url + project_path.
+    project_url = meta.get("project_url") or (
+        f"{meta['gitlab_url']}/{meta['project_path']}"
+        if meta.get("gitlab_url") and meta.get("project_path")
+        else None
+    )
+
     # Use the file mtime as last_updated if not available in meta
     last_updated = meta.get("last_updated") or datetime.fromtimestamp(
         vuln_file.stat().st_mtime, tz=timezone.utc
@@ -54,11 +62,13 @@ for vuln_file in sorted(PROJECTS_DIR.glob("*/vulnerabilities.json")):
     }
 
     projects.append({
-        "slug":         slug,
-        "name":         name,
-        "path":         path,
-        "last_updated": last_updated,
-        "summary":      summary,
+        "slug":           slug,
+        "name":           name,
+        "path":           path,
+        "project_url":    project_url,
+        "default_branch": meta.get("default_branch"),
+        "last_updated":   last_updated,
+        "summary":        summary,
     })
 
     print(f"  {slug}: {summary['total']} findings "

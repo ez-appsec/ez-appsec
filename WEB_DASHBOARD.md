@@ -66,6 +66,84 @@ Your dashboard will be live at:
 https://<username>.gitlab.io/<project>/
 ```
 
+## 🔌 API Usage
+
+The dashboard project's CI/CD pipeline provides API-triggerable jobs for managing scans and updates.
+
+### Rescan a Single Project
+
+Trigger `rescan:project` to clone and scan a specific project:
+
+```bash
+curl --request POST \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "https://gitlab.com/api/v4/projects/<dashboard-project-id>/pipeline" \
+  --form "ref=main" \
+  --form "variables[RESCAN_PROJECT_PATH]=<namespace/project>"
+```
+
+**Example:** Scan `myorg/frontend-app`
+```bash
+curl --request POST \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "https://gitlab.com/api/v4/projects/12345/pipeline" \
+  --form "ref=main" \
+  --form "variables[RESCAN_PROJECT_PATH]=myorg/frontend-app"
+```
+
+### Rescan All Projects
+
+Trigger `rescan:all` to scan every registered project:
+
+```bash
+curl --request POST \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "https://gitlab.com/api/v4/projects/<dashboard-project-id>/pipeline" \
+  --form "ref=main"
+```
+
+The job iterates through `public/data/projects/*/meta.json` and scans each.
+
+### Update Web Assets
+
+Trigger `update:web` to pull latest dashboard assets from ez-appsec:
+
+```bash
+curl --request POST \
+  --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  "https://gitlab.com/api/v4/projects/<dashboard-project-id>/pipeline" \
+  --form "ref=main"
+```
+
+Downloads `index.html`, `style.css`, `app.js`, and `.gitlab-ci.yml` from the ez-appsec source repo.
+
+### Finding the Dashboard Project ID
+
+```bash
+# Find by path
+glab api "projects/jfelten.work-group%2Fez_appsec%2Fez-appsec-dashboard" --field id
+
+# Or search
+glab api search --scope projects --search ez-appsec-dashboard
+```
+
+### Using glab CLI
+
+```bash
+# Trigger with glab (requires authenticated glab)
+glab api --method POST "projects/<dashboard-id>/pipeline" \
+  --field ref=main \
+  --field "variables[RESCAN_PROJECT_PATH]=myorg/myapp"
+```
+
+### Web UI Trigger
+
+You can also trigger jobs from the GitLab web UI:
+1. Go to CI/CD → Pipelines
+2. Click "New pipeline" → "Run pipeline"
+3. Add variables as needed (e.g., `RESCAN_PROJECT_PATH`)
+4. Click "Run pipeline"
+
 ## 📊 Dashboard Features
 
 ### Filtering & Sorting
