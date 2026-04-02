@@ -1,0 +1,428 @@
+# GitHub Actions workflow to build and publish Docker images to Docker Hub
+# Replaces GitLab CI pipeline with equivalent functionality
+
+name: Docker Build and Publish
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  DOCKER_HUB_ORG: ez-appsec
+  IMAGE_NAME: ez-appsec
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ============================================
+  # LINT STAGE
+  # ============================================
+
+  lint-python:
+    name: Lint Python Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install linting tools
+        run: |
+          pip install --no-cache-dir pylint flake8 black isort
+
+      - name: Run flake8
+        run: |
+          echo "🔍 Linting Python code with flake8..."
+          flake8 ez_appsec tests --count --select=E9,F63,F7,F82 --show-source --statistics
+          echo "✓ flake8 passed"
+
+      - name: Check black formatting
+        run: |
+          echo "🔍 Checking code style with black..."
+          black --check ez_appsec tests || true
+          echo "ℹ️  black formatting suggestions noted (not enforced)"
+
+      - name: Check import sorting
+        run: |
+          echo "🔍 Checking import sorting with isort..."
+          isort --check-only ez_appsec tests || true
+          echo "ℹ️  isort suggestions noted (not enforced)"
+
+      - name: Run pylint
+        run: |
+          echo "🔍 Linting with pylint..."
+          pylint ez_appsec --exit-zero --max-line-length=120
+          echo "✓ Pylint checks completed"
+
+  lint-docker:
+    name: Lint Dockerfiles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfiles: |
+            Dockerfile
+            Dockerfile.slim
+            Dockerfile.micro
+            Dockerfile.semgrep
+        continue-on-error: true
+
+  # ============================================
+  # TEST STAGE
+  # ============================================
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --no-cache-dir -r requirements.txt
+          pip install --no-cache-dir -e .
+          pip install --no-cache-dir pytest pytest-cov pytest-xdist
+
+      - name: Run tests
+        run: |
+          echo "🧪 Running unit tests with pytest..."
+          pytest tests/ -v --cov=ez_appsec --cov-report=term-missing --cov-report=xml --cov-report=html -n auto
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: |
+            htmlcov/
+            coverage.xml
+          retention-days: 7
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+
+  test-security:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install security tools
+        run: pip install --no-cache-dir bandit safety
+
+      - name: Run bandit
+        run: |
+          echo "🔒 Running security checks with bandit..."
+          bandit -r ez_appsec -ll --exit-zero || true
+          echo "✓ Bandit checks completed"
+
+      - name: Check dependencies with safety
+        run: |
+          echo "🔒 Checking dependencies with safety..."
+          pip install -r requirements.txt
+          safety check --json || true
+          echo "✓ Safety checks completed"
+        continue-on-error: true
+
+  # ============================================
+  # BUILD STAGE
+  # ============================================
+
+  build-docker-standard:
+    name: Build Standard Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint-python, test-unit]
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push standard image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Test image functionality
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "🧪 Testing image functionality..."
+          docker run --rm ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --version
+          docker run --rm ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --help
+
+  build-docker-slim:
+    name: Build Slim Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint-python, test-unit]
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-slim
+            type=ref,event=pr,suffix=-slim
+            type=semver,pattern={{version}},suffix=-slim
+            type=semver,pattern={{major}}.{{minor}},suffix=-slim
+            type=sha,prefix=,suffix=-slim
+            type=raw,value=slim,enable={{is_default_branch}}
+
+      - name: Build and push slim image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.slim
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  build-docker-micro:
+    name: Build Micro Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint-python, test-unit]
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-micro
+            type=ref,event=pr,suffix=-micro
+            type=semver,pattern={{version}},suffix=-micro
+            type=semver,pattern={{major}}.{{minor}},suffix=-micro
+            type=sha,prefix=,suffix=-micro
+            type=raw,value=micro,enable={{is_default_branch}}
+
+      - name: Build and push micro image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.micro
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  build-docker-semgrep:
+    name: Build Semgrep Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint-python, test-unit]
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-semgrep
+            type=ref,event=pr,suffix=-semgrep
+            type=semver,pattern={{version}},suffix=-semgrep
+            type=semver,pattern={{major}}.{{minor}},suffix=-semgrep
+            type=sha,prefix=,suffix=-semgrep
+            type=raw,value=semgrep,enable={{is_default_branch}}
+
+      - name: Build and push semgrep image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.semgrep
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  # ============================================
+  # RELEASE STAGE
+  # ============================================
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-docker-standard, build-docker-slim, build-docker-micro, build-docker-semgrep]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag_name }}"
+
+          # Get previous tag
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+
+          # Create release notes
+          {
+            echo "## Changes"
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              echo "Changes since ${PREV_TAG}:"
+              echo ""
+              git log "${PREV_TAG}..${TAG}" --pretty=format:"- %s" --no-merges
+            else
+              echo "Initial release."
+              echo ""
+              git log --pretty=format:"- %s" --no-merges | head -30
+            fi
+            echo ""
+            echo "## Docker Images"
+            echo ""
+            echo "| Variant | Tag |"
+            echo "|---------|-----|"
+            echo "| Standard (all scanners) | \`${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:v${VERSION}\` |"
+            echo "| Slim                    | \`${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:slim-v${VERSION}\` |"
+            echo "| Micro (no semgrep)      | \`${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:micro-v${VERSION}\` |"
+            echo "| Semgrep                 | \`${{ env.DOCKER_HUB_ORG }}/${{ env.IMAGE_NAME }}:semgrep-v${VERSION}\` |"
+            echo ""
+            echo "**Full Changelog**: [CHANGELOG.md](CHANGELOG.md)"
+          } > RELEASE_NOTES.md
+
+          cat RELEASE_NOTES.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.version.outputs.tag_name }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
