@@ -1,0 +1,236 @@
+# ez-appsec group security dashboard
+# This project is managed by ez-appsec.
+# DO NOT EDIT — update:web will overwrite this file from the ez-appsec source.
+#
+# Jobs:
+#   rescan:project  — clone and re-scan a single project
+#                     trigger with RESCAN_PROJECT_PATH=namespace/project
+#   rescan:all      — clone and re-scan every registered project
+#   update:web      — download latest web assets + this CI file and redeploy
+#   pages           — aggregate index.json and deploy GitLab Pages
+
+stages:
+  - scan
+  - deploy
+
+variables:
+  EZ_APPSEC_VERSION: "latest"
+  EZ_APPSEC_IMAGE: "registry.gitlab.com/jfelten.work-group/ez_appsec/ez_appsec:$EZ_APPSEC_VERSION"
+
+# ── Shared: checkout main and configure git push credentials ─────────────────
+.git-setup: &git-setup |
+  git remote set-url origin "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+  git config user.email "ci@ez-appsec.ai"
+  git config user.name "ez-appsec CI"
+  git fetch origin main --quiet
+  git checkout -B main origin/main
+
+# ── Shared: rebuild public/data/index.json from all vulnerabilities.json ──────
+.aggregate: &aggregate |
+  python3 - <<'PYEOF'
+  import json, sys
+  from datetime import datetime, timezone
+  from pathlib import Path
+
+  PROJECTS_DIR = Path("public/data/projects")
+  INDEX_FILE   = Path("public/data/index.json")
+  INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+  if not PROJECTS_DIR.exists():
+      INDEX_FILE.write_text(json.dumps({"last_updated": None, "projects": []}, indent=2))
+      sys.exit(0)
+
+  projects = []
+  for vuln_file in sorted(PROJECTS_DIR.glob("*/vulnerabilities.json")):
+      slug = vuln_file.parent.name
+      meta_file = vuln_file.parent / "meta.json"
+      try:
+          data = json.loads(vuln_file.read_text())
+          v    = data.get("vulnerabilities", [])
+      except Exception as e:
+          print(f"  SKIP {slug}: {e}"); continue
+      meta = {}
+      if meta_file.exists():
+          try: meta = json.loads(meta_file.read_text())
+          except Exception: pass
+      project_url = meta.get("project_url") or (
+          f"{meta['gitlab_url']}/{meta['project_path']}"
+          if meta.get("gitlab_url") and meta.get("project_path") else None)
+      last_updated = meta.get("last_updated") or datetime.fromtimestamp(
+          vuln_file.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+      summary = {
+          "total":    len(v),
+          "critical": sum(1 for x in v if x.get("severity") == "critical"),
+          "high":     sum(1 for x in v if x.get("severity") == "high"),
+          "medium":   sum(1 for x in v if x.get("severity") == "medium"),
+          "low":      sum(1 for x in v if x.get("severity") == "low"),
+      }
+      projects.append({"slug": slug, "name": meta.get("project_name", slug),
+          "path": meta.get("project_path", slug), "project_url": project_url,
+          "default_branch": meta.get("default_branch"),
+          "last_updated": last_updated, "summary": summary})
+      print(f"  {slug}: {summary['total']} findings")
+  now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+  INDEX_FILE.write_text(json.dumps({"last_updated": now, "projects": projects}, indent=2))
+  print(f"Wrote {INDEX_FILE} with {len(projects)} project(s).")
+  PYEOF
+
+# ─────────────────────────────────────────────────────────────────────────────
+# rescan:project — re-scan a single project and update its vulnerability data
+#
+# Trigger via API or pipeline UI with variable:
+#   RESCAN_PROJECT_PATH=<namespace/project>   e.g. myorg/my-app
+# ─────────────────────────────────────────────────────────────────────────────
+rescan:project:
+  stage: scan
+  image:
+    name: $EZ_APPSEC_IMAGE
+    entrypoint: [""]
+  variables:
+    RESCAN_PROJECT_PATH: ""
+  script:
+    - apk add --no-cache git python3 curl --quiet
+    - *git-setup
+    - |
+      [ -z "${RESCAN_PROJECT_PATH}" ] && echo "ERROR: set RESCAN_PROJECT_PATH=namespace/project" && exit 1
+      SLUG=$(echo "${RESCAN_PROJECT_PATH}" | tr '/' '-' | tr '.' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]')
+      echo "==> Cloning ${RESCAN_PROJECT_PATH}..."
+      git clone --depth 1 \
+        "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${RESCAN_PROJECT_PATH}.git" \
+        /tmp/target 2>/dev/null || \
+      git clone --depth 1 \
+        "https://oauth2:${GITLAB_ACCESS_TOKEN}@${CI_SERVER_HOST}/${RESCAN_PROJECT_PATH}.git" \
+        /tmp/target
+      echo "==> Scanning..."
+      mkdir -p "public/data/projects/${SLUG}"
+      ez-appsec gitlab-scan /tmp/target \
+        --output "public/data/projects/${SLUG}/vulnerabilities.json"
+      rm -rf /tmp/target
+      NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      META="public/data/projects/${SLUG}/meta.json"
+      if [ -f "$META" ]; then
+        python3 -c "
+  import json
+  m = json.load(open('$META'))
+  m['last_updated'] = '$NOW'
+  json.dump(m, open('$META', 'w'), indent=2)
+  print('Updated meta.json last_updated for $SLUG')
+  "
+      fi
+    - *aggregate
+    - git add public/data/
+    - git diff --cached --quiet && echo "No changes." || git commit -m "chore: rescan ${RESCAN_PROJECT_PATH} [skip ci]"
+    - git push origin main
+    - |
+      curl -s --request POST \
+        --header "Authorization: Bearer ${CI_JOB_TOKEN}" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipeline" \
+        --form "ref=main" || true
+  rules:
+    - if: '$RESCAN_PROJECT_PATH != ""'
+      when: always
+    - when: manual
+
+# ─────────────────────────────────────────────────────────────────────────────
+# rescan:all — re-scan every project registered in public/data/projects/
+# ─────────────────────────────────────────────────────────────────────────────
+rescan:all:
+  stage: scan
+  image:
+    name: $EZ_APPSEC_IMAGE
+    entrypoint: [""]
+  script:
+    - apk add --no-cache git python3 curl --quiet
+    - *git-setup
+    - |
+      ERRORS=0
+      for META_FILE in public/data/projects/*/meta.json; do
+        [ -f "$META_FILE" ] || continue
+        PROJ_PATH=$(python3 -c "
+  import json, sys
+  d = json.load(open('$META_FILE'))
+  print(d.get('project_path', ''))
+  " 2>/dev/null)
+        [ -z "$PROJ_PATH" ] && echo "SKIP $META_FILE: no project_path" && continue
+        SLUG=$(echo "${PROJ_PATH}" | tr '/' '-' | tr '.' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]')
+        echo ""
+        echo "==> Scanning ${PROJ_PATH} → ${SLUG}"
+        rm -rf /tmp/target
+        git clone --depth 1 \
+          "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${PROJ_PATH}.git" \
+          /tmp/target 2>/dev/null || \
+        git clone --depth 1 \
+          "https://oauth2:${GITLAB_ACCESS_TOKEN}@${CI_SERVER_HOST}/${PROJ_PATH}.git" \
+          /tmp/target 2>/dev/null || \
+        { echo "  SKIP ${PROJ_PATH}: clone failed"; ERRORS=$((ERRORS+1)); continue; }
+        ez-appsec gitlab-scan /tmp/target \
+          --output "public/data/projects/${SLUG}/vulnerabilities.json" || \
+        { echo "  SKIP ${PROJ_PATH}: scan failed"; ERRORS=$((ERRORS+1)); rm -rf /tmp/target; continue; }
+        rm -rf /tmp/target
+        NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        python3 -c "
+  import json
+  m = json.load(open('$META_FILE'))
+  m['last_updated'] = '$NOW'
+  json.dump(m, open('$META_FILE', 'w'), indent=2)
+  "
+      done
+      echo ""
+      echo "Done. Failed projects: ${ERRORS}"
+    - *aggregate
+    - git add public/data/
+    - git diff --cached --quiet && echo "No changes." || git commit -m "chore: rescan all projects [skip ci]"
+    - git push origin main
+    - |
+      curl -s --request POST \
+        --header "Authorization: Bearer ${CI_JOB_TOKEN}" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipeline" \
+        --form "ref=main" || true
+  rules:
+    - when: manual
+
+# ─────────────────────────────────────────────────────────────────────────────
+# update:web — pull latest web assets AND this CI file from ez-appsec source
+# ─────────────────────────────────────────────────────────────────────────────
+update:web:
+  stage: deploy
+  image: alpine:3.19
+  script:
+    - apk add --no-cache git curl --quiet
+    - *git-setup
+    - |
+      echo "==> Downloading latest web assets and CI file..."
+      GL_BASE="https://${CI_SERVER_HOST}/jfelten.work-group/ez_appsec/ez_appsec/-/raw/main"
+      GH_BASE="https://raw.githubusercontent.com/jfelten/ez-appsec/main"
+      for FILE in web/index.html web/style.css web/app.js; do
+        DEST="public/$(basename $FILE)"
+        curl -fsSL "${GL_BASE}/${FILE}" -o "$DEST" 2>/dev/null || \
+        curl -fsSL "${GH_BASE}/${FILE}" -o "$DEST"
+        echo "  ${DEST}"
+      done
+      # Update this CI file from the canonical source
+      curl -fsSL "${GL_BASE}/dashboard/gitlab-ci.yml" -o .gitlab-ci.yml 2>/dev/null || \
+      curl -fsSL "${GH_BASE}/dashboard/gitlab-ci.yml" -o .gitlab-ci.yml
+      echo "  .gitlab-ci.yml"
+    - git add public/index.html public/style.css public/app.js .gitlab-ci.yml
+    - git diff --cached --quiet && echo "No changes." || git commit -m "chore: update web assets and CI from ez-appsec"
+    - git push origin main
+  rules:
+    - when: manual
+
+# ─────────────────────────────────────────────────────────────────────────────
+# pages — aggregate index.json and deploy GitLab Pages
+# ─────────────────────────────────────────────────────────────────────────────
+pages:
+  stage: deploy
+  image: python:3.11-alpine
+  script:
+    - *aggregate
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+      when: always

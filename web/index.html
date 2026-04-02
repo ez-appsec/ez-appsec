@@ -23,41 +23,45 @@
       </nav>
       <div class="nav__actions">
         <a id="upgrade-btn" class="btn btn--upgrade btn--sm" target="_blank" rel="noopener" hidden>Upgrade</a>
-        <a id="rescan-btn" class="btn btn--primary btn--sm" target="_blank" rel="noopener">Rescan</a>
       </div>
     </div>
   </header>
 
   <!-- ── Dashboard header ───────────────────────────────────────────────── -->
   <section class="dash-header">
-    <div class="container">
-      <h1 class="dash-header__title" id="dash-title">Vulnerability Scan Results</h1>
-      <p class="dash-header__sub" id="scan-meta">Loading scan data…</p>
-    </div>
-  </section>
-
-  <!-- ── Stats bar ──────────────────────────────────────────────────────── -->
-  <section class="stats-bar">
-    <div class="container stats-bar__inner">
-      <div class="stat-card stat-card--total">
-        <div class="stat-card__value" id="total-count">—</div>
-        <div class="stat-card__label">Total</div>
+    <div class="dash-header__inner">
+      <div class="dash-header__left">
+        <h1 class="dash-header__title" id="dash-title">Vulnerability Scan Results</h1>
+        <p class="dash-header__sub" id="scan-meta">Loading scan data…</p>
+        <a id="rescan-btn" class="rescan-btn" target="_blank" rel="noopener" title="Trigger a new security scan">
+          <span class="rescan-btn__icon">▶</span>
+          <span class="rescan-btn__label">Run Scan</span>
+        </a>
       </div>
-      <div class="stat-card stat-card--critical">
-        <div class="stat-card__value" id="critical-count">—</div>
-        <div class="stat-card__label">Critical</div>
-      </div>
-      <div class="stat-card stat-card--high">
-        <div class="stat-card__value" id="high-count">—</div>
-        <div class="stat-card__label">High</div>
-      </div>
-      <div class="stat-card stat-card--medium">
-        <div class="stat-card__value" id="medium-count">—</div>
-        <div class="stat-card__label">Medium</div>
-      </div>
-      <div class="stat-card stat-card--low">
-        <div class="stat-card__value" id="low-count">—</div>
-        <div class="stat-card__label">Low</div>
+      <div class="dash-header__right">
+        <div id="stats-chart" class="stats-chart"></div>
+        <div class="stat-cards">
+          <div class="stat-card stat-card--critical">
+            <div class="stat-card__value" id="critical-count">—</div>
+            <div class="stat-card__label">Critical</div>
+          </div>
+          <div class="stat-card stat-card--high">
+            <div class="stat-card__value" id="high-count">—</div>
+            <div class="stat-card__label">High</div>
+          </div>
+          <div class="stat-card stat-card--medium">
+            <div class="stat-card__value" id="medium-count">—</div>
+            <div class="stat-card__label">Medium</div>
+          </div>
+          <div class="stat-card stat-card--low">
+            <div class="stat-card__value" id="low-count">—</div>
+            <div class="stat-card__label">Low</div>
+          </div>
+          <div class="stat-card stat-card--age">
+            <div class="stat-card__value" id="age-count">—</div>
+            <div class="stat-card__label">Avg Age</div>
+          </div>
+        </div>
       </div>
     </div>
   </section>

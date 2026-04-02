@@ -14,6 +14,9 @@ class VulnerabilityDashboard {
         this.config = null;
         this.falsePositives = new Set();
         this.remediationModal = null;
+        this.scanDates = [];          // ISO date strings used to compute avg age
+        this.currentPage = 0;
+        this.PAGE_SIZE = 100;
 
         // DOM elements
         this.severityFilter = document.getElementById('severity-filter');
@@ -27,7 +30,7 @@ class VulnerabilityDashboard {
         this.scanMeta       = document.getElementById('scan-meta');
 
         // Stats
-        this.totalCount    = document.getElementById('total-count');
+        this.totalCount    = null; // removed from UI; kept as no-op for renderPieChart
         this.criticalCount = document.getElementById('critical-count');
         this.highCount     = document.getElementById('high-count');
         this.mediumCount   = document.getElementById('medium-count');
@@ -51,7 +54,9 @@ class VulnerabilityDashboard {
         const closeBtn = document.getElementById('modal-close');
         closeBtn.addEventListener('click', () => this.closeModal());
         modal.addEventListener('click', e => { if (e.target === modal) this.closeModal(); });
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') this.closeModal(); });
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && modal.classList.contains('modal-overlay--open')) this.closeModal();
+        });
     }
 
     showDetail(vuln) {
@@ -127,18 +132,15 @@ class VulnerabilityDashboard {
             <div class="remediation-actions">
                 <button class="remediation-option${isFp ? ' remediation-option--active' : ''}" id="rem-fp">
                     <span class="rem-icon">🚫</span>
-                    <span class="rem-label">${isFp ? 'Unmark False Positive' : 'Mark False Positive'}</span>
-                    <span class="rem-desc">${isFp ? 'Currently flagged as FP' : 'Flag finding as a false positive'}</span>
+                    <span class="rem-text"><span class="rem-label">${isFp ? 'Unmark False Positive' : 'Mark False Positive'}</span><span class="rem-desc">${isFp ? 'Currently flagged as FP' : 'Flag finding as a false positive'}</span></span>
                 </button>
                 <button class="remediation-option" id="rem-verify">
                     <span class="rem-icon">🔍</span>
-                    <span class="rem-label">Verify with AI</span>
-                    <span class="rem-desc">Copy prompt to check if this is a false positive</span>
+                    <span class="rem-text"><span class="rem-label">Verify with AI</span><span class="rem-desc">Copy prompt to check if this is a false positive</span></span>
                 </button>
                 <button class="remediation-option" id="rem-fix">
                     <span class="rem-icon">🔧</span>
-                    <span class="rem-label">Fix with AI</span>
-                    <span class="rem-desc">Copy /ez-appsec fix prompt for the AI chat</span>
+                    <span class="rem-text"><span class="rem-label">Fix with AI</span><span class="rem-desc">Copy /ez-appsec fix prompt for the AI chat</span></span>
                 </button>
             </div>
             <div class="remediation-copy-area" id="rem-copy-area" hidden>
@@ -203,11 +205,6 @@ class VulnerabilityDashboard {
             const r = await fetch('data/config.json');
             if (!r.ok) return;
             this.config = await r.json();
-
-            const rescan = document.getElementById('rescan-btn');
-            if (rescan && this.config.project_path && this.config.gitlab_url) {
-                rescan.href = `${this.config.gitlab_url}/${this.config.project_path}/-/pipelines/new`;
-            }
 
             if (this.config.ez_appsec_version) {
                 const versionLabel = document.getElementById('version-label');
@@ -274,6 +271,23 @@ class VulnerabilityDashboard {
 
         // Single-project mode
         await this.loadVulnerabilities('data/vulnerabilities.json');
+
+        // Try to set the rescan button from meta.json (single-project deploy)
+        try {
+            const mr = await fetch('data/meta.json');
+            if (mr.ok) {
+                const meta = await mr.json();
+                const projectUrl = meta.project_url ||
+                    (meta.gitlab_url && meta.project_path ? `${meta.gitlab_url}/${meta.project_path}` : null);
+                const rescanBtn = document.getElementById('rescan-btn');
+                if (rescanBtn && projectUrl) {
+                    const branch = meta.default_branch || '';
+                    const refParam = branch ? `&ref=${encodeURIComponent(branch)}` : '';
+                    rescanBtn.href = `${projectUrl}/-/pipelines/new?var[EZ_APPSEC_COLD_SCAN]=true${refParam}`;
+                    rescanBtn.classList.add('rescan-btn--visible');
+                }
+            }
+        } catch (e) { /* meta.json is optional */ }
     }
 
     renderSidebar() {
@@ -312,7 +326,7 @@ class VulnerabilityDashboard {
         `;
 
         el.addEventListener('click', e => {
-            if (e.target.closest('.tree-node__link')) return; // handled separately
+            if (e.target.closest('.tree-node__link')) return;
             this.selectProject(slug);
         });
 
@@ -340,13 +354,33 @@ class VulnerabilityDashboard {
             el.classList.toggle('tree-node--active', el.dataset.slug === slug);
         });
 
-        // Update page title
-        if (this.dashTitle) {
-            if (slug === 'all') {
-                this.dashTitle.textContent = 'All Projects';
-            } else {
-                const proj = this.projects.find(p => p.slug === slug);
-                this.dashTitle.textContent = proj ? proj.name : slug;
+        // Update page title + rescan button per selected project
+        const rescanBtn = document.getElementById('rescan-btn');
+        if (slug === 'all') {
+            if (this.dashTitle) this.dashTitle.textContent = 'All Projects';
+            if (rescanBtn) rescanBtn.classList.remove('rescan-btn--visible');
+        } else {
+            const proj = this.projects.find(p => p.slug === slug);
+            const label      = proj ? proj.name : slug;
+            const projectUrl = proj ? this.resolveProjectUrl(proj) : null;
+
+            if (this.dashTitle) {
+                if (projectUrl) {
+                    this.dashTitle.innerHTML = `<a class="dash-title__link" href="${this.escapeHtml(projectUrl)}" target="_blank" rel="noopener">${this.escapeHtml(label)}</a>`;
+                } else {
+                    this.dashTitle.textContent = label;
+                }
+            }
+
+            if (rescanBtn) {
+                if (projectUrl) {
+                    const branch = (proj && proj.default_branch) ? proj.default_branch : '';
+                    const refParam = branch ? `&ref=${encodeURIComponent(branch)}` : '';
+                    rescanBtn.href = `${projectUrl}/-/pipelines/new?var[EZ_APPSEC_COLD_SCAN]=true${refParam}`;
+                    rescanBtn.classList.add('rescan-btn--visible');
+                } else {
+                    rescanBtn.classList.remove('rescan-btn--visible');
+                }
             }
         }
 
@@ -362,8 +396,6 @@ class VulnerabilityDashboard {
         if (slug === 'all') {
             await this.loadAllProjects();
         } else {
-            const summary = document.getElementById('project-summary');
-            if (summary) summary.remove();
             await this.loadVulnerabilities(`data/projects/${slug}/vulnerabilities.json`);
         }
     }
@@ -373,79 +405,49 @@ class VulnerabilityDashboard {
 
         const results = await Promise.allSettled(
             this.projects.map(async p => {
+                const projectUrl = this.resolveProjectUrl(p);
                 const r = await fetch(`data/projects/${p.slug}/vulnerabilities.json`);
-                if (!r.ok) return { vulns: [], project: p };
+                if (!r.ok) return { vulns: [], project: p, projectUrl, scanDate: null };
                 const data = await r.json();
                 const vulns = Array.isArray(data)
                     ? data
                     : (data.vulnerabilities || data.issues || []);
-                return { vulns: vulns.map(v => ({ ...v, _project: p.name, _project_slug: p.slug })), project: p };
+                // Prefer explicit date fields; fall back to HTTP Last-Modified of the file
+                const scanDate = data.scan_date || data.generated_at || r.headers.get('Last-Modified') || null;
+                return { vulns: vulns.map(v => ({ ...v, _project: p.name, _project_slug: p.slug })), project: p, projectUrl, scanDate };
             })
         );
 
         const projectStats = [];
         const allVulns = [];
+        const scanDates = [];
         results.forEach(r => {
             if (r.status !== 'fulfilled') return;
-            const { vulns, project } = r.value;
+            const { vulns, project, projectUrl, scanDate } = r.value;
+            if (scanDate) scanDates.push(scanDate);
             const normalized = vulns.map(v => this.normalizeVulnerability(v));
             allVulns.push(...normalized);
             const stats = { total: normalized.length, critical: 0, high: 0, medium: 0, low: 0 };
             normalized.forEach(v => { if (v.severity in stats) stats[v.severity]++; });
-            projectStats.push({ project, stats });
+            projectStats.push({ project, stats, projectUrl });
         });
 
         this.allVulnerabilities = allVulns
             .sort((a, b) => this.severityValue(b.severity) - this.severityValue(a.severity));
+
+        // Use scan_date/generated_at from each vulnerabilities.json; fall back to
+        // last_updated from index.json if the report doesn't carry a timestamp.
+        this.scanDates = scanDates.length
+            ? scanDates
+            : this.projects.map(p => p.last_updated).filter(Boolean);
 
         if (this.scanMeta) {
             this.scanMeta.textContent =
                 `${this.projects.length} projects  ·  ${this.allVulnerabilities.length} total findings`;
         }
 
-        this.renderProjectSummaryTable(projectStats);
         this.populateScannerFilter();
         this.applyFilters();
-    }
-
-    renderProjectSummaryTable(projectStats) {
-        const existing = document.getElementById('project-summary');
-        if (existing) existing.remove();
-
-        const el = document.createElement('div');
-        el.id = 'project-summary';
-        el.className = 'project-summary';
-
-        const rows = projectStats.map(({ project, stats }) => `
-            <tr class="project-summary-row" data-slug="${this.escapeHtml(project.slug)}">
-                <td class="ps-name">${this.escapeHtml(project.name)}</td>
-                <td class="ps-num ps-critical">${stats.critical || '—'}</td>
-                <td class="ps-num ps-high">${stats.high || '—'}</td>
-                <td class="ps-num ps-medium">${stats.medium || '—'}</td>
-                <td class="ps-num ps-low">${stats.low || '—'}</td>
-                <td class="ps-num ps-total">${stats.total}</td>
-            </tr>`).join('');
-
-        el.innerHTML = `
-            <table class="project-summary-table">
-                <thead>
-                    <tr>
-                        <th>Project</th>
-                        <th class="ps-num">Critical</th>
-                        <th class="ps-num">High</th>
-                        <th class="ps-num">Medium</th>
-                        <th class="ps-num">Low</th>
-                        <th class="ps-num">Total</th>
-                    </tr>
-                </thead>
-                <tbody>${rows}</tbody>
-            </table>`;
-
-        this.container.parentElement.insertBefore(el, this.container);
-
-        el.querySelectorAll('.project-summary-row').forEach(row => {
-            row.addEventListener('click', () => this.selectProject(row.dataset.slug));
-        });
     }
 
     // ── Data loading ───────────────────────────────────────────────────────
@@ -470,6 +472,10 @@ class VulnerabilityDashboard {
             this.allVulnerabilities = this.allVulnerabilities
                 .map(v => this.normalizeVulnerability(v))
                 .sort((a, b) => this.severityValue(b.severity) - this.severityValue(a.severity));
+
+            // Store scan date for avg-age calculation
+            const scanDate = data.scan_date || data.generated_at || response.headers.get('Last-Modified') || null;
+            this.scanDates = scanDate ? [scanDate] : [];
 
             this.updateScanMeta(data);
             this.populateScannerFilter();
@@ -559,6 +565,7 @@ class VulnerabilityDashboard {
         const scanner  = this.scannerFilter.value;
         const search   = this.searchFilter.value.toLowerCase();
 
+        this.currentPage = 0;
         this.filteredVulnerabilities = this.allVulnerabilities.filter(vuln => {
             if (severity && vuln.severity !== severity) return false;
             if (scanner  && !vuln.scanner.toLowerCase().includes(scanner)) return false;
@@ -583,12 +590,24 @@ class VulnerabilityDashboard {
             return;
         }
 
-        const showProject = this.multiProject && this.currentSlug === 'all';
+        const total     = this.filteredVulnerabilities.length;
+        const pageCount = Math.ceil(total / this.PAGE_SIZE);
+        this.currentPage = Math.min(this.currentPage, pageCount - 1);
+        const start  = this.currentPage * this.PAGE_SIZE;
+        const end    = Math.min(start + this.PAGE_SIZE, total);
+        const page   = this.filteredVulnerabilities.slice(start, end);
+
+        const showProject   = this.multiProject && this.currentSlug === 'all';
         const projectHeader = showProject ? '<th>Project</th>' : '';
 
-        const rows = this.filteredVulnerabilities
-            .map((v, i) => this.createTableRow(v, showProject, i))
-            .join('');
+        const rows = page.map((v, i) => this.createTableRow(v, showProject, start + i)).join('');
+
+        const pagination = pageCount > 1 ? `
+            <div class="pagination">
+                <button class="pagination__btn" id="pg-prev" ${this.currentPage === 0 ? 'disabled' : ''}>← Prev</button>
+                <span class="pagination__info">Rows ${start + 1}–${end} of ${total}</span>
+                <button class="pagination__btn" id="pg-next" ${this.currentPage >= pageCount - 1 ? 'disabled' : ''}>Next →</button>
+            </div>` : '';
 
         this.container.innerHTML = `
             <table class="vuln-table">
@@ -604,10 +623,11 @@ class VulnerabilityDashboard {
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
-            </table>`;
+            </table>
+            ${pagination}`;
 
-        this.container.querySelectorAll('.vuln-row').forEach((row, idx) => {
-            row.addEventListener('click', () => this.showDetail(this.filteredVulnerabilities[idx]));
+        this.container.querySelectorAll('.vuln-row').forEach((row, i) => {
+            row.addEventListener('click', () => this.showDetail(this.filteredVulnerabilities[start + i]));
         });
 
         this.container.querySelectorAll('.btn-remediate').forEach(btn => {
@@ -617,6 +637,11 @@ class VulnerabilityDashboard {
                 this.showRemediationModal(this.filteredVulnerabilities[idx]);
             });
         });
+
+        const prevBtn = document.getElementById('pg-prev');
+        const nextBtn = document.getElementById('pg-next');
+        if (prevBtn) prevBtn.addEventListener('click', () => { this.currentPage--; this.renderVulnerabilities(); this.container.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+        if (nextBtn) nextBtn.addEventListener('click', () => { this.currentPage++; this.renderVulnerabilities(); this.container.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     }
 
     createTableRow(vuln, showProject = false, idx = 0) {
@@ -687,15 +712,79 @@ class VulnerabilityDashboard {
     // ── Stats ──────────────────────────────────────────────────────────────
 
     updateStats() {
-        const stats = { total: this.allVulnerabilities.length, critical: 0, high: 0, medium: 0, low: 0 };
+        const stats = { critical: 0, high: 0, medium: 0, low: 0 };
         this.allVulnerabilities.forEach(v => {
             if (v.severity in stats) stats[v.severity]++;
         });
-        this.totalCount.textContent    = stats.total;
+        stats.total = stats.critical + stats.high + stats.medium + stats.low;
         this.criticalCount.textContent = stats.critical;
         this.highCount.textContent     = stats.high;
         this.mediumCount.textContent   = stats.medium;
         this.lowCount.textContent      = stats.low;
+        this.renderPieChart(stats);
+
+        const ageEl = document.getElementById('age-count');
+        if (ageEl) ageEl.textContent = this.computeAvgAge();
+    }
+
+    computeAvgAge() {
+        if (!this.scanDates.length) return '—';
+        const now = Date.now();
+        const ages = this.scanDates
+            .map(d => (now - new Date(d).getTime()) / 86400000)
+            .filter(d => !isNaN(d) && d >= 0);
+        if (!ages.length) return '—';
+        const avg = Math.round(ages.reduce((s, d) => s + d, 0) / ages.length);
+        return `${avg}d`;
+    }
+
+    renderPieChart(stats) {
+        const el = document.getElementById('stats-chart');
+        if (!el) return;
+
+        const segments = [
+            { value: stats.critical, color: '#f87171' },
+            { value: stats.high,     color: '#fb923c' },
+            { value: stats.medium,   color: '#fbbf24' },
+            { value: stats.low,      color: '#34d399' },
+        ];
+        const total = stats.total;
+
+        const r = 34, cx = 44, cy = 44, sw = 12;
+        const circ = 2 * Math.PI * r;
+
+        let accum = 0;
+        const arcs = segments.map(seg => {
+            if (seg.value === 0) return '';
+            const len    = (seg.value / total) * circ;
+            const rotate = (accum / circ) * 360 - 90;
+            accum += len;
+            return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
+                stroke="${seg.color}" stroke-width="${sw}"
+                stroke-dasharray="${len.toFixed(2)} ${(circ - len).toFixed(2)}"
+                transform="rotate(${rotate.toFixed(2)} ${cx} ${cy})"/>`;
+        }).join('');
+
+        const label = total === 0
+            ? `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" fill="#7a8099" font-size="11">—</text>`
+            : `<text x="${cx}" y="${cy - 6}" text-anchor="middle" dominant-baseline="middle" fill="#e2e6f0" font-size="14" font-weight="800">${total}</text>
+               <text x="${cx}" y="${cy + 9}" text-anchor="middle" dominant-baseline="middle" fill="#7a8099" font-size="9" letter-spacing="0.5">TOTAL</text>`;
+
+        el.innerHTML = `<svg width="88" height="88" viewBox="0 0 88 88">
+            <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#252a38" stroke-width="${sw}"/>
+            ${total > 0 ? arcs : ''}
+            ${label}
+        </svg>`;
+    }
+
+    // ── Project URL resolution ─────────────────────────────────────────────
+
+    resolveProjectUrl(p) {
+        // Prefer explicit project_url (set by scan.yml, platform-agnostic).
+        // Fall back to constructing from legacy gitlab_url + project_path fields.
+        if (p.project_url) return p.project_url;
+        if (p.gitlab_url && p.project_path) return `${p.gitlab_url}/${p.project_path}`;
+        return null;
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@ variables:
   - git clone "git@gitlab.com:${EZ_APPSEC_DASHBOARD_PROJECT}.git" /tmp/dash-work
   - mkdir -p "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}"
   - cp "${CI_PROJECT_DIR}/${EZ_APPSEC_REPORT}" "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}/vulnerabilities.json"
-  - printf '{"gitlab_url":"https://%s","project_id":"%s","project_path":"%s","project_name":"%s","ez_appsec_version":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_PROJECT_PATH}" "${CI_PROJECT_NAME}" "${EZ_APPSEC_VERSION:-latest}" > "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}/meta.json"
+  - printf '{"project_url":"https://%s/%s","default_branch":"%s","gitlab_url":"https://%s","project_id":"%s","project_path":"%s","project_name":"%s","ez_appsec_version":"%s"}\n' "${CI_SERVER_HOST}" "${CI_PROJECT_PATH}" "${CI_DEFAULT_BRANCH:-main}" "${CI_SERVER_HOST}" "${CI_PROJECT_ID}" "${CI_PROJECT_PATH}" "${CI_PROJECT_NAME}" "${EZ_APPSEC_VERSION:-latest}" > "/tmp/dash-work/public/data/projects/${CI_PROJECT_PATH_SLUG}/meta.json"
   - git -C /tmp/dash-work add public/data/projects/
   - 'git -C /tmp/dash-work diff --cached --quiet && echo "No changes" || git -C /tmp/dash-work commit -m "chore: update scan results from ${CI_PROJECT_PATH}"'
   - git -C /tmp/dash-work push origin main

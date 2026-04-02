@@ -170,13 +170,67 @@ If `DASH_PROJECT` is empty, create the dashboard:
     printf '{\n  "last_updated": null,\n  "projects": []\n}\n' > public/data/index.json
   ```
 
-- Write `.gitlab-ci.yml` for the dashboard project:
+- Write `.gitlab-ci.yml` for the dashboard project (full aggregating version):
   ```yaml
-  # ez-appsec group security dashboard — managed by ez-appsec
+  # ez-appsec group security dashboard
+  # This project is managed by ez-appsec. Do not edit manually.
+
+  stages:
+    - deploy
+
   pages:
     stage: deploy
+    image: python:3.11-alpine
     script:
-      - echo "Publishing ez-appsec dashboard to GitLab Pages"
+      - |
+        python3 - <<'PYEOF'
+        import json, sys
+        from datetime import datetime, timezone
+        from pathlib import Path
+
+        PROJECTS_DIR = Path("public/data/projects")
+        INDEX_FILE   = Path("public/data/index.json")
+        INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        if not PROJECTS_DIR.exists():
+            INDEX_FILE.write_text(json.dumps({"last_updated": None, "projects": []}, indent=2))
+            sys.exit(0)
+
+        projects = []
+        for vuln_file in sorted(PROJECTS_DIR.glob("*/vulnerabilities.json")):
+            slug = vuln_file.parent.name
+            meta_file = vuln_file.parent / "meta.json"
+            try:
+                data = json.loads(vuln_file.read_text())
+                v    = data.get("vulnerabilities", [])
+            except Exception as e:
+                print(f"  SKIP {slug}: {e}"); continue
+            meta = {}
+            if meta_file.exists():
+                try: meta = json.loads(meta_file.read_text())
+                except Exception: pass
+            last_updated = meta.get("last_updated") or datetime.fromtimestamp(
+                vuln_file.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            summary = {
+                "total":    len(v),
+                "critical": sum(1 for x in v if x.get("severity") == "critical"),
+                "high":     sum(1 for x in v if x.get("severity") == "high"),
+                "medium":   sum(1 for x in v if x.get("severity") == "medium"),
+                "low":      sum(1 for x in v if x.get("severity") == "low"),
+            }
+            project_url = meta.get("project_url")
+            if not project_url and meta.get("gitlab_url") and meta.get("project_path"):
+                project_url = f"{meta['gitlab_url']}/{meta['project_path']}"
+            projects.append({"slug": slug, "name": meta.get("project_name", slug),
+                "path": meta.get("project_path", slug),
+                "project_url": project_url,
+                "default_branch": meta.get("default_branch"),
+                "last_updated": last_updated, "summary": summary})
+            print(f"  {slug}: {summary['total']} findings")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        INDEX_FILE.write_text(json.dumps({"last_updated": now, "projects": projects}, indent=2))
+        print(f"Wrote {INDEX_FILE} with {len(projects)} project(s).")
+        PYEOF
     artifacts:
       paths:
         - public
@@ -216,7 +270,42 @@ glab api --method PUT "groups/${GROUP_ID}/variables/EZ_APPSEC_DASHBOARD_PROJECT"
 echo "Could not set group variable — set EZ_APPSEC_DASHBOARD_PROJECT manually in the group's Settings > CI/CD > Variables."
 ```
 
-### 7. Commit and push the target project changes
+### 7. Bootstrap meta.json for the target project in the dashboard
+
+This allows the project to appear in the dashboard immediately, before any scan runs.
+
+Gather the target project's details via the API:
+```bash
+TARGET_PROJECT_INFO=$(glab api "projects/${TARGET_PROJECT_ID}")
+TARGET_PROJECT_PATH=$(echo "$TARGET_PROJECT_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['path_with_namespace'])")
+TARGET_PROJECT_NAME=$(echo "$TARGET_PROJECT_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['name'])")
+TARGET_DEFAULT_BRANCH=$(echo "$TARGET_PROJECT_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['default_branch'])")
+TARGET_PROJECT_URL=$(echo "$TARGET_PROJECT_INFO" | python3 -c "import json,sys; print(json.load(sys.stdin)['web_url'])")
+TARGET_SLUG=$(echo "$TARGET_PROJECT_PATH" | tr '/' '-' | tr '.' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]')
+```
+
+Clone the dashboard and write the initial `meta.json` (skip if it already exists and has content):
+```bash
+ENCODED_DASH=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${DASH_PROJECT}")
+DASH_REPO_URL_FOR_CLONE=$(glab api "projects/${ENCODED_DASH}" | python3 -c "import json,sys; print(json.load(sys.stdin)['http_url_to_repo'])")
+BTMPDIR=$(mktemp -d)
+git clone "${DASH_REPO_URL_FOR_CLONE}" "${BTMPDIR}/dash" --quiet
+META_PATH="${BTMPDIR}/dash/public/data/projects/${TARGET_SLUG}/meta.json"
+mkdir -p "$(dirname "$META_PATH")"
+printf '{"project_url":"%s","default_branch":"%s","gitlab_url":"https://gitlab.com","project_path":"%s","project_name":"%s"}\n' \
+  "${TARGET_PROJECT_URL}" "${TARGET_DEFAULT_BRANCH}" "${TARGET_PROJECT_PATH}" "${TARGET_PROJECT_NAME}" > "$META_PATH"
+git -C "${BTMPDIR}/dash" config user.email "ez-appsec-install@ez-appsec.ai"
+git -C "${BTMPDIR}/dash" config user.name "ez-appsec installer"
+git -C "${BTMPDIR}/dash" add "public/data/projects/${TARGET_SLUG}/"
+git -C "${BTMPDIR}/dash" diff --cached --quiet || \
+  git -C "${BTMPDIR}/dash" commit -m "chore: bootstrap meta.json for ${TARGET_PROJECT_NAME}" && \
+  git -C "${BTMPDIR}/dash" push origin main
+rm -rf "${BTMPDIR}"
+```
+
+If the dashboard push fails (e.g. no write access), print a warning but continue — the meta.json will be written on the first scan run.
+
+### 9. Commit and push the target project changes
 
 ```bash
 cd "<TARGET>"
@@ -231,7 +320,7 @@ git pull --rebase origin "$INSTALL_BRANCH"
 git push origin "$INSTALL_BRANCH"
 ```
 
-### 8. Create the merge request
+### 9. Create the merge request
 
 ```bash
 glab mr create \
@@ -266,7 +355,7 @@ To create the merge request manually, visit:
   <GitLab project URL>/-/merge_requests/new?merge_request[source_branch]=<INSTALL_BRANCH>
 ```
 
-### 9. Report outcome
+### 10. Report outcome
 
 Print a summary:
 - MR URL (if created)
