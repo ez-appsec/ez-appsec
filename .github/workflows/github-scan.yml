@@ -35,9 +35,36 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install ez-appsec
+      - name: Install external scanners
         run: |
-          pip install ez-appsec==${{ env.EZ_APPSEC_VERSION }}
+          # Install gitleaks
+          wget -q https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.4_linux_x64.tar.gz
+          tar xzf gitleaks_8.18.4_linux_x64.tar.gz
+          sudo mv gitleaks /usr/local/bin/
+          rm gitleaks_8.18.4_linux_x64.tar.gz
+
+          # Install semgrep
+          pip install semgrep
+
+          # Install kics
+          wget -q https://github.com/Checkmarx/kics/releases/download/v1.7.11/kics_1.7.11_linux_x64.tar.gz
+          tar xzf kics_1.7.11_linux_x64.tar.gz
+          sudo mv kics /usr/local/bin/
+          rm kics_1.7.11_linux_x64.tar.gz
+
+          # Install grype
+          wget -q https://raw.githubusercontent.com/anchore/grype/main/install.sh -O - | sh -s -- -b /usr/local/bin
+
+          # Verify installations
+          echo "=== Scanner Versions ==="
+          gitleaks version || echo "gitleaks not found"
+          semgrep --version || echo "semgrep not found"
+          kics version || echo "kics not found"
+          grype --version || echo "grype not found"
+
+      - name: Install ez-appsec from source
+        run: |
+          pip install .
 
       - name: Run ez-appsec scan
         id: scan
@@ -45,10 +72,28 @@ jobs:
           EZ_APPSEC_OUTPUT_DIR: "scan-results"
           EZ_APPSEC_SARIF: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/ez-appsec.sarif"
         run: |
+          set -e
           echo "Running ez-appsec scan..."
           mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
-          ez-appsec status || true
-          ez-appsec github-scan . --output "${EZ_APPSEC_SARIF}" --severity ${{ github.event_name == 'pull_request' && 'all' || 'medium' }}
+
+          echo "Checking ez-appsec installation..."
+          ez-appsec --version || echo "Version check failed"
+          ez-appsec status || echo "Status check failed (may be expected)"
+
+          echo "Starting GitHub SARIF scan..."
+          SEVERITY="${{ github.event_name == 'pull_request' && 'all' || 'medium' }}"
+          echo "Severity level: $SEVERITY"
+          ez-appsec github-scan . --output "${EZ_APPSEC_SARIF}" --severity "$SEVERITY"
+
+          echo "Scan completed. Checking for output file..."
+          if [ -f "${EZ_APPSEC_SARIF}" ]; then
+            echo "SARIF file created successfully"
+            ls -lh "${EZ_APPSEC_SARIF}"
+          else
+            echo "ERROR: SARIF file not created at ${EZ_APPSEC_SARIF}"
+            exit 1
+          fi
+        continue-on-error: false
 
       - name: Count findings
         id: summary
