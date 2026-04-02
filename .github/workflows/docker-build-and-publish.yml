@@ -8,7 +8,6 @@ on:
   push:
     branches:
       - main
-      - init_gihub
     tags:
       - 'v*'
   pull_request:
@@ -365,56 +364,19 @@ jobs:
   # RELEASE STAGE
   # ============================================
 
-  # ── Auto-bump patch version on push to main ───────────────────────────────────
-  # Increments the patch component of VERSION (e.g. 0.1.0 → 0.1.1) and commits
-  # it via GitHub API. The resulting commit triggers a new workflow
-  # where version:tag picks up the new version and creates the git tag.
+  # ── Semantic Release ────────────────────────────────────────────────────────────
+  # Automatically manages versioning, changelog, and releases based on commit messages.
+  # Uses Conventional Commits:
+  # - feat: → minor version bump
+  # - fix: → patch version bump
+  # - BREAKING CHANGE: → major version bump
+  # - docs, chore, test, style, refactor: → no version bump
 
-  version-bump:
-    name: Bump Version
+  semantic-release:
+    name: Semantic Release
     runs-on: ubuntu-latest
-    if: |
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/init_gihub') &&
-      !startsWith(github.event.head_commit.message, 'chore: bump version')
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Bump patch version
-        id: bump
-        run: |
-          VERSION=$(cat VERSION)
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          PATCH=$(echo "$VERSION" | cut -d. -f3)
-          NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
-          echo "Bumping VERSION ${VERSION} → ${NEW_VERSION}..."
-          echo "${NEW_VERSION}" > VERSION
-          echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Commit and push VERSION bump
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add VERSION
-          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }}"
-          git push
-
-  # ── Auto-tag from VERSION file ────────────────────────────────────────────────
-  # Reads the VERSION file and creates a git tag via GitHub API if it doesn't
-  # already exist. This triggers a tag workflow which builds + releases the images.
-
-  version-tag:
-    name: Create Version Tag
-    runs-on: ubuntu-latest
-    if: |
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/init_gihub') &&
-      !startsWith(github.event.head_commit.message, 'chore: update README version')
-    needs: [version-bump]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/init_gihub'
+    needs: [lint-python, lint-docker, test-unit, test-security]
     permissions:
       contents: write
     steps:
@@ -424,116 +386,82 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Get current version
-        id: version
-        run: |
-          VERSION=$(cat VERSION)
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Check if tag exists
-        id: check_tag
-        run: |
-          TAG="v${{ steps.version.outputs.version }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "ℹ️  Tag ${TAG} already exists, skipping"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Update README with version
-        if: steps.check_tag.outputs.exists == 'false'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          sed -i "s/^# ez-appsec.*/# ez-appsec v${VERSION}/" README.md
+      - name: Run Semantic Release
+        id: semantic_release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Commit README update
-        if: steps.check_tag.outputs.exists == 'false'
+      - name: Update VERSION file
+        if: steps.semantic_release.outputs.new_release_published == 'true'
         run: |
+          echo "${{ steps.semantic_release.outputs.new_release_version }}" > VERSION
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add README.md
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update README version to v${VERSION} [skip ci]"
-            git push
-          fi
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+          git add VERSION CHANGELOG.md
+          git commit -m "chore(release): ${{ steps.semantic_release.outputs.new_release_version }} [skip ci]"
+          git push
 
-      - name: Create and push git tag
-        if: steps.check_tag.outputs.exists == 'false'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="v${VERSION}"
-          echo "Creating tag ${TAG}..."
-          git tag -a "${TAG}" -m "Release v${VERSION}"
-          git push origin "${TAG}"
-          echo "✅ Tag ${TAG} created — release workflow triggered"
+  # ── Create GitHub Release with Docker Image Info ───────────────────────────────
 
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-docker-standard, build-docker-slim, build-docker-micro, build-docker-semgrep]
-    if: (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/init_gihub')
+    needs: [build-docker-standard, build-docker-slim, build-docker-micro, build-docker-semgrep, semantic-release]
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Get version
         id: version
         run: |
-          VERSION=$(cat VERSION)
+          VERSION="${GITHUB_REF#refs/tags/v}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Generate release notes
-        id: release_notes
+      - name: Generate Docker image info
+        id: docker_info
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ steps.version.outputs.tag_name }}"
-
-          # Get previous tag
-          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${TAG}$" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
-
-          # Create release notes
           {
-            echo "## Changes"
-            echo ""
-            if [ -n "$PREV_TAG" ]; then
-              echo "Changes since ${PREV_TAG}:"
-              echo ""
-              git log "${PREV_TAG}..${TAG}" --pretty=format:"- %s" --no-merges
-            else
-              echo "Initial release."
-              echo ""
-              git log --pretty=format:"- %s" --no-merges | head -30
-            fi
-            echo ""
             echo "## Docker Images"
             echo ""
             echo "| Variant | Tag |"
             echo "|---------|-----|"
             echo "| Standard (all scanners) | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${VERSION}\` |"
+            echo "| Standard (latest)      | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\` |"
             echo "| Slim                    | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:slim-v${VERSION}\` |"
+            echo "| Slim (latest)          | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:slim\` |"
             echo "| Micro (no semgrep)      | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:micro-v${VERSION}\` |"
+            echo "| Micro (latest)          | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:micro\` |"
             echo "| Semgrep                 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:semgrep-v${VERSION}\` |"
+            echo "| Semgrep (latest)        | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:semgrep\` |"
             echo ""
-            echo "**Full Changelog**: [CHANGELOG.md](CHANGELOG.md)"
-          } > RELEASE_NOTES.md
+            echo "### Quick Start"
+            echo ""
+            echo '```bash'
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${VERSION}"
+            echo "docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${VERSION} --version"
+            echo '```'
+          } > DOCKER_INFO.md
+          cat DOCKER_INFO.md
 
-          cat RELEASE_NOTES.md
-
-      - name: Create Release
+      - name: Update GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          name: Release ${{ steps.version.outputs.tag_name }}
-          body_path: RELEASE_NOTES.md
+          body_path: DOCKER_INFO.md
+          append_body: true
           draft: false
           prerelease: false
-          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
