@@ -20,6 +20,10 @@ permissions:
 env:
   EZ_APPSEC_VERSION: "latest"
   EZ_APPSEC_IMAGE: "ghcr.io/ez-appsec/ez-appsec:${{ env.EZ_APPSEC_VERSION }}"
+  EZ_APPSEC_OUTPUT_DIR: "scan-results"
+  EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
+
+
 
 jobs:
   scan:
