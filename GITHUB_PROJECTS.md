@@ -45,6 +45,21 @@ This document lists all projects that have been forked/migrated from GitLab to t
   - Infrastructure configuration examples
   - Deployment documentation
 
+### 🎯 Test Projects
+
+#### 5. juice-shop
+- **Repository**: https://github.com/ez-appsec/juice-shop
+- **Description**: OWASP Juice Shop: Probably the most broken web application on the planet
+- **Purpose**: Vulnerable web application for security testing and ez-appsec validation
+- **Features**:
+  - Comprehensive security vulnerabilities
+  - CTF-style challenges
+  - Multiple security categories (XSS, SQLi, etc.)
+  - Perfect for testing ez-appsec scanner functionality
+- **Branches**:
+  - `master`: Main branch with ez-appsec integration
+  - `ez-appsec-pages`: Additional pages for ez-appsec testing
+
 ## Project Status
 
 All projects are currently **private** and hosted in the ez-appsec GitHub organization.
