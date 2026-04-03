@@ -21,7 +21,6 @@ env:
   EZ_APPSEC_VERSION: "latest"
   EZ_APPSEC_IMAGE: "ghcr.io/ez-appsec/ez-appsec:${{ env.EZ_APPSEC_VERSION }}"
   EZ_APPSEC_OUTPUT_DIR: "scan-results"
-  EZ_APPSEC_REPORT: "${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
 
 
 
@@ -34,7 +33,6 @@ jobs:
       options: --user root
     env:
       EZ_APPSEC_OUTPUT_DIR: "scan-results"
-      EZ_APPSEC_REPORT: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/vulnerabilities.json"
       EZ_APPSEC_SARIF: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/ez-appsec.sarif"
     outputs:
       findings-count: ${{ steps.summary.outputs.findings-count }}
@@ -91,9 +89,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ez-appsec-scan-${{ github.sha }}
-          path: |
-            ${{ env.EZ_APPSEC_SARIF }}
-            ${{ env.EZ_APPSEC_REPORT }}
+          path: ${{ env.EZ_APPSEC_SARIF }}
           retention-days: 7
           if-no-files-found: warn
 
@@ -146,7 +142,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     env:
       EZ_APPSEC_OUTPUT_DIR: "scan-results"
-      EZ_APPSEC_REPORT: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/vulnerabilities.json"
       EZ_APPSEC_SARIF: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/ez-appsec.sarif"
     outputs:
       findings-count: ${{ steps.summary.outputs.findings-count }}
@@ -199,8 +194,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ez-appsec-cold-scan-${{ github.sha }}
-          path: |
-            ${{ env.EZ_APPSEC_SARIF }}
-            ${{ env.EZ_APPSEC_REPORT }}
+          path: ${{ env.EZ_APPSEC_SARIF }}
           retention-days: 30
           if-no-files-found: warn
