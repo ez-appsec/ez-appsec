@@ -47,7 +47,7 @@ This document lists all projects that have been forked/migrated from GitLab to t
 
 ### 🎯 Test Projects
 
-#### 5. juice-shop
+#### 5. juice-shop (Private - GitLab Migration)
 - **Repository**: https://github.com/ez-appsec/juice-shop
 - **Description**: OWASP Juice Shop: Probably the most broken web application on the planet
 - **Purpose**: Vulnerable web application for security testing and ez-appsec validation
@@ -59,10 +59,25 @@ This document lists all projects that have been forked/migrated from GitLab to t
 - **Branches**:
   - `master`: Main branch with ez-appsec integration
   - `ez-appsec-pages`: Additional pages for ez-appsec testing
+- **Status**: Private (migrated from GitLab)
+
+#### 6. juice-shop-public (Public - GitHub Fork)
+- **Repository**: https://github.com/ez-appsec/juice-shop-public
+- **Description**: OWASP Juice Shop: Probably the most modern and sophisticated insecure web application
+- **Purpose**: Public vulnerable web application for security testing and ez-appsec validation
+- **Features**:
+  - Comprehensive security vulnerabilities
+  - CTF-style challenges
+  - Multiple security categories (XSS, SQLi, etc.)
+  - Perfect for testing ez-appsec scanner functionality
+- **Status**: Public (forked from juice-shop/juice-shop)
 
 ## Project Status
 
-All projects are currently **private** and hosted in the ez-appsec GitHub organization.
+**Main Projects**: All **private** and hosted in the ez-appsec GitHub organization.
+**Test Projects**:
+- `juice-shop`: Private (GitLab migration)
+- `juice-shop-public`: Public (GitHub fork)
 
 ## Migration Status
 
@@ -72,6 +87,8 @@ All projects are currently **private** and hosted in the ez-appsec GitHub organi
 | ez-appsec-mcp | ✅ | ✅ | Migrated |
 | ez-appsec-website | ✅ | ✅ | Migrated |
 | ez-appsec-infra | N/A | ✅ | Created |
+| juice-shop | ✅ | ✅ | Migrated (Private) |
+| juice-shop-public | N/A | ✅ | Forked (Public) |
 
 ## CI/CD Integration
 
