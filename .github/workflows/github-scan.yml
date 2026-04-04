@@ -1,6 +1,6 @@
 # GitHub Actions workflow template to perform project scan and publish results to GitHub Security.
 # This matches the structure and variables of the default scan.yml template.
-# Uses ez-appsec Docker images for scanning.
+# Uses ez-appsec installed via pip for scanning.
 
 name: ez-appsec Security Scan
 
@@ -18,28 +18,36 @@ permissions:
   pull-requests: write  # Required for PR comments
 
 env:
-  EZ_APPSEC_VERSION: "latest"
-  EZ_APPSEC_IMAGE: "ghcr.io/ez-appsec/ez-appsec:${{ env.EZ_APPSEC_VERSION }}"
   EZ_APPSEC_OUTPUT_DIR: "scan-results"
-
-
+  EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
 
 jobs:
   scan:
     name: Security Scan
     runs-on: ubuntu-latest
-    container:
-      image: ${{ env.EZ_APPSEC_IMAGE }}
-      options: --user root
-    env:
-      EZ_APPSEC_OUTPUT_DIR: "scan-results"
-      EZ_APPSEC_SARIF: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/ez-appsec.sarif"
     outputs:
       findings-count: ${{ steps.summary.outputs.findings-count }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ez-appsec and dependencies
+        env:
+          EZ_APPSEC_INSTALL_TOKEN: ${{ secrets.EZ_APPSEC_INSTALL_TOKEN }}
+        run: |
+          pip install --quiet semgrep
+          if [ -n "${EZ_APPSEC_INSTALL_TOKEN}" ]; then
+            pip install --quiet \
+              "git+https://${EZ_APPSEC_INSTALL_TOKEN}@github.com/ez-appsec/ez-appsec.git@main"
+          else
+            pip install --quiet ez-appsec
+          fi
 
       - name: Run ez-appsec scan
         id: scan
@@ -93,6 +101,21 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Generate dashboard vulnerabilities.json
+        id: web-report
+        run: |
+          mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
+          ez-appsec web-report . --output "${EZ_APPSEC_OUTPUT_DIR}"
+
+      - name: Upload vulnerabilities.json as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ez-appsec-vulns-${{ github.sha }}
+          path: ${{ env.EZ_APPSEC_OUTPUT_DIR }}/vulnerabilities.json
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Comment on PR with findings
         if: github.event_name == 'pull_request' && steps.scan.outcome == 'success'
         uses: actions/github-script@v7
@@ -132,68 +155,3 @@ jobs:
                 body: body
               });
             }
-
-  cold-scan:
-    name: Cold Security Scan (Manual)
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ env.EZ_APPSEC_IMAGE }}
-      options: --user root
-    if: github.event_name == 'workflow_dispatch'
-    env:
-      EZ_APPSEC_OUTPUT_DIR: "scan-results"
-      EZ_APPSEC_SARIF: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/ez-appsec.sarif"
-    outputs:
-      findings-count: ${{ steps.summary.outputs.findings-count }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run ez-appsec cold scan
-        id: scan
-        run: |
-          echo "Running cold ez-appsec scan..."
-          mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
-
-          echo "Checking ez-appsec status..."
-          ez-appsec status || true
-
-          echo "Starting GitHub SARIF scan (all severities)..."
-          ez-appsec github-scan . --output "${EZ_APPSEC_SARIF}" --severity "all"
-
-          echo "Scan completed. Checking for output file..."
-          if [ -f "${EZ_APPSEC_SARIF}" ]; then
-            echo "SARIF file created successfully"
-            ls -lh "${EZ_APPSEC_SARIF}"
-          else
-            echo "ERROR: SARIF file not created at ${EZ_APPSEC_SARIF}"
-            exit 1
-          fi
-
-      - name: Count findings
-        id: summary
-        run: |
-          if [ -f "${EZ_APPSEC_SARIF}" ]; then
-            COUNT=$(python3 -c "import json; print(len(json.load(open('${EZ_APPSEC_SARIF}'))['runs'][0]['results']))")
-            echo "findings-count=$COUNT" >> $GITHUB_OUTPUT
-            echo "Found $COUNT security findings"
-          else
-            echo "findings-count=0" >> $GITHUB_OUTPUT
-            echo "No findings found"
-          fi
-
-      - name: Upload SARIF to GitHub Security
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: ${{ env.EZ_APPSEC_SARIF }}
-
-      - name: Upload scan results as artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ez-appsec-cold-scan-${{ github.sha }}
-          path: ${{ env.EZ_APPSEC_SARIF }}
-          retention-days: 30
-          if-no-files-found: warn
