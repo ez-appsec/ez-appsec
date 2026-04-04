@@ -41,12 +41,8 @@ jobs:
 
       - name: Add project meta.json
         run: |
-          cat > dashboard/github/public/data/projects/juice-shop-public/meta.json <<'EOF'
-{
-  "project_name": "juice-shop-public",
-  "project_path": "ez-appsec/juice-shop-public"
-}
-EOF
+          echo '{"project_name":"juice-shop-public","project_path":"ez-appsec/juice-shop-public"}' \
+            > dashboard/github/public/data/projects/juice-shop-public/meta.json
 
       - name: Run aggregation script
         run: python3 ../aggregate-index-github.py
