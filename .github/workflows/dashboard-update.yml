@@ -41,15 +41,15 @@ jobs:
 
       - name: Add project meta.json
         run: |
-          cat > dashboard/github/public/data/projects/juice-shop-public/meta.json << 'EOF'
-          {
-            "project_name": "juice-shop-public",
-            "project_path": "ez-appsec/juice-shop-public"
-          }
-          EOF
+          cat > dashboard/github/public/data/projects/juice-shop-public/meta.json <<'EOF'
+{
+  "project_name": "juice-shop-public",
+  "project_path": "ez-appsec/juice-shop-public"
+}
+EOF
 
       - name: Run aggregation script
-        run: python3 aggregate-index-github.py
+        run: python3 ../aggregate-index-github.py
         working-directory: dashboard/github
 
       - name: Commit updated dashboard data
