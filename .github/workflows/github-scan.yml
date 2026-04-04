@@ -1,5 +1,6 @@
-# GitHub Actions workflow to perform project scan and publish results to GitHub Security tab.
-# This workflow runs ez-appsec security scans and uploads SARIF results to GitHub.
+# GitHub Actions workflow template to perform project scan and publish results to GitHub Security.
+# This matches the structure and variables of the default scan.yml template.
+# Uses ez-appsec installed via pip for scanning.
 
 name: ez-appsec Security Scan
 
@@ -17,7 +18,8 @@ permissions:
   pull-requests: write  # Required for PR comments
 
 env:
-  EZ_APPSEC_VERSION: "0.1.17"
+  EZ_APPSEC_OUTPUT_DIR: "scan-results"
+  EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
 
 jobs:
   scan:
@@ -35,52 +37,29 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install external scanners
+      - name: Install ez-appsec and dependencies
+        env:
+          EZ_APPSEC_INSTALL_TOKEN: ${{ secrets.EZ_APPSEC_INSTALL_TOKEN }}
         run: |
-          # Install gitleaks
-          wget -q https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.4_linux_x64.tar.gz
-          tar xzf gitleaks_8.18.4_linux_x64.tar.gz
-          sudo mv gitleaks /usr/local/bin/
-          rm gitleaks_8.18.4_linux_x64.tar.gz
-
-          # Install semgrep
-          pip install semgrep
-
-          # Install kics
-          wget -q https://github.com/Checkmarx/kics/releases/download/v1.7.11/kics_1.7.11_linux_x64.tar.gz
-          tar xzf kics_1.7.11_linux_x64.tar.gz
-          sudo mv kics /usr/local/bin/
-          rm kics_1.7.11_linux_x64.tar.gz
-
-          # Install grype
-          wget -q https://raw.githubusercontent.com/anchore/grype/main/install.sh -O - | sh -s -- -b /usr/local/bin
-
-          # Verify installations
-          echo "=== Scanner Versions ==="
-          gitleaks version || echo "gitleaks not found"
-          semgrep --version || echo "semgrep not found"
-          kics version || echo "kics not found"
-          grype --version || echo "grype not found"
-
-      - name: Install ez-appsec from source
-        run: |
-          pip install .
+          pip install --quiet semgrep
+          if [ -n "${EZ_APPSEC_INSTALL_TOKEN}" ]; then
+            pip install --quiet \
+              "git+https://${EZ_APPSEC_INSTALL_TOKEN}@github.com/ez-appsec/ez-appsec.git@main"
+          else
+            pip install --quiet ez-appsec
+          fi
 
       - name: Run ez-appsec scan
         id: scan
-        env:
-          EZ_APPSEC_OUTPUT_DIR: "scan-results"
-          EZ_APPSEC_SARIF: "${{ env.EZ_APPSEC_OUTPUT_DIR }}/ez-appsec.sarif"
         run: |
-          set -e
           echo "Running ez-appsec scan..."
           mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
 
-          echo "Checking ez-appsec installation..."
-          ez-appsec --version || echo "Version check failed"
-          ez-appsec status || echo "Status check failed (may be expected)"
+          echo "Checking ez-appsec status..."
+          ez-appsec status || true
 
           echo "Starting GitHub SARIF scan..."
+          # Use 'all' severity for PRs, 'medium' for main branch
           SEVERITY="${{ github.event_name == 'pull_request' && 'all' || 'medium' }}"
           echo "Severity level: $SEVERITY"
           ez-appsec github-scan . --output "${EZ_APPSEC_SARIF}" --severity "$SEVERITY"
@@ -93,12 +72,9 @@ jobs:
             echo "ERROR: SARIF file not created at ${EZ_APPSEC_SARIF}"
             exit 1
           fi
-        continue-on-error: false
 
       - name: Count findings
         id: summary
-        env:
-          EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
         run: |
           if [ -f "${EZ_APPSEC_SARIF}" ]; then
             COUNT=$(python3 -c "import json; print(len(json.load(open('${EZ_APPSEC_SARIF}'))['runs'][0]['results']))")
@@ -113,7 +89,7 @@ jobs:
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: scan-results/ez-appsec.sarif
+          sarif_file: ${{ env.EZ_APPSEC_SARIF }}
         continue-on-error: true
 
       - name: Upload scan results as artifacts
@@ -121,7 +97,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ez-appsec-scan-${{ github.sha }}
-          path: scan-results/
+          path: ${{ env.EZ_APPSEC_SARIF }}
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Generate dashboard vulnerabilities.json
+        id: web-report
+        run: |
+          mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
+          ez-appsec web-report . --output "${EZ_APPSEC_OUTPUT_DIR}"
+
+      - name: Upload vulnerabilities.json as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ez-appsec-vulns-${{ github.sha }}
+          path: ${{ env.EZ_APPSEC_OUTPUT_DIR }}/vulnerabilities.json
           retention-days: 7
           if-no-files-found: warn
 
