@@ -1,0 +1,61 @@
+name: Dashboard Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_slug:
+        description: "Project slug (e.g. juice-shop-public)"
+        required: false
+      run_id:
+        description: "Source run ID to fetch artifacts from"
+        required: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download scan artifacts from source repos
+        run: |
+          for repo in juice-shop-public; do
+            mkdir -p dashboard/github/public/data/projects/$repo
+            LATEST_RUN=$(gh run list --repo ez-appsec/$repo --workflow ez-appsec-scan.yml \
+              --status success --limit 1 --json databaseId -q '.[0].databaseId')
+            if [ -n "$LATEST_RUN" ]; then
+              gh run download $LATEST_RUN \
+                --repo ez-appsec/$repo \
+                --pattern "ez-appsec-vulns-*" \
+                -D /tmp/dl-$repo || true
+              # Find and move the vulnerabilities.json from the downloaded artifact folder
+              find /tmp/dl-$repo -name "vulnerabilities.json" -exec cp {} \
+                dashboard/github/public/data/projects/$repo/vulnerabilities.json \; || true
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add project meta.json
+        run: |
+          cat > dashboard/github/public/data/projects/juice-shop-public/meta.json << 'EOF'
+          {
+            "project_name": "juice-shop-public",
+            "project_path": "ez-appsec/juice-shop-public"
+          }
+          EOF
+
+      - name: Run aggregation script
+        run: python3 aggregate-index-github.py
+        working-directory: dashboard/github
+
+      - name: Commit updated dashboard data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboard/github/public/data/
+          git diff --staged --quiet || git commit -m "chore: update dashboard data [skip ci]"
+          git push
