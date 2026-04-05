@@ -7,7 +7,7 @@ stages:
 
 variables:
   EZ_APPSEC_VERSION: "latest"
-  EZ_APPSEC_IMAGE: "registry.gitlab.com/jfelten.work-group/ez_appsec/ez_appsec:$EZ_APPSEC_VERSION"
+  EZ_APPSEC_IMAGE: "ghcr.io/ez-appsec/ez-appsec:$EZ_APPSEC_VERSION"
 
 
 # Push scan results to the dashboard repo via SSH deploy key.

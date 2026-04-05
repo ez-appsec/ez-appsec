@@ -15,7 +15,7 @@ stages:
 
 variables:
   EZ_APPSEC_VERSION: "latest"
-  EZ_APPSEC_IMAGE: "registry.gitlab.com/jfelten.work-group/ez_appsec/ez_appsec:$EZ_APPSEC_VERSION"
+  EZ_APPSEC_IMAGE: "ghcr.io/ez-appsec/ez-appsec:$EZ_APPSEC_VERSION"
 
 # ── Shared: checkout main and configure git push credentials ─────────────────
 .git-setup: &git-setup |
@@ -109,17 +109,11 @@ rescan:project:
       NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
       META="public/data/projects/${SLUG}/meta.json"
       if [ -f "$META" ]; then
-        python3 -c "
-  import json
-  m = json.load(open('$META'))
-  m['last_updated'] = '$NOW'
-  json.dump(m, open('$META', 'w'), indent=2)
-  print('Updated meta.json last_updated for $SLUG')
-  "
+        python3 -c "import json; m=json.load(open('$META')); m['last_updated']='$NOW'; open('$META','w').write(json.dumps(m,indent=2)); print('Updated meta.json for $SLUG')"
       fi
     - *aggregate
     - git add public/data/
-    - git diff --cached --quiet && echo "No changes." || git commit -m "chore: rescan ${RESCAN_PROJECT_PATH} [skip ci]"
+    - 'git diff --cached --quiet && echo "No changes." || git commit -m "chore: rescan ${RESCAN_PROJECT_PATH} [skip ci]"'
     - git push origin main
     - |
       curl -s --request POST \
@@ -146,11 +140,7 @@ rescan:all:
       ERRORS=0
       for META_FILE in public/data/projects/*/meta.json; do
         [ -f "$META_FILE" ] || continue
-        PROJ_PATH=$(python3 -c "
-  import json, sys
-  d = json.load(open('$META_FILE'))
-  print(d.get('project_path', ''))
-  " 2>/dev/null)
+        PROJ_PATH=$(python3 -c "import json; print(json.load(open('$META_FILE')).get('project_path',''))" 2>/dev/null)
         [ -z "$PROJ_PATH" ] && echo "SKIP $META_FILE: no project_path" && continue
         SLUG=$(echo "${PROJ_PATH}" | tr '/' '-' | tr '.' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]')
         echo ""
@@ -168,18 +158,13 @@ rescan:all:
         { echo "  SKIP ${PROJ_PATH}: scan failed"; ERRORS=$((ERRORS+1)); rm -rf /tmp/target; continue; }
         rm -rf /tmp/target
         NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-        python3 -c "
-  import json
-  m = json.load(open('$META_FILE'))
-  m['last_updated'] = '$NOW'
-  json.dump(m, open('$META_FILE', 'w'), indent=2)
-  "
+        python3 -c "import json; m=json.load(open('$META_FILE')); m['last_updated']='$NOW'; open('$META_FILE','w').write(json.dumps(m,indent=2))"
       done
       echo ""
       echo "Done. Failed projects: ${ERRORS}"
     - *aggregate
     - git add public/data/
-    - git diff --cached --quiet && echo "No changes." || git commit -m "chore: rescan all projects [skip ci]"
+    - 'git diff --cached --quiet && echo "No changes." || git commit -m "chore: rescan all projects [skip ci]"'
     - git push origin main
     - |
       curl -s --request POST \
@@ -209,11 +194,11 @@ update:web:
         echo "  ${DEST}"
       done
       # Update this CI file from the canonical source
-      curl -fsSL "${GL_BASE}/dashboard/gitlab-ci.yml" -o .gitlab-ci.yml 2>/dev/null || \
-      curl -fsSL "${GH_BASE}/dashboard/gitlab-ci.yml" -o .gitlab-ci.yml
+      curl -fsSL "${GL_BASE}/gitlab/dashboard-ci.yml" -o .gitlab-ci.yml 2>/dev/null || \
+      curl -fsSL "${GH_BASE}/gitlab/dashboard-ci.yml" -o .gitlab-ci.yml
       echo "  .gitlab-ci.yml"
     - git add public/index.html public/style.css public/app.js .gitlab-ci.yml
-    - git diff --cached --quiet && echo "No changes." || git commit -m "chore: update web assets and CI from ez-appsec"
+    - 'git diff --cached --quiet && echo "No changes." || git commit -m "chore: update web assets and CI from ez-appsec"'
     - git push origin main
   rules:
     - when: manual

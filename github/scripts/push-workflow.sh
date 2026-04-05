@@ -16,7 +16,7 @@
 set -euo pipefail
 
 # ── Resolve token ─────────────────────────────────────────────────────────────
-ENV_FILE="$(dirname "$0")/../../.env"
+ENV_FILE="$(dirname "$0")/../../../.env"
 [[ -f "$ENV_FILE" ]] && source "$ENV_FILE" 2>/dev/null || true
 GH_TOKEN="${GH_TOKEN:-${GITHUB_ACCESS_TOKEN:-}}"
 if [[ -z "$GH_TOKEN" ]]; then

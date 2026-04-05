@@ -79,10 +79,10 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfiles: |
-            Dockerfile
-            Dockerfile.slim
-            Dockerfile.micro
-            Dockerfile.semgrep
+            images/Dockerfile
+            images/Dockerfile.slim
+            images/Dockerfile.micro
+            images/Dockerfile.semgrep
         continue-on-error: true
 
   # ============================================
@@ -203,7 +203,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: ./images/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -257,7 +257,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.slim
+          file: ./images/Dockerfile.slim
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -304,7 +304,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.micro
+          file: ./images/Dockerfile.micro
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -351,7 +351,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.semgrep
+          file: ./images/Dockerfile.semgrep
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

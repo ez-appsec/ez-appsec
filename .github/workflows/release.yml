@@ -76,7 +76,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: ./images/Dockerfile
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ needs.semantic-release.outputs.new_release_version }}
@@ -112,7 +112,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.slim
+          file: ./images/Dockerfile.slim
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:slim-v${{ needs.semantic-release.outputs.new_release_version }}
@@ -148,7 +148,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.micro
+          file: ./images/Dockerfile.micro
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:micro-v${{ needs.semantic-release.outputs.new_release_version }}
@@ -184,7 +184,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.semgrep
+          file: ./images/Dockerfile.semgrep
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:semgrep-v${{ needs.semantic-release.outputs.new_release_version }}

@@ -4,8 +4,8 @@ services:
   # Main orchestration container
   ez-appsec:
     build:
-      context: .
-      dockerfile: Dockerfile.micro
+      context: ..
+      dockerfile: images/Dockerfile.micro
     volumes:
       - .:/scan
       - ./results:/results
@@ -18,8 +18,8 @@ services:
   # Separate semgrep container (largest scanner)
   semgrep-scanner:
     build:
-      context: .
-      dockerfile: Dockerfile.semgrep
+      context: ..
+      dockerfile: images/Dockerfile.semgrep
     volumes:
       - .:/scan:ro
       - ./results:/results

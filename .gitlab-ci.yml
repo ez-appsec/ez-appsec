@@ -57,11 +57,11 @@ lint:docker:
   image: hadolint/hadolint:latest-debian
   script:
     - echo "🔍 Linting Dockerfile..."
-    - hadolint Dockerfile
+    - hadolint images/Dockerfile
     - echo "✓ Dockerfile linting passed"
-    
+
     - echo "🔍 Linting Dockerfile.slim..."
-    - hadolint Dockerfile.slim
+    - hadolint images/Dockerfile.slim
     - echo "✓ Dockerfile.slim linting passed"
   allow_failure: true
   # tags:
@@ -127,7 +127,7 @@ build:docker:standard:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building standard Docker image ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-    - docker build -t ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} .
+    - docker build -f images/Dockerfile -t ${REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA} .
     - echo "📊 Image info:"
     - docker images ${REGISTRY_IMAGE}
     - echo "🧪 Testing image functionality..."
@@ -152,7 +152,7 @@ build:docker:slim:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building slim Docker image ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA}"
-    - docker build -f Dockerfile.slim -t ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} .
+    - docker build -f images/Dockerfile.slim -t ${REGISTRY_IMAGE}:slim-${CI_COMMIT_SHORT_SHA} .
     - echo "📊 Image info:"
     - docker images ${REGISTRY_IMAGE}
     - echo "⬆️  Pushing slim image..."
@@ -174,7 +174,7 @@ build:docker:micro:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building micro Docker image ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA}"
-    - docker build -f Dockerfile.micro -t ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} .
+    - docker build -f images/Dockerfile.micro -t ${REGISTRY_IMAGE}:micro-${CI_COMMIT_SHORT_SHA} .
     - echo "📊 Image info:"
     - docker images ${REGISTRY_IMAGE}
     - echo "⬆️  Pushing micro image..."
@@ -196,7 +196,7 @@ build:docker:semgrep:
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
   script:
     - echo "🐳 Building semgrep Docker image ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA}"
-    - docker build -f Dockerfile.semgrep -t ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} .
+    - docker build -f images/Dockerfile.semgrep -t ${REGISTRY_IMAGE}:semgrep-${CI_COMMIT_SHORT_SHA} .
     - echo "📊 Image info:"
     - docker images ${REGISTRY_IMAGE}
     - echo "⬆️  Pushing semgrep image..."

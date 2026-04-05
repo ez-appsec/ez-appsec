@@ -30,7 +30,7 @@ CHECK_DASHBOARD=false
 GITLAB_URL="https://gitlab.com"
 
 # ── Resolve token ─────────────────────────────────────────────────────────────
-ENV_FILE="$(dirname "$0")/../../.env"
+ENV_FILE="$(dirname "$0")/../../../.env"
 [[ -f "$ENV_FILE" ]] && source "$ENV_FILE" 2>/dev/null || true
 GITLAB_TOKEN="${GITLAB_ACCESS_TOKEN:-${GITLAB_TOKEN:-}}"
 if [[ -z "$GITLAB_TOKEN" ]]; then

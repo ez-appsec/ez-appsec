@@ -32,7 +32,7 @@ DOWNLOAD_DIR="/tmp/ez-appsec-gh-test"
 CHECK_SARIF=false
 
 # ── Resolve token ─────────────────────────────────────────────────────────────
-ENV_FILE="$(dirname "$0")/../../.env"
+ENV_FILE="$(dirname "$0")/../../../.env"
 [[ -f "$ENV_FILE" ]] && source "$ENV_FILE" 2>/dev/null || true
 GH_TOKEN="${GH_TOKEN:-${GITHUB_ACCESS_TOKEN:-}}"
 if [[ -z "$GH_TOKEN" ]]; then

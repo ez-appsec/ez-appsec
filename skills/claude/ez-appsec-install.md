@@ -28,12 +28,12 @@ glab repo view jfelten/ez-appsec 2>/dev/null
   include:
     - project: 'jfelten/ez-appsec'
       ref: main
-      file: 'scan.yml'
+      file: 'gitlab/scan.yml'
   ```
 - **Otherwise**: use a remote (raw HTTP) include:
   ```yaml
   include:
-    - remote: 'https://raw.githubusercontent.com/jfelten/ez-appsec/main/scan.yml'
+    - remote: 'https://raw.githubusercontent.com/jfelten/ez-appsec/main/gitlab/scan.yml'
   ```
 
 ### 3. Create the branch
@@ -53,7 +53,7 @@ Read `.gitlab-ci.yml`.
 **If an `include:` block already exists**, append the ez-appsec entry to it.
 **If no `include:` block exists**, prepend the block at the top of the file (after any leading comments).
 
-Ensure the final file does **not** duplicate an existing ez-appsec include (check for `scan.yml` already present).
+Ensure the final file does **not** duplicate an existing ez-appsec include (check for `gitlab/scan.yml` already present).
 
 **Stages — always add an explicit `stages:` block** using the canonical order:
 
