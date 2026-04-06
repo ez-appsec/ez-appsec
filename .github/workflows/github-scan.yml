@@ -116,6 +116,45 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Push scan results to dashboard (update:vulns)
+        if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request'
+        env:
+          DASHBOARD_PUSH_TOKEN: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
+          EZ_APPSEC_DASHBOARD_REPO: ${{ vars.EZ_APPSEC_DASHBOARD_REPO || 'ez-appsec/ez-appsec-dashboard' }}
+        run: |
+          if [ -z "${DASHBOARD_PUSH_TOKEN}" ]; then
+            echo "DASHBOARD_PUSH_TOKEN not set — skipping dashboard update."
+            exit 0
+          fi
+          VULN_FILE="${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
+          if [ ! -f "${VULN_FILE}" ]; then
+            echo "vulnerabilities.json not found — skipping dashboard update."
+            exit 0
+          fi
+          SLUG=$(echo "${{ github.repository }}" | tr '/' '-' | tr '.' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]')
+          DASH_DIR=$(mktemp -d)
+          git clone "https://x-access-token:${DASHBOARD_PUSH_TOKEN}@github.com/${EZ_APPSEC_DASHBOARD_REPO}.git" "${DASH_DIR}/dashboard"
+          mkdir -p "${DASH_DIR}/dashboard/data/projects/${SLUG}"
+          cp "${VULN_FILE}" "${DASH_DIR}/dashboard/data/projects/${SLUG}/vulnerabilities.json"
+          cat > "${DASH_DIR}/dashboard/data/projects/${SLUG}/meta.json" <<META
+          {
+            "project_name": "${{ github.event.repository.name }}",
+            "project_path": "${{ github.repository }}",
+            "github_url": "https://github.com/${{ github.repository }}",
+            "default_branch": "${{ github.event.repository.default_branch }}",
+            "last_updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          META
+          cd "${DASH_DIR}/dashboard"
+          git config user.name "ez-appsec scan"
+          git config user.email "ci@ez-appsec.ai"
+          git add data/projects/
+          git diff --staged --quiet && echo "No changes." || \
+            git commit -m "chore: update scan results for ${{ github.repository }} [skip ci]"
+          git push origin main
+          rm -rf "${DASH_DIR}"
+          echo "Dashboard updated: https://github.com/${EZ_APPSEC_DASHBOARD_REPO}"
+
       - name: Comment on PR with findings
         if: github.event_name == 'pull_request' && steps.scan.outcome == 'success'
         uses: actions/github-script@v7
