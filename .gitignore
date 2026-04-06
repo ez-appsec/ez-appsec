@@ -1,0 +1,67 @@
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFES
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Configuration
+.env
+.env.local
+.ez-appsec.yaml
+
+# Output
+results.json
+sarif-report.sarif
+*.log
+
+coverage.xml
+
+# Live test repos (cloned externally, not tracked)
+tests/live/
+
+# Session planning artifacts
+CURRENT_STATUS.md
+DEPLOYMENT_SETUP.md
+DEPLOYMENT_STATUS.md
+update_phase5.py
