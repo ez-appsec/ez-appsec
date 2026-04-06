@@ -402,13 +402,13 @@ class GitHubDashboard {
             this.projects.map(async p => {
                 const projectUrl = `https://github.com/${p.project_path || p.slug}`;
                 const r = await fetch(`data/projects/${p.slug}/vulnerabilities.json`);
-                if (!r.ok) return { status: 'rejected', value: null };
+                if (!r.ok) throw new Error(`Could not load ${p.slug}`);
                 const data = await r.json();
                 const vulns = Array.isArray(data)
                     ? data
                     : (data.vulnerabilities || data.issues || []);
                 const scanDate = data.scan_date || data.generated_at || null;
-                return { status: 'fulfilled', value: { vulns: vulns.map(v => ({ ...v, _project: p.name, _project_slug: p.slug })), project: p, projectUrl, scanDate } };
+                return { vulns: vulns.map(v => ({ ...v, _project: p.name, _project_slug: p.slug })), project: p, projectUrl, scanDate };
             })
         );
 
