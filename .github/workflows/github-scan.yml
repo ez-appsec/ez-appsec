@@ -1,6 +1,6 @@
 # GitHub Actions workflow template to perform project scan and publish results to GitHub Security.
-# This matches the structure and variables of the default scan.yml template.
-# Uses ez-appsec installed via pip for scanning.
+# Uses the ez-appsec Docker image (same as GitLab scan.yml) for full scanner coverage:
+# gitleaks, semgrep, grype, kics.
 
 name: ez-appsec Security Scan
 
@@ -15,39 +15,30 @@ permissions:
   contents: read
   security-events: write  # Required for SARIF upload to Security tab
   actions: read
-  pull-requests: write  # Required for PR comments
+  pull-requests: write   # Required for PR comments
+  packages: read         # Required to pull ghcr.io/ez-appsec/ez-appsec image
 
 env:
   EZ_APPSEC_OUTPUT_DIR: "scan-results"
   EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
+  EZ_APPSEC_IMAGE: "ghcr.io/ez-appsec/ez-appsec:latest"
 
 jobs:
   scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ez-appsec/ez-appsec:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
+      options: --entrypoint ""
     outputs:
       findings-count: ${{ steps.summary.outputs.findings-count }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install ez-appsec and dependencies
-        env:
-          EZ_APPSEC_INSTALL_TOKEN: ${{ secrets.EZ_APPSEC_INSTALL_TOKEN }}
-        run: |
-          pip install --quiet semgrep
-          if [ -n "${EZ_APPSEC_INSTALL_TOKEN}" ]; then
-            pip install --quiet \
-              "git+https://${EZ_APPSEC_INSTALL_TOKEN}@github.com/ez-appsec/ez-appsec.git@main"
-          else
-            pip install --quiet ez-appsec
-          fi
 
       - name: Run ez-appsec scan
         id: scan
