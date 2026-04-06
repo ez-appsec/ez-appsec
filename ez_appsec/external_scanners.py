@@ -107,7 +107,7 @@ class GitleaksScanner(ScannerWrapper):
 
 class SemgrepScanner(ScannerWrapper):
     """Wrapper for semgrep SAST analysis"""
-    
+
     def is_installed(self) -> bool:
         """Check if semgrep is installed"""
         try:
@@ -115,55 +115,69 @@ class SemgrepScanner(ScannerWrapper):
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
-    
+
     def install_command(self) -> str:
         """Return installation command"""
         return "brew install semgrep  # or: python3 -m pip install semgrep"
-    
+
     def scan(self, path: str) -> List[Dict[str, Any]]:
         """Run semgrep scan"""
         issues, _ = self.scan_with_raw_output(path)
         return issues
-    
+
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run semgrep scan and return raw output file path"""
         if not self.is_installed():
             logger.warning("semgrep not installed")
             return [], ""
-        
+
         # Create temporary file for raw output
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
             raw_output_path = temp_file.name
-        
+
         try:
+            # Check if PHP files exist in the target
+            has_php = any(Path(path).rglob('*.php'))
+
+            # Build config flags
+            config_flags = []
+
+            # Add custom PHP rules if PHP files exist
+            if has_php:
+                custom_rules = Path(__file__).parent.parent / "custom-semgrep-rules.yaml"
+                if custom_rules.exists():
+                    config_flags.append(f"--config={custom_rules}")
+                    logger.info(f"Using custom PHP vulnerability rules from {custom_rules}")
+
             # Prefer bundled GitLab SAST rules (language subdirs + ruby pack); fall back to registry
             sast_rules_root = "/usr/local/share/sast-rules"
             sast_langs = ["c", "csharp", "go", "java", "javascript", "python", "scala"]
-            config_flags = [
-                f"--config={os.path.join(sast_rules_root, lang)}"
-                for lang in sast_langs
-                if os.path.isdir(os.path.join(sast_rules_root, lang))
-            ]
+            for lang in sast_langs:
+                if os.path.isdir(os.path.join(sast_rules_root, lang)):
+                    config_flags.append(f"--config={os.path.join(sast_rules_root, lang)}")
+
             ruby_rules = os.path.join(sast_rules_root, "ruby.yml")
             if os.path.isfile(ruby_rules):
                 config_flags.append(f"--config={ruby_rules}")
+
             if not config_flags:
                 config_flags = ["--config=p/security-audit"]
+
             result = subprocess.run(
                 ["semgrep"] + config_flags + ["--json", "--output", raw_output_path, path],
                 capture_output=True,
                 text=True,
                 timeout=300
             )
-            
+
             try:
                 with open(raw_output_path) as f:
                     data = json.load(f)
             except FileNotFoundError:
                 return [], raw_output_path
-            
+
             issues = []
-            
+
             for result_item in data.get("results", []):
                 issues.append({
                     "type": "SAST",
@@ -178,7 +192,7 @@ class SemgrepScanner(ScannerWrapper):
                     ),
                     "scanner": "semgrep",
                 })
-            
+
             return issues, raw_output_path
         except subprocess.TimeoutExpired:
             logger.error("semgrep scan timed out")
@@ -288,7 +302,7 @@ class KicsScanner(ScannerWrapper):
 
 class GrypeScanner(ScannerWrapper):
     """Wrapper for grype vulnerability scanning"""
-    
+
     def is_installed(self) -> bool:
         """Check if grype is installed"""
         try:
@@ -296,18 +310,17 @@ class GrypeScanner(ScannerWrapper):
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
-    
+
     def install_command(self) -> str:
         """Return installation command"""
         return "brew install grype  # or: curl https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh"
-    
+
     def _install_dependencies(self, path: str) -> None:
         """Install project dependencies so grype/syft can enumerate packages."""
-        from pathlib import Path
         p = Path(path)
         installers = [
-            (p / "package-lock.json", None),  # lockfile already present, no install needed
-            (p / "yarn.lock",         None),  # yarn lockfile already present
+            (p / "package-lock.json", None),
+            (p / "yarn.lock",         None),
             (p / "package.json",      ["npm", "install", "--ignore-scripts", "--package-lock-only"]),
             (p / "Pipfile.lock",      ["pipenv", "install", "--deploy"]),
             (p / "requirements.txt",  ["pip", "install", "-r", str(p / "requirements.txt"), "--target", str(p / ".grype-deps")]),
@@ -317,36 +330,33 @@ class GrypeScanner(ScannerWrapper):
         for marker, cmd in installers:
             if marker.exists():
                 if cmd is None:
-                    return  # lockfile already present, grype can use it directly
+                    return
                 logger.info(f"Generating dependency manifest via: {' '.join(cmd)}")
                 result = subprocess.run(cmd, capture_output=True, text=True, cwd=path, timeout=300)
                 if result.returncode != 0:
                     logger.warning(f"Dependency manifest generation failed: {result.stderr[:200]}")
-                return  # only run the first matching installer
+                return
 
     def scan(self, path: str) -> List[Dict[str, Any]]:
         """Run grype scan"""
         issues, _ = self.scan_with_raw_output(path)
         return issues
-    
+
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run grype scan and return raw output file path"""
         if not self.is_installed():
             logger.warning("grype not installed")
             return [], ""
-        
-        # Create temporary file for raw output
+
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
             raw_output_path = temp_file.name
-        
+
         try:
-            # Ensure the vulnerability database is present before scanning
             db_check = subprocess.run(["grype", "db", "status"], capture_output=True)
             if db_check.returncode != 0:
                 logger.info("grype database missing, updating...")
                 subprocess.run(["grype", "db", "update"], capture_output=True, timeout=120)
 
-            # Install dependencies so grype/syft can enumerate packages
             self._install_dependencies(path)
 
             result = subprocess.run(
@@ -355,15 +365,14 @@ class GrypeScanner(ScannerWrapper):
                 text=True,
                 timeout=300
             )
-            
+
             try:
                 with open(raw_output_path) as f:
                     data = json.load(f)
             except FileNotFoundError:
                 return [], raw_output_path
-            
+
             issues = []
-            
             for match in data.get("matches", []):
                 vulnerability = match.get("vulnerability", {})
                 issues.append({
@@ -375,7 +384,7 @@ class GrypeScanner(ScannerWrapper):
                     "scanner": "grype",
                     "cve": vulnerability.get("id"),
                 })
-            
+
             return issues, raw_output_path
         except subprocess.TimeoutExpired:
             logger.error("grype scan timed out")
@@ -388,23 +397,65 @@ class GrypeScanner(ScannerWrapper):
             return [], raw_output_path
 
 
+class PHPVulnScanner(ScannerWrapper):
+    """Custom PHP vulnerability scanner with SQLi, XSS, and command injection detection"""
+
+    def is_installed(self) -> bool:
+        """Check if PHP scanner is available (always available for this package)"""
+        return True
+
+    def install_command(self) -> str:
+        """Return installation command"""
+        return "Included with ez-appsec"
+
+    def scan(self, path: str) -> List[Dict[str, Any]]:
+        """Run PHP vulnerability scan"""
+        issues, _ = self.scan_with_raw_output(path)
+        return issues
+
+    def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
+        """Run PHP vulnerability scan and return raw output file path"""
+        try:
+            from ez_appsec.php_vuln_scanner_simple import run_php_scanners
+
+            issues = run_php_scanners(path)
+
+            with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
+                raw_output_path = temp_file.name
+                json.dump({
+                    "issues": issues,
+                    "total": len(issues),
+                    "scanner": "php-vuln-scanner",
+                    "language": "php"
+                }, temp_file, indent=2)
+
+            return issues, raw_output_path
+        except ImportError as e:
+            logger.error(f"PHP scanner not available: {e}")
+            return [], ""
+        except Exception as e:
+            logger.error(f"PHP scan failed: {e}")
+            return [], ""
+
+
 class ExternalScannerManager:
     """Manages all external scanners"""
-    
+
     def __init__(self, enabled_scanners: Optional[List[str]] = None):
         """
         Initialize scanner manager
-        
+
         Args:
             enabled_scanners: List of scanner names to enable (None = all)
         """
         self.scanners = {
             "gitleaks": GitleaksScanner(),
             "semgrep": SemgrepScanner(),
+            "php-vuln": PHPVulnScanner(),
             "kics": KicsScanner(),
             "grype": GrypeScanner(),
         }
-        
+
         if enabled_scanners:
             for scanner_name in self.scanners:
                 self.scanners[scanner_name].enabled = scanner_name in enabled_scanners
