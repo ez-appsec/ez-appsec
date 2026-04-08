@@ -5,7 +5,7 @@
 #   gitlab-pipeline-test.sh [options]
 #
 # Options:
-#   --project   <ns/project>   GitLab project path (default: jfelten.work-group/ez_appsec/juice-shop)
+#   --project   <ns/project>   GitLab project path (default: your-group/ez_appsec/juice-shop)
 #   --ref       <branch>       Branch (default: master)
 #   --timeout   <seconds>      Max wait time (default: 900)
 #   --download-dir <dir>       Where to save artifacts (default: /tmp/ez-appsec-gl-test)
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
-PROJECT="jfelten.work-group/ez_appsec/juice-shop"
+PROJECT="your-group/ez_appsec/juice-shop"
 REF="master"
 TIMEOUT=900
 DOWNLOAD_DIR="/tmp/ez-appsec-gl-test"

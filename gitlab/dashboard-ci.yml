@@ -185,11 +185,9 @@ update:web:
     - *git-setup
     - |
       echo "==> Downloading latest web assets and CI file..."
-      GL_BASE="https://${CI_SERVER_HOST}/jfelten.work-group/ez_appsec/ez_appsec/-/raw/main"
       GH_BASE="https://raw.githubusercontent.com/ez-appsec/ez-appsec/main"
       for FILE in web/index.html web/style.css web/app.js; do
         DEST="public/$(basename $FILE)"
-        curl -fsSL "${GL_BASE}/${FILE}" -o "$DEST" 2>/dev/null || \
         curl -fsSL "${GH_BASE}/${FILE}" -o "$DEST"
         echo "  ${DEST}"
       done
