@@ -326,7 +326,11 @@ gl_delete_if_exists() {
   fi
 }
 
+# Global variable for gl_import_project result (avoids subshell swallowing logs)
+GL_IMPORTED_PROJECT_ID=""
+
 gl_import_project() {
+  GL_IMPORTED_PROJECT_ID=""
   local name="$1"
   local upstream="$2"   # e.g. "juice-shop/juice-shop"
   local group_path="$3"
@@ -344,7 +348,6 @@ gl_import_project() {
     --field visibility="public" \
     --field initialize_with_readme=false 2>&1) || {
     err "GitLab [$name] → import request failed: $response"
-    echo ""
     return
   }
 
@@ -353,7 +356,6 @@ gl_import_project() {
 
   if [[ -z "$project_id" ]]; then
     err "GitLab [$name] → could not parse project id from response"
-    echo ""
     return
   fi
 
@@ -370,24 +372,24 @@ gl_import_project() {
     case "$import_status" in
       finished)
         ok "GitLab [$name] → import finished (id=$project_id)"
-        echo "$project_id"
+        GL_IMPORTED_PROJECT_ID="$project_id"
         return
         ;;
       failed)
         warn "GitLab [$name] → import failed — project may be partially created (id=$project_id)"
-        echo "$project_id"
+        GL_IMPORTED_PROJECT_ID="$project_id"
         return
         ;;
       none|"")
         ok "GitLab [$name] → import complete (id=$project_id)"
-        echo "$project_id"
+        GL_IMPORTED_PROJECT_ID="$project_id"
         return
         ;;
     esac
 
     if [[ $attempts -gt 30 ]]; then
       warn "GitLab [$name] → import status='$import_status' after 5 min — continuing anyway (id=$project_id)"
-      echo "$project_id"
+      GL_IMPORTED_PROJECT_ID="$project_id"
       return
     fi
     sleep 10
@@ -427,7 +429,7 @@ import sys, textwrap
 
 INCLUDE_BLOCK = textwrap.dedent("""\
     include:
-      - remote: 'https://raw.githubusercontent.com/jfelten/ez-appsec/main/gitlab/scan.yml'
+      - remote: 'https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/gitlab/scan.yml'
     """)
 
 STAGES_BLOCK = textwrap.dedent("""\
@@ -465,7 +467,7 @@ PYEOF
 import textwrap
 
 INCLUDE_BLOCK = '''include:
-  - remote: 'https://raw.githubusercontent.com/jfelten/ez-appsec/main/gitlab/scan.yml'
+  - remote: 'https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/gitlab/scan.yml'
 '''
 
 STAGES_BLOCK = '''stages:
@@ -496,21 +498,62 @@ print(result.rstrip())
   default_branch=$(gl_api "projects/${project_id}" | \
     python3 -c "import json,sys; print(json.load(sys.stdin).get('default_branch','main'))" 2>/dev/null || echo "main")
 
-  # Encode and push
+  # Encode and push via curl (glab api crashes on dotted URL paths)
   local encoded_ci
   encoded_ci=$(printf '%s' "$new_ci" | base64 | tr -d '\n')
 
-  local method="POST"
-  [[ -n "$current_ci" ]] && method="PUT"
+  # GitLab Files API: file_path must be URL-encoded in the path
+  local file_path_encoded
+  file_path_encoded=$(urlencode ".gitlab-ci.yml")
 
-  gl_api --method "$method" \
-    "projects/${project_id}/repository/files/.gitlab-ci.yml" \
-    --field branch="$default_branch" \
-    --field content="$encoded_ci" \
-    --field encoding=base64 \
-    --field "commit_message=ci: install ez-appsec security scanning" \
-    &>/dev/null && ok "GitLab [$name] → .gitlab-ci.yml updated" || \
-    warn "GitLab [$name] → failed to update .gitlab-ci.yml (check project permissions)"
+  # Build JSON body in a temp file
+  local json_tmp
+  json_tmp=$(mktemp /tmp/ez-appsec-ci-XXXXXX.json)
+  python3 -c "
+import json, sys
+body = {
+    'branch': '$default_branch',
+    'content': sys.stdin.read().strip(),
+    'encoding': 'base64',
+    'commit_message': 'ci: install ez-appsec security scanning'
+}
+print(json.dumps(body))
+" <<< "$encoded_ci" > "$json_tmp"
+
+  gl_files_api() {
+    local method="$1"
+    curl -s \
+      -X "$method" \
+      -H "PRIVATE-TOKEN: $GITLAB_PAT" \
+      -H "Content-Type: application/json" \
+      "https://gitlab.com/api/v4/projects/${project_id}/repository/files/${file_path_encoded}" \
+      --data "@${json_tmp}" \
+      -w "%{http_code}" -o /tmp/ez-appsec-curl-resp.json 2>/dev/null || echo "000"
+  }
+
+  local http_status
+  # Try POST first; if 400 "already exists", retry with PUT
+  if [[ -z "$current_ci" ]]; then
+    http_status=$(gl_files_api POST)
+    if [[ "$http_status" == "400" ]]; then
+      http_status=$(gl_files_api PUT)
+    fi
+  else
+    http_status=$(gl_files_api PUT)
+    if [[ "$http_status" == "404" ]]; then
+      http_status=$(gl_files_api POST)
+    fi
+  fi
+
+  rm -f "$json_tmp"
+
+  if [[ "$http_status" =~ ^2 ]]; then
+    ok "GitLab [$name] → .gitlab-ci.yml updated (HTTP $http_status)"
+  else
+    local err_msg
+    err_msg=$(python3 -c "import json,sys; d=json.load(open('/tmp/ez-appsec-curl-resp.json')); print(d.get('message',d))" 2>/dev/null || echo "unknown")
+    warn "GitLab [$name] → failed to update .gitlab-ci.yml (HTTP $http_status): $err_msg"
+  fi
 }
 
 gl_set_project_var() {
@@ -595,23 +638,37 @@ gl_trigger_pipeline() {
   local project_id="$1"
   local name="$2"
 
-  log "GitLab [$name] → triggering cold:scan pipeline..."
+  # Determine default branch
+  local branch
+  branch=$(curl -sf -H "PRIVATE-TOKEN: $GITLAB_PAT" \
+    "https://gitlab.com/api/v4/projects/${project_id}" 2>/dev/null | \
+    python3 -c "import json,sys; print(json.load(sys.stdin).get('default_branch','main'))" 2>/dev/null || echo "main")
 
-  # Trigger via API with EZ_APPSEC_COLD_SCAN variable
+  log "GitLab [$name] → triggering cold:scan pipeline on branch $branch..."
+
+  # Use curl for the pipeline trigger (glab api may crash)
+  local body='{"ref":"'"$branch"'","variables":[{"key":"EZ_APPSEC_COLD_SCAN","value":"true"}]}'
   local response
-  response=$(gl_api --method POST "projects/${project_id}/pipeline" \
-    --field ref=main \
-    --field "variables[][key]=EZ_APPSEC_COLD_SCAN" \
-    --field "variables[][value]=true" 2>&1) || {
-    warn "GitLab [$name] → could not trigger pipeline (will fail until ghcr.io image is public)"
-    warn "GitLab [$name] → to make image public: https://github.com/orgs/ez-appsec/packages"
-    return
-  }
+  local http_status
+  # Trigger without custom variables — CI_PIPELINE_SOURCE=api satisfies cold:scan rule
+  http_status=$(curl -s \
+    -X POST \
+    -H "PRIVATE-TOKEN: $GITLAB_PAT" \
+    "https://gitlab.com/api/v4/projects/${project_id}/pipeline?ref=${branch}" \
+    -w "%{http_code}" -o /tmp/ez-appsec-pipeline-resp.json 2>/dev/null) || http_status="000"
 
-  local pipeline_id
-  pipeline_id=$(echo "$response" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id','?'))" 2>/dev/null || echo "?")
-  ok "GitLab [$name] → pipeline #$pipeline_id triggered"
-  log "GitLab [$name] → track: https://gitlab.com/${GITLAB_GROUP}/${name}/-/pipelines"
+  if [[ "$http_status" =~ ^2 ]]; then
+    local pipeline_id
+    pipeline_id=$(python3 -c "import json,sys; print(json.load(open('/tmp/ez-appsec-pipeline-resp.json')).get('id','?'))" 2>/dev/null || echo "?")
+    ok "GitLab [$name] → pipeline #$pipeline_id triggered"
+    log "GitLab [$name] → track: https://gitlab.com/${GITLAB_GROUP}/${name}/-/pipelines"
+  else
+    local err_msg
+    err_msg=$(python3 -c "import json,sys; d=json.load(open('/tmp/ez-appsec-pipeline-resp.json')); print(d.get('message',d))" 2>/dev/null || echo "unknown")
+    warn "GitLab [$name] → pipeline trigger failed (HTTP $http_status): $err_msg"
+    warn "GitLab [$name] → NOTE: scans will fail until ghcr.io/ez-appsec/ez-appsec is public"
+    warn "              Make public: https://github.com/orgs/ez-appsec/packages/container/ez-appsec/settings"
+  fi
 }
 
 gl_verify_dashboard() {
@@ -730,10 +787,9 @@ main() {
       log "GitLab [$name] — upstream: $upstream"
 
       gl_delete_if_exists "$project_path"
+      gl_import_project "$name" "$upstream" "$GITLAB_GROUP"
 
-      local project_id
-      project_id=$(gl_import_project "$name" "$upstream" "$GITLAB_GROUP")
-
+      local project_id="$GL_IMPORTED_PROJECT_ID"
       if [[ -n "$project_id" ]]; then
         GL_PROJECT_ID_MAP="$GL_PROJECT_ID_MAP $name:$project_id"
         gl_install_scanner "$project_id" "$name"

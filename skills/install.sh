@@ -51,7 +51,7 @@ Examples:
   ./skills/install.sh
   ./skills/install.sh --all
   ./skills/install.sh --project --copilot
-  curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/skills/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/install.sh | bash
 EOF
 }
 

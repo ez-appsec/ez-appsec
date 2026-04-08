@@ -7,7 +7,7 @@
         "driver": {
           "name": "ez-appsec",
           "version": "0.1.17",
-          "informationUri": "https://github.com/jfelten/ez-appsec",
+          "informationUri": "https://github.com/ez-appsec/ez-appsec",
           "rules": [
             {
               "id": "aws-access-key",

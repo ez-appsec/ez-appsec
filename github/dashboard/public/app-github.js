@@ -219,7 +219,7 @@ class GitHubDashboard {
 
     async checkForUpgrade() {
         try {
-            const api = 'https://api.github.com/repos/jfelten/ez-appsec/releases/latest';
+            const api = 'https://api.github.com/repos/ez-appsec/ez-appsec/releases/latest';
             const r = await fetch(api);
             if (!r.ok) return;
             const release = await r.json();
@@ -227,7 +227,7 @@ class GitHubDashboard {
 
             if (this.isOutdated(this.config?.ez_appsec_version, latest)) {
                 const btn   = document.getElementById('upgrade-btn');
-                btn.href    = release.html_url || 'https://github.com/jfelten/ez-appsec/releases';
+                btn.href    = release.html_url || 'https://github.com/ez-appsec/ez-appsec/releases';
                 btn.title   = `Upgrade from ${this.config.ez_appsec_version} to ${latest}`;
                 btn.textContent = `Upgrade to ${latest}`;
                 btn.hidden  = false;

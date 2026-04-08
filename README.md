@@ -1,4 +1,4 @@
-# ez-appsec v0.1.17
+# ez-appsec
 
 **AI-powered application security scanning** — A free, open-source replacement for GitLab and GitHub security scanning.
 
@@ -20,30 +20,30 @@
 ### From Source
 
 ```bash
-git clone https://github.com/jfelten/ez-appsec.git
+git clone https://github.com/ez-appsec/ez-appsec.git
 cd ez-appsec
 pip install -e .
 ```
 
 ### Docker
 
-Pre-built image with all scanners included:
+Pre-built image with all scanners included (published to GitHub Container Registry):
 
 ```bash
-# Pull from Docker Hub (coming soon)
-docker pull jfelten/ez-appsec:latest
+# Pull from GHCR
+docker pull ghcr.io/ez-appsec/ez-appsec:latest
 
 # Or build locally
 docker build -t ez-appsec:latest .
 
 # Run scan
-docker run --rm -v $(pwd):/scan ez-appsec scan .
+docker run --rm -v $(pwd):/scan ghcr.io/ez-appsec/ez-appsec:latest scan .
 ```
 
 Lightweight variant (~300MB):
 ```bash
-docker build -f Dockerfile.slim -t ez-appsec:slim .
-docker run --rm -v $(pwd):/scan ez-appsec:slim scan .
+docker pull ghcr.io/ez-appsec/ez-appsec:slim
+docker run --rm -v $(pwd):/scan ghcr.io/ez-appsec/ez-appsec:slim scan .
 ```
 
 ### From PyPI (Coming Soon)
@@ -64,7 +64,7 @@ pip install ez-appsec
 Add the `/ez-appsec-install` and `/ez-appsec-scan` slash commands to your project:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/skills/install.sh | bash -s -- --project
+curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/install.sh | bash -s -- --project
 ```
 
 Then use `/ez-appsec-install` to add ez-appsec scanning to any GitLab project via a `scan.yml` include and merge request.
@@ -72,7 +72,7 @@ Then use `/ez-appsec-install` to add ez-appsec scanning to any GitLab project vi
 For GitHub projects, use `/ez-appsec-install-github` to add GitHub Actions workflow integration:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/skills/install.sh | bash -s --github
+curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/install.sh | bash -s --github
 ```
 
 This will:
@@ -243,22 +243,47 @@ Top Issues:
 
 ### GitHub Actions
 
+Add ez-appsec scanning to any GitHub repository by creating `.github/workflows/ez-appsec-scan.yml`:
+
 ```yaml
-- name: Run ez-appsec
-  uses: docker://jfelten/ez-appsec:latest
-  env:
-    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  with:
-    args: scan . --output sarif-report.sarif
+name: ez-appsec Security Scan
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ez-appsec/ez-appsec:latest
+      options: --entrypoint ""
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ez-appsec scan
+        run: ez-appsec github-scan . --output scan-results/ez-appsec.sarif
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scan-results/ez-appsec.sarif
+        continue-on-error: true
 ```
+
+See [`.github/workflows/github-scan.yml`](.github/workflows/github-scan.yml) for the full workflow with PR comments and dashboard integration.
 
 ### Docker Compose
 
 ```yaml
-version: '3.8'
 services:
   security-scan:
-    image: jfelten/ez-appsec:latest
+    image: ghcr.io/ez-appsec/ez-appsec:latest
     volumes:
       - .:/scan
     environment:
@@ -271,17 +296,15 @@ services:
 For multi-project security dashboards, ez-appsec supports GitHub Pages:
 
 ```bash
-# Clone the dashboard template
-git clone https://github.com/jfelten/ez-appsec-dashboard.git
-cd ez-appsec-dashboard
+# Fork the dashboard template into your org or user account
+gh repo fork ez-appsec/ez-appsec-dashboard --org YOUR_ORG --clone
 
-# Configure the aggregation script
-# The dashboard automatically aggregates data from multiple projects
-# Projects send scan results to: data/projects/{REPO}/{RUN_ID}/
-
-# Enable GitHub Pages
-gh api --method PUT repos/OWNER/ez-appsec-dashboard/pages -f '{"source":{"branch":"main"}}'
+# Enable GitHub Pages (serves from /public on main branch)
+gh api --method PUT repos/YOUR_ORG/ez-appsec-dashboard/pages \
+  -f '{"source":{"branch":"main","path":"/public"}}'
 ```
+
+Each scanned repo sends results to the dashboard via `DASHBOARD_PUSH_TOKEN` (a PAT with `repo` scope set as a repository secret).
 
 **Features:**
 - Per-project vulnerability tracking
@@ -374,8 +397,9 @@ MIT License - See LICENSE file for details
 ## Support
 
 - 📖 [Documentation](./docs)
-- 🐛 [Issue Tracker](https://github.com/jfelten/ez-appsec/issues)
-- 💬 [Discussions](https://github.com/jfelten/ez-appsec/discussions)
+- 🐛 [Issue Tracker](https://github.com/ez-appsec/ez-appsec/issues)
+- 💬 [Discussions](https://github.com/ez-appsec/ez-appsec/discussions)
+- 🔒 [Security Policy](./SECURITY.md)
 
 ## Author
 

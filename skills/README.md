@@ -32,12 +32,12 @@ Supported frameworks:
 
 **One-liner — project `.claude/commands/` (no clone required):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/skills/install.sh | bash -s -- --project
+curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/install.sh | bash -s -- --project
 ```
 
 **One-liner — global `~/.claude/commands/` + Copilot + Cursor:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/skills/install.sh | bash -s -- --all
+curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/install.sh | bash -s -- --all
 ```
 
 ## Install options
@@ -84,7 +84,7 @@ The instructions tell the assistant to use the ez-appsec Docker image automatica
 
 The skill runs:
 ```bash
-docker run --rm -v "$(pwd):/scan" jfelten/ez-appsec:latest scan /scan
+docker run --rm -v "$(pwd):/scan" ghcr.io/ez-appsec/ez-appsec:latest scan /scan
 ```
 
 The image bundles four scanners:

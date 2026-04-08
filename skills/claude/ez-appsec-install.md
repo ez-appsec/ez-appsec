@@ -20,20 +20,20 @@ stages: []
 
 Detect whether ez-appsec is available as a GitLab project in the same instance:
 ```bash
-glab repo view jfelten/ez-appsec 2>/dev/null
+glab repo view ez-appsec/ez-appsec 2>/dev/null
 ```
 
 - **If `glab` succeeds**: use a GitLab project include:
   ```yaml
   include:
-    - project: 'jfelten/ez-appsec'
+    - project: 'ez-appsec/ez-appsec'
       ref: main
       file: 'gitlab/scan.yml'
   ```
 - **Otherwise**: use a remote (raw HTTP) include:
   ```yaml
   include:
-    - remote: 'https://raw.githubusercontent.com/jfelten/ez-appsec/main/gitlab/scan.yml'
+    - remote: 'https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/gitlab/scan.yml'
   ```
 
 ### 3. Create the branch
@@ -163,7 +163,7 @@ If `DASH_PROJECT` is empty, create the dashboard:
     cp -r "${EZ_APPSEC_SRC}/web/." public/
   else
     for FILE in index.html style.css app.js; do
-      curl -fsSL "https://raw.githubusercontent.com/jfelten/ez-appsec/main/web/${FILE}" -o "public/${FILE}"
+      curl -fsSL "https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/web/${FILE}" -o "public/${FILE}"
     done
   fi
   [ -f public/data/index.json ] || \
@@ -239,7 +239,7 @@ glab mr create \
   --description "$(cat <<'EOF'
 ## Summary
 
-Adds the [ez-appsec](https://github.com/jfelten/ez-appsec) security scanning pipeline via a `scan.yml` include.
+Adds the [ez-appsec](https://github.com/ez-appsec/ez-appsec) security scanning pipeline via a `scan.yml` include.
 
 **What this enables:**
 - Secret detection (gitleaks)
