@@ -4,28 +4,9 @@ import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from ez_appsec.config import Config
-from ez_appsec.detectors import (
-    SastDetector,
-    DependencyDetector,
-    SecretsDetector,
-)
 from ez_appsec.ai_analyzer import AIAnalyzer
 from ez_appsec.external_scanners import ExternalScannerManager
 from ez_appsec.converters import VulnerabilityConverters, GitLabVulnerabilityFormat
-
-
-class SecurityScanner:
-    """Main security scanner orchestrating all detection mechanisms"""
-    
-    def __init__(self, config: Config, use_external_scanners: bool = True):
-        self.config = config
-        self.use_external = use_external_scanners
-        
-        # External scanners only - custom detectors removed
-        self.external = ExternalScannerManager() if use_external_scanners else None
-        
-        # AI analyzer
-        self.ai = AIAnalyzer(config)
 
 
 class SecurityScanner:
@@ -91,17 +72,16 @@ class SecurityScanner:
         # Convert raw outputs to GitLab format
         gitlab_reports = []
         for scanner_name, raw_path in raw_outputs.items():
-            if os.path.exists(raw_path):
+            if raw_path and os.path.exists(raw_path):
                 try:
                     report = VulnerabilityConverters.convert_scanner_output(scanner_name, raw_path)
                     gitlab_reports.append(report)
                 except Exception as e:
                     print(f"Error converting {scanner_name} output: {e}")
                 finally:
-                    # Clean up temporary file
                     try:
                         os.unlink(raw_path)
-                    except:
+                    except Exception:
                         pass
         
         # Merge all reports
@@ -204,17 +184,16 @@ class SecurityScanner:
         # Convert raw outputs to GitHub SARIF format
         github_reports = []
         for scanner_name, raw_path in raw_outputs.items():
-            if os.path.exists(raw_path):
+            if raw_path and os.path.exists(raw_path):
                 try:
                     report = VulnerabilityConverters.convert_to_github_format(scanner_name, raw_path)
                     github_reports.append(report)
                 except Exception as e:
                     print(f"Error converting {scanner_name} output to SARIF: {e}")
                 finally:
-                    # Clean up temporary file
                     try:
                         os.unlink(raw_path)
-                    except:
+                    except Exception:
                         pass
 
         # Merge all SARIF reports

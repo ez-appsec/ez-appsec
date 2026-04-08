@@ -4,6 +4,7 @@ import subprocess
 import json
 import logging
 import tempfile
+import shutil
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -247,9 +248,14 @@ class KicsScanner(ScannerWrapper):
             logger.warning("kics not installed")
             return [], ""
 
-        # kics -o expects a directory; it writes results.json inside it
+        # kics -o expects a directory; it writes results.json inside it.
+        # We use a temp dir for kics output, then copy results to a standalone
+        # temp file so the caller can os.unlink it without leaving the dir behind.
         output_dir = tempfile.mkdtemp()
-        raw_output_path = os.path.join(output_dir, "results.json")
+        kics_output_path = os.path.join(output_dir, "results.json")
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as standalone:
+            standalone_path = standalone.name
 
         try:
             subprocess.run(
@@ -260,10 +266,10 @@ class KicsScanner(ScannerWrapper):
             )
 
             try:
-                with open(raw_output_path) as f:
+                with open(kics_output_path) as f:
                     data = json.load(f)
             except FileNotFoundError:
-                return [], raw_output_path
+                return [], standalone_path
 
             issues = []
             for query in data.get("queries", []):
@@ -278,16 +284,20 @@ class KicsScanner(ScannerWrapper):
                         "scanner": "kics",
                     })
 
-            return issues, raw_output_path
+            # Copy kics results to the standalone file for the caller
+            shutil.copy2(kics_output_path, standalone_path)
+            return issues, standalone_path
         except subprocess.TimeoutExpired:
             logger.error("kics scan timed out")
-            return [], raw_output_path
+            return [], standalone_path
         except json.JSONDecodeError:
             logger.error("kics output is not valid JSON")
-            return [], raw_output_path
+            return [], standalone_path
         except Exception as e:
             logger.error(f"kics scan failed: {e}")
-            return [], raw_output_path
+            return [], standalone_path
+        finally:
+            shutil.rmtree(output_dir, ignore_errors=True)
     
     def _map_severity(self, kics_severity: str) -> str:
         """Map KICS severity to standard levels"""

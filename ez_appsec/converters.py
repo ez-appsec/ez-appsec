@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from pathlib import Path
+from ez_appsec import __version__
 
 
 class GitHubSarifFormat:
@@ -21,7 +22,7 @@ class GitHubSarifFormat:
                     "tool": {
                         "driver": {
                             "name": tool_name,
-                            "version": "0.1.17",
+                            "version": __version__,
                             "informationUri": "https://github.com/ez-appsec/ez-appsec",
                             "rules": []
                         }
