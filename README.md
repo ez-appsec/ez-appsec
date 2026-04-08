@@ -1,6 +1,6 @@
 # ez-appsec
 
-**AI-powered application security scanning** — A free, open-source replacement for GitLab and GitHub security scanning.
+**AI-powered application security scanning** — A free, open-source AI first security suite that works with GitLab and GitHub.
 
 ## Overview
 
@@ -14,6 +14,62 @@
 - **📊 Multiple Output Formats**: JSON, SARIF (GitHub/GitLab compatible), **GitLab Vulnerability Format**
 - **⚡ Zero Configuration**: Works out of the box with external tools
 - **🆓 Free & Open Source**: No cloud dependency, run locally
+
+## How It Works
+
+ez-appsec is a thin orchestration layer that runs best-in-class open-source scanners, normalises their output into a single schema, optionally enriches findings with AI guidance, and pushes results to a hosted security dashboard.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Your codebase                            │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  ez-appsec scan / github-scan / gitlab-scan
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Scanner orchestration                         │
+│                                                                 │
+│   gitleaks      semgrep        kics           grype             │
+│  (secrets)      (SAST)       (IaC)        (dependencies)        │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  raw JSON from each tool
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   Normalization layer                            │
+│  Unified schema: type · severity · file · line · scanner · CVE  │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+              ┌─────────────┼─────────────┐
+              │  (optional) │             │
+              ▼             ▼             ▼
+        AI enrichment   Filter by    Sort by severity
+        (OpenAI API)    severity
+              │
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                       Output formats                             │
+│                                                                 │
+│  CLI summary   JSON   SARIF (GitHub)   GitLab vuln format        │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  push via CI/CD
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               Security Dashboard (GitHub / GitLab Pages)         │
+│  Multi-project · severity filters · finding detail · AI fix      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Scan pipeline
+
+| Step | What happens |
+|------|-------------|
+| **1. Run scanners** | ez-appsec invokes each installed scanner (gitleaks, semgrep, kics, grype) against the target path and captures their raw JSON output |
+| **2. Normalise** | Each scanner's output is converted to a unified vulnerability schema with consistent severity levels, file paths, and line numbers |
+| **3. AI enrich** | When `OPENAI_API_KEY` is set, each finding gets an AI-generated risk explanation and step-by-step fix — this step is optional and skipped otherwise |
+| **4. Filter & sort** | Findings are filtered by the requested severity floor and sorted critical → high → medium → low |
+| **5. Report** | Results are written as CLI output, JSON, SARIF (for GitHub Security tab), or GitLab vulnerability format |
+| **6. Dashboard push** | In CI/CD mode, `vulnerabilities.json` is committed to the dashboard repo; the Pages site rebuilds automatically |
+
+---
 
 ## Installation
 
@@ -293,7 +349,7 @@ services:
 
 ### GitHub Pages Dashboard
 
-For multi-project security dashboards, ez-appsec supports GitHub Pages:
+See the [Dashboard](#dashboard) section below for full feature documentation and screenshots.
 
 ```bash
 # Fork the dashboard template into your org or user account
@@ -305,13 +361,6 @@ gh api --method PUT repos/YOUR_ORG/ez-appsec-dashboard/pages \
 ```
 
 Each scanned repo sends results to the dashboard via `DASHBOARD_PUSH_TOKEN` (a PAT with `repo` scope set as a repository secret).
-
-**Features:**
-- Per-project vulnerability tracking
-- Aggregate statistics across all projects
-- Project-based filtering
-- Last scan date tracking
-- GitHub-style navigation and metadata
 
 ## API Usage
 
@@ -372,6 +421,124 @@ report = VulnerabilityConverters.convert_scanner_output(
 
 # Supported scanners: gitleaks, semgrep, kics, grype
 ```
+
+## Dashboard
+
+The ez-appsec security dashboard is a static web application hosted on GitHub Pages (or GitLab Pages). It aggregates vulnerability scan results from one or more repositories into a single view with filtering, drill-down, and AI-powered remediation guidance.
+
+### Setup
+
+```bash
+# 1. Fork the dashboard repo into your GitHub org
+gh repo fork ez-appsec/ez-appsec-dashboard --org YOUR_ORG --clone
+
+# 2. Enable GitHub Pages
+gh api --method PUT repos/YOUR_ORG/ez-appsec-dashboard/pages \
+  -f '{"source":{"branch":"main","path":"/public"}}'
+
+# 3. Add DASHBOARD_PUSH_TOKEN secret to each repo you want to scan
+#    (a PAT with repo scope)
+gh secret set DASHBOARD_PUSH_TOKEN --repo YOUR_ORG/YOUR_REPO
+```
+
+For GitLab, run `/ez-appsec-install-dashboard <group-path>` in Claude Code to create and configure the dashboard project automatically.
+
+---
+
+### Overview — Vulnerability summary
+
+The dashboard header shows the total vulnerability counts broken down by severity, an average finding age metric, and a visual severity distribution chart. A **Run Scan** button links directly to the latest CI/CD workflow run.
+
+<!-- TODO: add screenshot -->
+![Dashboard overview showing severity stat cards and distribution chart](docs/screenshots/dashboard-overview.png)
+
+---
+
+### Multi-project sidebar
+
+When scan results from more than one repository have been pushed, a project sidebar appears on the left. Click any project to filter the main view to that repo's findings only, or select **All Projects** to see the aggregate.
+
+<!-- TODO: add screenshot -->
+![Multi-project sidebar with project tree](docs/screenshots/dashboard-multi-project.png)
+
+---
+
+### Vulnerability list
+
+Findings are displayed as cards sorted by severity (critical first). Each card shows:
+- Severity badge (color-coded)
+- Finding title and scanner source (gitleaks, semgrep, kics, grype)
+- Affected file and line number
+- Short description
+
+The list is paginated (100 per page) and updates live as filters change.
+
+<!-- TODO: add screenshot -->
+![Vulnerability list with severity badges and scanner tags](docs/screenshots/dashboard-vuln-list.png)
+
+---
+
+### Filters
+
+Three filter controls narrow the vulnerability list without a page reload:
+
+| Filter | Options |
+|--------|---------|
+| **Severity** | All · Critical · High · Medium · Low · Info |
+| **Scanner** | All · Gitleaks · Semgrep · Grype · KICS |
+| **Search** | Free-text search across title, description, file path |
+
+<!-- TODO: add screenshot -->
+![Filter bar with severity dropdown, scanner dropdown, and search box](docs/screenshots/dashboard-filters.png)
+
+---
+
+### Finding detail
+
+Click any vulnerability card to open a detail modal with the full finding:
+- Rule ID and scanner name
+- Severity level
+- Affected file path and line number
+- Full description
+- CVE reference (where available)
+- Links to the source commit
+
+<!-- TODO: add screenshot -->
+![Finding detail modal showing full vulnerability information](docs/screenshots/dashboard-finding-detail.png)
+
+---
+
+### AI remediation guidance
+
+Each finding includes an **AI Fix** button that opens a remediation panel with:
+- Plain-language explanation of the risk
+- Step-by-step fix instructions
+- Code example (where applicable)
+
+Requires `OPENAI_API_KEY` to be set in the scanning environment.
+
+<!-- TODO: add screenshot -->
+![AI remediation panel with step-by-step fix instructions](docs/screenshots/dashboard-ai-remediation.png)
+
+---
+
+### GitHub Security tab (SARIF)
+
+When the `github-scan` workflow runs, findings are uploaded to the GitHub Security tab via SARIF. This requires no additional configuration — the workflow handles the upload automatically.
+
+<!-- TODO: add screenshot -->
+![GitHub Security tab showing ez-appsec findings](docs/screenshots/github-security-tab.png)
+
+---
+
+### PR comment
+
+On pull requests, the workflow posts a summary comment with the finding count and a link to the full run artifacts.
+
+<!-- TODO: add screenshot -->
+![Pull request comment showing security scan findings count](docs/screenshots/github-pr-comment.png)
+
+---
 
 ## Contributing
 
