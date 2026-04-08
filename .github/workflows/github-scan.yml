@@ -29,9 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ez-appsec/ez-appsec:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
+      # No credentials needed when package is public.
+      # To make public: https://github.com/orgs/ez-appsec/packages/container/package/ez-appsec
+      # → Package settings → Change package visibility → Public
       options: --entrypoint ""
     outputs:
       findings-count: ${{ steps.summary.outputs.findings-count }}
