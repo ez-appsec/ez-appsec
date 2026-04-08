@@ -106,7 +106,9 @@ def take_screenshots(vulns_json: bytes, index_json: bytes):
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch()
+            # --no-sandbox is required in GitHub Actions / Docker environments
+            launch_args = ["--no-sandbox", "--disable-setuid-sandbox"] if os.getenv("CI") else []
+            browser = p.chromium.launch(args=launch_args)
             ctx = browser.new_context(viewport=VIEWPORT)
             page = ctx.new_page()
 
