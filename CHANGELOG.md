@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/ez-appsec/ez-appsec/compare/v1.1.4...v1.1.5) (2026-04-09)
+
+
+### Bug Fixes
+
+* pin nodejs, npm, semgrep versions; add aggregator healthcheck ([73386de](https://github.com/ez-appsec/ez-appsec/commit/73386decac0bfa655b0df016d2cb5d5f02c98d18))
+
 ## [1.1.4](https://github.com/ez-appsec/ez-appsec/compare/v1.1.3...v1.1.4) (2026-04-09)
 
 
