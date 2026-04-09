@@ -1,3 +1,57 @@
+# 1.0.0 (2026-04-09)
+
+
+### Bug Fixes
+
+* add -L to curl in dashboard:ingest to follow object storage redirects ([9f891db](https://github.com/ez-appsec/ez-appsec/commit/9f891dbefba2d88cae1222caf9797a85515533e5))
+* avoid !reference for script reuse, use explicit single-line steps ([583e705](https://github.com/ez-appsec/ez-appsec/commit/583e705192e03c3b67f6737b4b7c6a08c63492a7))
+* cold:scan runs on api source so Rescan link needs no user input ([b694abb](https://github.com/ez-appsec/ez-appsec/commit/b694abb2a7a9c050c9aed5f3f01e386f575fe83b))
+* copy web content from image /web/ instead of cloning GitLab ([74f585b](https://github.com/ez-appsec/ez-appsec/commit/74f585bb803b313b283f64cf24febef0b0d4e4c5))
+* correct aggregation script path and meta.json heredoc indentation ([7a54ed8](https://github.com/ez-appsec/ez-appsec/commit/7a54ed8ea452c077c268312c67492cfe550830b5))
+* inline update-index logic so consuming projects don't need scripts/ dir ([05ea5c1](https://github.com/ez-appsec/ez-appsec/commit/05ea5c1fe4677b909fc8a056492544a92b5397de))
+* inline update-index logic so consuming projects don't need scripts/ dir ([458a2dd](https://github.com/ez-appsec/ez-appsec/commit/458a2dd47847bff6940ddafe974012a4231ed40d))
+* install curl before scan to avoid disk-full failure in cold:scan ([7280d29](https://github.com/ez-appsec/ez-appsec/commit/7280d29f9d361a2e182f8285a1018683b7bbc25a))
+* install ez-appsec from source and add external scanners ([5491142](https://github.com/ez-appsec/ez-appsec/commit/5491142d31e374beca9aeb016cfa44c1cf5112da))
+* pull-based dashboard ingest — consuming projects trigger dashboard pipeline instead of pushing ([ac58eb9](https://github.com/ez-appsec/ez-appsec/commit/ac58eb923054766f84f7d5eced166d78a178adc0))
+* remove duplicate slash commands that conflict with skills ([3b161d6](https://github.com/ez-appsec/ez-appsec/commit/3b161d666e2a3c0de9330335def62d9cade9641d))
+* rename stages to ez-appsec in scan.yml ([e2a7b5f](https://github.com/ez-appsec/ez-appsec/commit/e2a7b5fb931a1c43fe87e952859e9ff32a1feaab))
+* replace heredoc with echo to fix YAML block scalar corruption ([6f0c7ea](https://github.com/ez-appsec/ez-appsec/commit/6f0c7ea92d9a4f66feb645f5883deb2fd3546a08))
+* **scan.yml:** fetch web assets from ez-appsec when target project has no web/ dir ([87d6525](https://github.com/ez-appsec/ez-appsec/commit/87d6525970e06f372909e715f3d4b7b114430f63))
+* **scan.yml:** override entrypoint so GitLab runner shell works with ez-appsec image ([05d701a](https://github.com/ez-appsec/ez-appsec/commit/05d701adc9d20ab24a088fb4e6f690cceeabbe31))
+* skip push in initialize:web when web content is already up to date ([1bb5bd9](https://github.com/ez-appsec/ez-appsec/commit/1bb5bd964628a5e520ce298675fe92bd8cfb9590))
+* skip scan jobs on ez-appsec-pages branch to unblock pages deploy ([29f4e23](https://github.com/ez-appsec/ez-appsec/commit/29f4e23ec906580b97e14db9a7b0a69917fa8557))
+* tag version bump commit not the [skip ci] README commit ([2efeaa1](https://github.com/ez-appsec/ez-appsec/commit/2efeaa1f3f24a2df464411edac629946b53c6e22))
+* update GitHub Actions workflow to use pip install instead of Docker ([f40062c](https://github.com/ez-appsec/ez-appsec/commit/f40062c35325bf55621e7caac91a110dab13cc36))
+* update:vulns — use EZ_APPSEC_DASHBOARD_PROJECT_ID directly, fix trigger variable format ([2cab6b2](https://github.com/ez-appsec/ez-appsec/commit/2cab6b22e99a226b4d0c5982446f51949494cf96))
+* use ez-appsec image for update:vulns job ([0eb1f6d](https://github.com/ez-appsec/ez-appsec/commit/0eb1f6da1ce61725b66d466642341372063f0309))
+* use project ID and trigger token for dashboard ingest — avoid job token API restriction ([dce5924](https://github.com/ez-appsec/ez-appsec/commit/dce5924dec815003e48a6b4ebb30f774247780eb))
+* use rules:changes to skip initialize:web when web/ is unchanged ([898a322](https://github.com/ez-appsec/ez-appsec/commit/898a322793120450e39b97f01ab6d98d95f5a02e))
+* use SSH deploy key for dashboard push — avoids job token cross-project API restrictions ([e3f4411](https://github.com/ez-appsec/ez-appsec/commit/e3f4411ee0c43029f6401487f418accec41decea))
+
+
+### Features
+
+* add cold:scan job and Rescan button to dashboard ([fde0d0e](https://github.com/ez-appsec/ez-appsec/commit/fde0d0ede1bb9a1ca47499cea59ce51046dfc22f))
+* add GitHub Actions workflow for Docker build and publish to Docker Hub ([783bc35](https://github.com/ez-appsec/ez-appsec/commit/783bc35a6275d5b1bad3fed0339438911852bd33))
+* add GitHub workflows, tests, and documentation infrastructure ([995fec7](https://github.com/ez-appsec/ez-appsec/commit/995fec73688f63e0339b101eeda4dc5ec5f020f1))
+* add version tracking and upgrade button to dashboard ([680f84c](https://github.com/ez-appsec/ez-appsec/commit/680f84cb8556018a3998a95f3be1f885462b4d43))
+* auto-bump patch version on every push to main ([c3dbeec](https://github.com/ez-appsec/ez-appsec/commit/c3dbeec0ed712ba8ac74802d1c81bbfa88185d30))
+* automate trigger token creation in install skill and pipeline ([cf0b04d](https://github.com/ez-appsec/ez-appsec/commit/cf0b04d1f2763d2a183aea16e7802c65645b7aa5))
+* change Docker registry from Docker Hub to GitHub Container Registry ([a629b5d](https://github.com/ez-appsec/ez-appsec/commit/a629b5dbb077c3209641395aed9d00ab948b573c))
+* complete GitHub CI/CD pipeline, self-scan, dashboard, and release automation ([968e8b3](https://github.com/ez-appsec/ez-appsec/commit/968e8b37c3dcbb79a2d7b12668ec086c5337511d))
+* dashboard UI redesign — per-project summary table, remediate button, and Proxmox resize script ([ef68ed4](https://github.com/ez-appsec/ez-appsec/commit/ef68ed44f820bb9a9a2b22a2fd50157bb1acdfb1))
+* dashboard UI redesign and dashboard project automation ([6cabf21](https://github.com/ez-appsec/ez-appsec/commit/6cabf21ed47f4057b6c4888b6602c742bafb8e84))
+* linkable project URLs via ?project= query param with copy-link button in sidebar ([9eb6a75](https://github.com/ez-appsec/ez-appsec/commit/9eb6a754b055c28d3e69013bf6f6c76381eb55cb))
+* project summary table, remediate button, and remediation modal ([862c322](https://github.com/ez-appsec/ez-appsec/commit/862c32258db2c5e216ee3c93ac320ee49e683aa3))
+* show deployed version in nav bar ([49964ce](https://github.com/ez-appsec/ez-appsec/commit/49964ceb67c82a2a2ff96af0393b65d2749de3b0))
+* use EZ_APPSEC_VERSION var for image tag, simplify config.json generation ([dcbd35f](https://github.com/ez-appsec/ez-appsec/commit/dcbd35f07fb1a11803c8765521c9a5732d71b18d))
+* **web:** redesign dashboard as primary internal security page ([8192a2e](https://github.com/ez-appsec/ez-appsec/commit/8192a2ef4bbd2c1121711ab596563c7d88abf9ac))
+
+
+### Reverts
+
+* remove pull_policy, registry auth handled by DOCKER_AUTH_CONFIG group variable ([3801e3d](https://github.com/ez-appsec/ez-appsec/commit/3801e3d52cbfc82ae2ae5a623848a9dc6bc22d45))
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
