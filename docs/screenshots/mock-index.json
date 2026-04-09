@@ -1,0 +1,43 @@
+{
+  "last_updated": "2026-04-08T14:22:00Z",
+  "projects": [
+    {
+      "slug": "juice-shop-public",
+      "name": "juice-shop-public",
+      "project_path": "ez-appsec/juice-shop-public",
+      "github_url": "https://github.com/ez-appsec/juice-shop-public",
+      "last_updated": "2026-04-08T14:22:00Z",
+      "summary": {
+        "total": 12,
+        "critical": 3,
+        "high": 3,
+        "medium": 3,
+        "low": 2,
+        "info": 0
+      }
+    },
+    {
+      "slug": "myapp-backend",
+      "name": "myapp-backend",
+      "project_path": "ez-appsec/myapp-backend",
+      "github_url": "https://github.com/ez-appsec/myapp-backend",
+      "last_updated": "2026-04-07T09:15:00Z",
+      "summary": {
+        "total": 5,
+        "critical": 0,
+        "high": 2,
+        "medium": 3,
+        "low": 0,
+        "info": 0
+      }
+    }
+  ],
+  "totals": {
+    "projects": 2,
+    "findings": 17,
+    "critical": 3,
+    "high": 5,
+    "medium": 6,
+    "low": 2
+  }
+}

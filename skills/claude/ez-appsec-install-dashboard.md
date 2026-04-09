@@ -19,7 +19,7 @@ The dashboard project will be created at `GROUP_PATH/ez-appsec-dashboard`.
 
 Pull the dashboard files from the ez-appsec GitHub release:
 ```bash
-EZ_APPSEC_WEB_URL="https://raw.githubusercontent.com/jfelten/ez-appsec/main/web"
+EZ_APPSEC_WEB_URL="https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/web"
 ```
 
 Alternatively, if the user is running this from inside a local ez-appsec checkout, prefer the local `web/` directory:

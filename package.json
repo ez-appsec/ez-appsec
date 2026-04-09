@@ -1,0 +1,30 @@
+{
+  "name": "ez-appsec",
+  "version": "0.1.18",
+  "description": "AI-powered application security scanning",
+  "private": true,
+  "scripts": {
+    "semantic-release": "semantic-release"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ez-appsec/ez-appsec.git"
+  },
+  "keywords": [
+    "security",
+    "scanning",
+    "sast",
+    "vulnerability",
+    "ai"
+  ],
+  "author": "ez-appsec",
+  "license": "MIT",
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^10.0.4",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^9.2.6",
+    "@semantic-release/release-notes-generator": "^11.0.4",
+    "semantic-release": "^22.0.12"
+  }
+}

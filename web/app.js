@@ -217,9 +217,9 @@ class VulnerabilityDashboard {
         } catch (e) { /* config is optional */ }
     }
 
-    async checkForUpgrade(gitlabUrl) {
+    async checkForUpgrade(_gitlabUrl) {
         try {
-            const api = `${gitlabUrl}/api/v4/projects/jfelten.work-group%2Fez_appsec%2Fez_appsec/releases/permalink/latest`;
+            const api = `https://api.github.com/repos/ez-appsec/ez-appsec/releases/latest`;
             const r = await fetch(api);
             if (!r.ok) return;
             const release = await r.json();
@@ -227,7 +227,7 @@ class VulnerabilityDashboard {
 
             if (this.isOutdated(this.config.ez_appsec_version, latest)) {
                 const btn   = document.getElementById('upgrade-btn');
-                btn.href    = `${gitlabUrl}/jfelten.work-group/ez_appsec/ez_appsec/-/releases`;
+                btn.href    = release.html_url || 'https://github.com/ez-appsec/ez-appsec/releases';
                 btn.title   = `Upgrade from ${this.config.ez_appsec_version} to ${latest}`;
                 btn.textContent = `Upgrade to ${latest}`;
                 btn.hidden  = false;

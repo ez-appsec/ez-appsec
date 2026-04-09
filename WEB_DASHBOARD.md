@@ -120,8 +120,9 @@ Downloads `index.html`, `style.css`, `app.js`, and `.gitlab-ci.yml` from the ez-
 ### Finding the Dashboard Project ID
 
 ```bash
-# Find by path
-glab api "projects/jfelten.work-group%2Fez_appsec%2Fez-appsec-dashboard" --field id
+# Find by path (replace with your group path)
+ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('your-group/ez_appsec/ez-appsec-dashboard', safe=''))")
+glab api "projects/${ENCODED}" --field id
 
 # Or search
 glab api search --scope projects --search ez-appsec-dashboard

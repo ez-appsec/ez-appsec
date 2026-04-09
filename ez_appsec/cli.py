@@ -1,5 +1,6 @@
 """Main CLI entry point for ez-appsec"""
 
+import json
 import click
 import sys
 from pathlib import Path
@@ -44,9 +45,16 @@ def scan(path, ai_prompt, languages, severity, output):
             for issue in results['issues'][:5]:
                 click.echo(f"  [{issue['severity']}] {issue['title']}")
                 click.echo(f"    {issue['description']}")
-        
+
         if output:
-            click.echo(f"\n✓ Results saved to: {output}")
+            # Write results to output file
+            try:
+                with open(output, 'w') as f:
+                    json.dump(results, f, indent=2)
+                click.echo(f"\n✓ Results saved to: {output}")
+            except Exception as e:
+                click.echo(f"\n✗ Error writing results to file: {str(e)}", err=True)
+                sys.exit(1)
             
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)

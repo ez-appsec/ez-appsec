@@ -11,7 +11,7 @@ setup(
     description="AI-powered application security scanning - free replacement for GitLab and GitHub security scanning",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/jfelten/ez-appsec",
+    url="https://github.com/ez-appsec/ez-appsec",
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",

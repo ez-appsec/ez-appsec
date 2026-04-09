@@ -219,7 +219,7 @@ class GitHubDashboard {
 
     async checkForUpgrade() {
         try {
-            const api = 'https://api.github.com/repos/jfelten/ez-appsec/releases/latest';
+            const api = 'https://api.github.com/repos/ez-appsec/ez-appsec/releases/latest';
             const r = await fetch(api);
             if (!r.ok) return;
             const release = await r.json();
@@ -227,7 +227,7 @@ class GitHubDashboard {
 
             if (this.isOutdated(this.config?.ez_appsec_version, latest)) {
                 const btn   = document.getElementById('upgrade-btn');
-                btn.href    = release.html_url || 'https://github.com/jfelten/ez-appsec/releases';
+                btn.href    = release.html_url || 'https://github.com/ez-appsec/ez-appsec/releases';
                 btn.title   = `Upgrade from ${this.config.ez_appsec_version} to ${latest}`;
                 btn.textContent = `Upgrade to ${latest}`;
                 btn.hidden  = false;
@@ -402,13 +402,13 @@ class GitHubDashboard {
             this.projects.map(async p => {
                 const projectUrl = `https://github.com/${p.project_path || p.slug}`;
                 const r = await fetch(`data/projects/${p.slug}/vulnerabilities.json`);
-                if (!r.ok) return { status: 'rejected', value: null };
+                if (!r.ok) throw new Error(`Could not load ${p.slug}`);
                 const data = await r.json();
                 const vulns = Array.isArray(data)
                     ? data
                     : (data.vulnerabilities || data.issues || []);
                 const scanDate = data.scan_date || data.generated_at || null;
-                return { status: 'fulfilled', value: { vulns: vulns.map(v => ({ ...v, _project: p.name, _project_slug: p.slug })), project: p, projectUrl, scanDate } };
+                return { vulns: vulns.map(v => ({ ...v, _project: p.name, _project_slug: p.slug })), project: p, projectUrl, scanDate };
             })
         );
 

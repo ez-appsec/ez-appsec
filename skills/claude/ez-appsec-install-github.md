@@ -30,20 +30,20 @@ If not a GitHub repository, exit with error.
 
 Check if ez-appsec is available as a GitHub repository:
 ```bash
-gh repo view jfelten/ez-appsec 2>/dev/null
+gh repo view ez-appsec/ez-appsec 2>/dev/null
 ```
 
 - **If `gh repo view` succeeds**: Use a GitHub project include:
   ```yaml
   include:
-    - project: 'jfelten/ez-appsec'
+    - project: 'ez-appsec/ez-appsec'
       ref: main
       file: '.github/workflows/github-scan.yml'
   ```
 - **Otherwise**: Use a remote (raw HTTP) include:
   ```yaml
   include:
-    - remote: 'https://raw.githubusercontent.com/jfelten/ez-appsec/main/.github/workflows/github-scan.yml'
+    - remote: 'https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/.github/workflows/github-scan.yml'
   ```
 
 ### 4. Create/update workflow file
@@ -72,7 +72,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     container:
-      image: jfelten/ez-appsec:\${{ env.EZ_APPSEC_VERSION }}
+      image: ghcr.io/ez-appsec/ez-appsec:\${{ env.EZ_APPSEC_VERSION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -103,7 +103,7 @@ EOF
 
 Fetch the latest released version:
 ```bash
-LATEST_VERSION=$(gh api /repos/jfelten/ez-appsec/releases/latest --jq '.tag_name' | tr -d 'v' || echo "")
+LATEST_VERSION=$(gh api /repos/ez-appsec/ez-appsec/releases/latest --jq '.tag_name' | tr -d 'v' || echo "")
 ```
 
 Fall back to `"latest"` if empty:
@@ -166,9 +166,9 @@ cd ez-appsec-dashboard
 git checkout -b main
 
 # Copy dashboard files from ez-appsec source
-curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/dashboard/github/public/index.html -o index.html
-curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/dashboard/github/public/style.css -o style.css
-curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/dashboard/github/public/app-github.js -o app-github.js
+curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/dashboard/github/public/index.html -o index.html
+curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/dashboard/github/public/style.css -o style.css
+curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/dashboard/github/public/app-github.js -o app-github.js
 
 mkdir -p public/data
 echo '{"last_updated":null,"projects":[]}' > public/data/index.json
@@ -242,7 +242,7 @@ gh pr create \
   --body "$(cat <<'EOF'
 ## Summary
 
-Adds [ez-appsec](https://github.com/jfelten/ez-appsec) security scanning pipeline via GitHub Actions.
+Adds [ez-appsec](https://github.com/ez-appsec/ez-appsec) security scanning pipeline via GitHub Actions.
 
 **What this enables:**
 - Secret detection (gitleaks)

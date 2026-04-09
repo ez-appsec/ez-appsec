@@ -20,20 +20,20 @@ stages: []
 
 Detect whether ez-appsec is available as a GitLab project in the same instance:
 ```bash
-glab repo view jfelten/ez-appsec 2>/dev/null
+glab repo view ez-appsec/ez-appsec 2>/dev/null
 ```
 
 - **If `glab` succeeds**: use a GitLab project include:
   ```yaml
   include:
-    - project: 'jfelten/ez-appsec'
+    - project: 'ez-appsec/ez-appsec'
       ref: main
-      file: 'scan.yml'
+      file: 'gitlab/scan.yml'
   ```
 - **Otherwise**: use a remote (raw HTTP) include:
   ```yaml
   include:
-    - remote: 'https://raw.githubusercontent.com/jfelten/ez-appsec/main/scan.yml'
+    - remote: 'https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/gitlab/scan.yml'
   ```
 
 ### 3. Create the branch
@@ -53,7 +53,7 @@ Read `.gitlab-ci.yml`.
 **If an `include:` block already exists**, append the ez-appsec entry to it.
 **If no `include:` block exists**, prepend the block at the top of the file (after any leading comments).
 
-Ensure the final file does **not** duplicate an existing ez-appsec include (check for `scan.yml` already present).
+Ensure the final file does **not** duplicate an existing ez-appsec include (check for `gitlab/scan.yml` already present).
 
 **Stages — always add an explicit `stages:` block** using the canonical order:
 
@@ -73,8 +73,7 @@ If the project already has a `stages:` key, replace it with the merged list (ret
 
 Fetch the latest released version:
 ```bash
-LATEST_VERSION=$(glab api "projects/jfelten.work-group%2Fez_appsec%2Fez_appsec/releases/permalink/latest" \
-  --field tag_name 2>/dev/null | tr -d '"v' || echo "")
+LATEST_VERSION=$(gh api /repos/ez-appsec/ez-appsec/releases/latest --jq '.tag_name' 2>/dev/null | tr -d 'v' || echo "")
 ```
 Fall back to `"latest"` if empty.
 
@@ -163,7 +162,7 @@ If `DASH_PROJECT` is empty, create the dashboard:
     cp -r "${EZ_APPSEC_SRC}/web/." public/
   else
     for FILE in index.html style.css app.js; do
-      curl -fsSL "https://raw.githubusercontent.com/jfelten/ez-appsec/main/web/${FILE}" -o "public/${FILE}"
+      curl -fsSL "https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/web/${FILE}" -o "public/${FILE}"
     done
   fi
   [ -f public/data/index.json ] || \
@@ -239,7 +238,7 @@ glab mr create \
   --description "$(cat <<'EOF'
 ## Summary
 
-Adds the [ez-appsec](https://github.com/jfelten/ez-appsec) security scanning pipeline via a `scan.yml` include.
+Adds the [ez-appsec](https://github.com/ez-appsec/ez-appsec) security scanning pipeline via a `scan.yml` include.
 
 **What this enables:**
 - Secret detection (gitleaks)

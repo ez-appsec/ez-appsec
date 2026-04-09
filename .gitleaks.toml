@@ -1,0 +1,12 @@
+[extend]
+# Extend the default gitleaks ruleset
+useDefault = true
+
+[allowlist]
+description = "Ignore intentionally vulnerable test targets and compiled bytecode"
+paths = [
+    # Intentionally vulnerable test repos — findings are expected by design
+    '''tests/live/''',
+    # Compiled Python bytecode — derived from source, not a leak source
+    '''tests/__pycache__/''',
+]

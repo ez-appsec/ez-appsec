@@ -58,7 +58,7 @@ def test_gitleaks_converter():
     gitleaks_data = [{
         "Description": "AWS Access Key",
         "RuleID": "aws-access-key",
-        "Match": "AKIAIOSFODNN7EXAMPLE",
+        "Match": "EXAMPLE-AWS-ACCESS-KEY-ID",
         "File": "config.py",
         "StartLine": 10,
         "EndLine": 10,
