@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/ez-appsec/ez-appsec/compare/v1.1.0...v1.1.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* run container as non-root user (ezappsec) ([4f88a2e](https://github.com/ez-appsec/ez-appsec/commit/4f88a2e53f16d1edf8b9be0231308ecba8428955))
+
 # [1.1.0](https://github.com/ez-appsec/ez-appsec/compare/v1.0.1...v1.1.0) (2026-04-09)
 
 
