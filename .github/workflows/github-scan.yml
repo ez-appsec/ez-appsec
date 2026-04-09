@@ -107,6 +107,83 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Generate findings summary
+        id: findings-summary
+        if: always()
+        run: |
+          VULN_FILE="${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
+          if [ ! -f "${VULN_FILE}" ]; then
+            echo "No vulnerabilities.json found" > /tmp/scan-summary.md
+          else
+            python3 - "${VULN_FILE}" > /tmp/scan-summary.md <<'PYEOF'
+          import json, sys
+
+          with open(sys.argv[1]) as f:
+              data = json.load(f)
+          findings = data if isinstance(data, list) else data.get("vulnerabilities", data.get("findings", []))
+
+          def loc(item):
+              l = item.get("location", {})
+              fi = l.get("file", {}) if isinstance(l, dict) else {}
+              fname = fi.get("file_name", "") if isinstance(fi, dict) else str(fi)
+              fline = fi.get("line", l.get("start_line", "")) if isinstance(fi, dict) else ""
+              return f"{fname}:{fline}" if fline else fname
+
+          def scanner(item):
+              sc = item.get("scanner", {})
+              return sc.get("name", sc.get("id", "?")) if isinstance(sc, dict) else str(sc)
+
+          by_sev = {"HIGH": [], "MEDIUM": [], "LOW": [], "INFO": []}
+          for item in findings:
+              sev = item.get("severity", "").upper()
+              bucket = sev if sev in by_sev else "INFO"
+              by_sev[bucket].append(item)
+
+          total = sum(len(v) for v in by_sev.values())
+          lines = []
+          lines.append(f"### Security Findings: {total} total")
+          lines.append("")
+          lines.append("| Severity | Count |")
+          lines.append("|----------|-------|")
+          for sev in ["HIGH", "MEDIUM", "LOW", "INFO"]:
+              n = len(by_sev[sev])
+              if n:
+                  lines.append(f"| {sev} | {n} |")
+          lines.append("")
+
+          # List HIGH in full
+          if by_sev["HIGH"]:
+              lines.append("<details open><summary><strong>HIGH</strong></summary>")
+              lines.append("")
+              lines.append("| Scanner | Finding | Location |")
+              lines.append("|---------|---------|----------|")
+              for item in by_sev["HIGH"]:
+                  msg = item.get("message", item.get("name", "")).replace("|", "\\|")[:100]
+                  lines.append(f"| {scanner(item)} | {msg} | `{loc(item)}` |")
+              lines.append("")
+              lines.append("</details>")
+              lines.append("")
+
+          # Summarize MEDIUM by message type (dedup)
+          for sev in ["MEDIUM", "LOW"]:
+              items = by_sev[sev]
+              if not items:
+                  continue
+              lines.append(f"<details><summary><strong>{sev}</strong> ({len(items)})</summary>")
+              lines.append("")
+              lines.append("| Scanner | Finding | Location |")
+              lines.append("|---------|---------|----------|")
+              for item in items:
+                  msg = item.get("message", item.get("name", "")).replace("|", "\\|")[:100]
+                  lines.append(f"| {scanner(item)} | {msg} | `{loc(item)}` |")
+              lines.append("")
+              lines.append("</details>")
+              lines.append("")
+
+          print("\n".join(lines))
+          PYEOF
+          fi
+
       - name: Push scan results to dashboard (update:vulns)
         if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request'
         env:
@@ -151,13 +228,14 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const count = '${{ steps.summary.outputs.findings-count }}';
+            const fs = require('fs');
             const artifactUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            const summaryPath = '/tmp/scan-summary.md';
+            const summaryMd = fs.existsSync(summaryPath) ? fs.readFileSync(summaryPath, 'utf8') : '';
 
-            let body = `## 🔒 Security Scan Results\n\n`;
-            body += `**Findings:** ${count}\n\n`;
-            body += `📊 [View full scan results](${artifactUrl})\n\n`;
-            body += `💡 Use \`ez-appsec github-scan\` in your local environment for detailed analysis.\n`;
+            let body = `## 🔒 ez-appsec Security Scan\n\n`;
+            body += summaryMd ? summaryMd + '\n' : '';
+            body += `📊 [View full scan run](${artifactUrl})\n`;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -167,7 +245,7 @@ jobs:
 
             const botComment = comments.find(comment =>
               comment.user.type === 'Bot' &&
-              comment.body.includes('🔒 Security Scan Results')
+              comment.body.includes('🔒 ez-appsec Security Scan')
             );
 
             if (botComment) {
