@@ -41,21 +41,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Record tag before release
+        id: before
+        run: |
+          git fetch --tags origin
+          echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo none)" >> "$GITHUB_OUTPUT"
+
       - name: Run Semantic Release
-        id: semantic_release
         run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update VERSION file
-        if: steps.semantic_release.outputs.new_release_published == 'true'
+      - name: Detect new release and set outputs
+        id: semantic_release
         run: |
-          echo "${{ steps.semantic_release.outputs.new_release_version }}" > VERSION
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add VERSION CHANGELOG.md
-          git commit -m "chore(release): ${{ steps.semantic_release.outputs.new_release_version }} [skip ci]"
-          git push
+          git fetch --tags origin
+          AFTER=$(git describe --tags --abbrev=0 2>/dev/null || echo none)
+          BEFORE="${{ steps.before.outputs.tag }}"
+          if [ "$AFTER" != "$BEFORE" ] && [ "$AFTER" != "none" ]; then
+            echo "new_release_published=true"  >> "$GITHUB_OUTPUT"
+            echo "new_release_version=${AFTER#v}" >> "$GITHUB_OUTPUT"
+            echo "Released: $AFTER"
+          else
+            echo "new_release_published=false" >> "$GITHUB_OUTPUT"
+            echo "No new release (latest tag: $AFTER)"
+          fi
+
+      # @semantic-release/git plugin already commits VERSION + CHANGELOG.md
+      # and pushes back to main — no separate step needed.
 
   build-docker-standard:
     name: Build Standard Docker Image
