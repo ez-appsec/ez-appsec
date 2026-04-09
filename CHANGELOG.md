@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/ez-appsec/ez-appsec/compare/v1.0.1...v1.1.0) (2026-04-09)
+
+
+### Features
+
+* add vulnerability findings summary to PR comment in github-scan.yml ([cc6b96e](https://github.com/ez-appsec/ez-appsec/commit/cc6b96e27d55e6f0198af51d500ea9467f464062))
+
 ## [1.0.1](https://github.com/ez-appsec/ez-appsec/compare/v1.0.0...v1.0.1) (2026-04-09)
 
 
