@@ -11,7 +11,9 @@ name: ez-appsec Self-Scan
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - '**'   # remove after merging to main; kept so CI runs during the PR phase
   pull_request:
   workflow_dispatch:
 
