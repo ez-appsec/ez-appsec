@@ -61,6 +61,11 @@ services:
     volumes:
       - results:/results
     command: sh -c "cat /results/*.json | jq -s 'reduce .[] as \$item ({}; . * \$item)' > /results/merged.json"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /results/merged.json || exit 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 1
     cap_drop:
       - ALL
     security_opt:

@@ -36,8 +36,8 @@ RUN apk add --no-cache \
     ca-certificates=20241121-r1 \
     libffi=3.4.4-r2 \
     openssl=3.1.8-r0 \
-    nodejs \
-    npm && \
+    nodejs=18.20.1-r0 \
+    npm=9.6.6-r0 && \
     python3 -m ensurepip && \
     python3 -m pip install --no-cache-dir --upgrade pip==26.0.1
 
@@ -58,8 +58,8 @@ RUN ARCH=$(uname -m) && \
 RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin && \
     grype version
 
-# semgrep via pip with flexible version for better compatibility
-RUN pip install --no-cache-dir semgrep && \
+# semgrep via pip (pinned)
+RUN pip install --no-cache-dir semgrep==1.157.0 && \
     semgrep --version
 
 # Bundle GitLab SAST rules (language dirs only — offline use, richer severity metadata)
