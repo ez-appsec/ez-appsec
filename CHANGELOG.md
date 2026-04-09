@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/ez-appsec/ez-appsec/compare/v1.1.1...v1.1.2) (2026-04-09)
+
+
+### Bug Fixes
+
+* suppress false-positive scan findings from test fixtures ([811dbea](https://github.com/ez-appsec/ez-appsec/commit/811dbea8fd3ae9c7ef90f67fc86b639a20c23567))
+
 ## [1.1.1](https://github.com/ez-appsec/ez-appsec/compare/v1.1.0...v1.1.1) (2026-04-09)
 
 
