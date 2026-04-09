@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/ez-appsec/ez-appsec/compare/v1.1.2...v1.1.3) (2026-04-09)
+
+
+### Bug Fixes
+
+* correct gitleaks and grype ignore config format ([fdf4716](https://github.com/ez-appsec/ez-appsec/commit/fdf47164c362ef974db36e15325fa00c017c9b9d))
+
 ## [1.1.2](https://github.com/ez-appsec/ez-appsec/compare/v1.1.1...v1.1.2) (2026-04-09)
 
 
