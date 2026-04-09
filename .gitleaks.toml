@@ -1,12 +1,17 @@
-[extend]
-# Extend the default gitleaks ruleset
-useDefault = true
+# Gitleaks configuration for ez-appsec
+# https://github.com/gitleaks/gitleaks#configuration
+
+title = "ez-appsec gitleaks config"
 
 [allowlist]
-description = "Ignore intentionally vulnerable test targets and compiled bytecode"
-paths = [
-    # Intentionally vulnerable test repos — findings are expected by design
+  description = "Ignore test fixtures and mock data containing intentional fake secrets"
+  paths = [
+    # Mock dashboard data — contains realistic fake passwords/JWTs as example findings
+    '''web/data/vulnerabilities\.json''',
+    '''public/data/vulnerabilities\.json''',
+    # Live test targets — intentionally vulnerable apps (WebGoat, Juice Shop, DVWA)
+    # and fixtures used to validate scanner detection. Not real credentials.
     '''tests/live/''',
-    # Compiled Python bytecode — derived from source, not a leak source
-    '''tests/__pycache__/''',
-]
+    # Docs examples
+    '''docs/github-example\.md''',
+  ]
