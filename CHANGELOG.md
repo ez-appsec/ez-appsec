@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/ez-appsec/ez-appsec/compare/v1.0.0...v1.0.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* detect semantic-release output via git tag diff, not missing GITHUB_OUTPUT ([9c7135f](https://github.com/ez-appsec/ez-appsec/commit/9c7135f187ab8bcca11236d935d66a0e77f1061a))
+
 # 1.0.0 (2026-04-09)
 
 
