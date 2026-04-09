@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/ez-appsec/ez-appsec/compare/v1.1.3...v1.1.4) (2026-04-09)
+
+
+### Bug Fixes
+
+* harden docker-compose.yml to resolve KICS findings ([d333872](https://github.com/ez-appsec/ez-appsec/commit/d3338720525f7a9c71cd125a9f546bf99f13a37a))
+
 ## [1.1.3](https://github.com/ez-appsec/ez-appsec/compare/v1.1.2...v1.1.3) (2026-04-09)
 
 
