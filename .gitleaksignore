@@ -1,0 +1,15 @@
+# .gitleaksignore
+# Suppress false positives from intentional test fixtures and mock data.
+# Format: one path glob per line (relative to repo root).
+
+# Mock vulnerability data used by the web dashboard (contains realistic fake
+# secrets as example scan findings — not real credentials).
+web/data/vulnerabilities.json
+public/data/vulnerabilities.json
+
+# Live test fixtures — intentionally contain fake/hardcoded secrets to verify
+# scanner detection and to serve as vulnerable scan targets. Not real credentials.
+tests/live/
+
+# Docs examples — example AWS key ID used in documentation only.
+docs/github-example.md

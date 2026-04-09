@@ -1,0 +1,8 @@
+# Grype configuration for ez-appsec
+# https://github.com/anchore/grype#configuration
+
+ignore:
+  # tests/live/ contains intentionally vulnerable target applications (WebGoat,
+  # Juice Shop, DVWA) used as scan targets. Their dependencies are deliberately
+  # outdated for educational purposes and are not part of ez-appsec itself.
+  - location: "tests/live/**"
