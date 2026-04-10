@@ -1,3 +1,11 @@
+# [1.3.0](https://github.com/ez-appsec/ez-appsec/compare/v1.2.0...v1.3.0) (2026-04-10)
+
+
+### Features
+
+* GitHub App Tier 2 — two-job scan pattern, provisioner, scan template ([856af97](https://github.com/ez-appsec/ez-appsec/commit/856af97c7b92fe4da11b641b1aa927f3fcdd3235))
+* trigger initial scan on repos after provisioning ([e98018f](https://github.com/ez-appsec/ez-appsec/commit/e98018fc228d5d8addbf4385424dc9c52de2a31f))
+
 # [1.2.0](https://github.com/ez-appsec/ez-appsec/compare/v1.1.6...v1.2.0) (2026-04-10)
 
 
