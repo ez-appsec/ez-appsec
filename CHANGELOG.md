@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/ez-appsec/ez-appsec/compare/v1.5.0...v1.6.0) (2026-04-10)
+
+
+### Features
+
+* harden install-app skill — pre-flight checks, error remediations, retry logic, dynamic branch ([5f97a91](https://github.com/ez-appsec/ez-appsec/commit/5f97a912273be2f4114785d804217d8663b94296))
+
 # [1.5.0](https://github.com/ez-appsec/ez-appsec/compare/v1.4.1...v1.5.0) (2026-04-10)
 
 
