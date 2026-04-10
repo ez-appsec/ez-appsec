@@ -43,12 +43,31 @@ Run the one-time setup first:
 
 ### 3. Check if the App is already installed on the target repo
 
+The `/repos/{owner}/{repo}/installation` endpoint requires App JWT auth and returns 401 for
+regular user tokens. Instead, check whether the provisioner already pushed the workflow file —
+this is a reliable proxy for a successful prior installation:
+
 ```bash
-INSTALLATION=$(gh api /repos/${TARGET_REPO}/installation 2>/dev/null)
-INSTALLATION_ID=$(echo "$INSTALLATION" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])" 2>/dev/null)
+ALREADY_PROVISIONED=$(gh api /repos/${TARGET_REPO}/contents/.github/workflows/ez-appsec-scan.yml \
+  --jq '.name' 2>/dev/null)
 ```
 
-#### If NOT installed (no installation ID)
+Also attempt to get the installation ID (works if the authenticated user is an org admin
+with the App installed — fails gracefully otherwise):
+
+```bash
+INSTALLATION_ID=$(gh api /repos/${TARGET_REPO}/installation --jq '.id' 2>/dev/null | grep -E '^[0-9]+$' || echo "")
+```
+
+#### If already provisioned (`ALREADY_PROVISIONED` is non-empty)
+
+Print:
+```
+✓ Already provisioned on <TARGET_REPO> — triggering fresh scan to update dashboard.
+```
+Skip to Step 7 and run `gh workflow run ez-appsec-scan.yml --repo ${TARGET_REPO}`.
+
+#### If NOT installed (no installation ID and workflow file absent)
 
 Print:
 ```
