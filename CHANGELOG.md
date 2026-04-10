@@ -1,3 +1,10 @@
+## [1.1.6](https://github.com/ez-appsec/ez-appsec/compare/v1.1.5...v1.1.6) (2026-04-10)
+
+
+### Bug Fixes
+
+* add --platform linux/amd64 to docker run test step ([4f8c13c](https://github.com/ez-appsec/ez-appsec/commit/4f8c13cbeac637986f04601a97c69576facf0e2c))
+
 ## [1.1.5](https://github.com/ez-appsec/ez-appsec/compare/v1.1.4...v1.1.5) (2026-04-09)
 
 
