@@ -215,8 +215,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           echo "🧪 Testing image functionality..."
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --version
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --help
+          docker run --rm --platform linux/amd64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --version
+          docker run --rm --platform linux/amd64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} --help
 
   build-docker-slim:
     name: Build Slim Docker Image
