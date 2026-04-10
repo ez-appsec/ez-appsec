@@ -3,10 +3,11 @@ ez-appsec slash command dispatcher. Routes to the correct subcommand based on th
 ## Usage
 
 ```
-/ez-appsec install [path]            — install ez-appsec into a GitLab project
-/ez-appsec install-app [owner/repo]  — install via GitHub App (provisions workflow + secrets automatically)
-/ez-appsec scan [path]               — run a security scan
-/ez-appsec help                      — show available subcommands
+/ez-appsec install [path]              — install ez-appsec into a GitLab project
+/ez-appsec install-app [owner/repo]   — install via GitHub App (provisions workflow + secrets automatically)
+/ez-appsec uninstall-app [owner/repo] — remove ez-appsec from a GitHub repo and dashboard
+/ez-appsec scan [path]                — run a security scan
+/ez-appsec help                       — show available subcommands
 ```
 
 ## Dispatch
@@ -21,6 +22,10 @@ Follow all steps in the `ez-appsec-install` skill using the remainder of `$ARGUM
 
 Follow all steps in the `ez-appsec-install-app` skill using the remainder of `$ARGUMENTS` as the target repo (`owner/repo`).
 
+### `uninstall-app`
+
+Follow all steps in the `ez-appsec-uninstall-app` skill using the remainder of `$ARGUMENTS` as the target repo (`owner/repo`).
+
 ### `scan`
 
 Follow all steps in the `ez-appsec-scan` skill using the remainder of `$ARGUMENTS` as the target path.
@@ -32,8 +37,9 @@ Print:
 Usage: /ez-appsec <subcommand> [args]
 
 Subcommands:
-  install [path]            Add ez-appsec scanning to a GitLab project via scan.yml include + MR
-  install-app [owner/repo]  Install via GitHub App — provisions workflow, secrets, and triggers scan
-  scan [path]               Run a security scan using the ez-appsec Docker image
-  help                      Show this message
+  install [path]              Add ez-appsec scanning to a GitLab project via scan.yml include + MR
+  install-app [owner/repo]    Install via GitHub App — provisions workflow, secrets, and triggers scan
+  uninstall-app [owner/repo]  Remove ez-appsec from a GitHub repo and prune its dashboard data
+  scan [path]                 Run a security scan using the ez-appsec Docker image
+  help                        Show this message
 ```
