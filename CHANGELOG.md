@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/ez-appsec/ez-appsec/compare/v1.1.6...v1.2.0) (2026-04-10)
+
+
+### Features
+
+* accept optional data_dir argument for standalone dashboard repos ([ef44f6e](https://github.com/ez-appsec/ez-appsec/commit/ef44f6e44e1e20bae9817369f686a43bd50d3d07))
+
 ## [1.1.6](https://github.com/ez-appsec/ez-appsec/compare/v1.1.5...v1.1.6) (2026-04-10)
 
 
