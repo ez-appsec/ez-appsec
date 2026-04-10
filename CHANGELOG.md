@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/ez-appsec/ez-appsec/compare/v1.6.0...v1.7.0) (2026-04-10)
+
+
+### Features
+
+* add uninstall-app skill — removes workflow, secrets, variables, and dashboard data ([438a482](https://github.com/ez-appsec/ez-appsec/commit/438a482d49f3fc9fe3110cf2d98e59de8645af0f))
+
 # [1.6.0](https://github.com/ez-appsec/ez-appsec/compare/v1.5.0...v1.6.0) (2026-04-10)
 
 
