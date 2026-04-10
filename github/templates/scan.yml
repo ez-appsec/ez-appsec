@@ -1,9 +1,7 @@
-# GitHub Actions workflow for the ez-appsec repo itself (org-internal repos like juice-shop-public).
-# Uses the ez-appsec Docker image (same as GitLab scan.yml) for full scanner coverage:
-# gitleaks, semgrep, grype, kics.
-#
-# Two-job pattern: mint-token runs on ubuntu-latest to get a short-lived App token;
-# scan runs in the ez-appsec container and uses that token (or falls back to DASHBOARD_PUSH_TOKEN).
+# ez-appsec Security Scan — customer workflow template
+# Provisioned automatically when you install the ez-appsec GitHub App.
+# Uses a two-job pattern so the App token can be minted on ubuntu-latest
+# (needs Node.js) before the scan runs inside the ez-appsec container.
 
 name: ez-appsec Security Scan
 
@@ -12,6 +10,7 @@ on:
   push:
     branches:
       - main
+      - master
   workflow_dispatch:  # Allow manual trigger
 
 permissions:
@@ -24,7 +23,6 @@ permissions:
 env:
   EZ_APPSEC_OUTPUT_DIR: "scan-results"
   EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
-  EZ_APPSEC_IMAGE: "ghcr.io/ez-appsec/ez-appsec:latest"
 
 jobs:
   # Job 1: mint a short-lived dashboard-push token via the GitHub App.
@@ -45,6 +43,7 @@ jobs:
           owner: ez-appsec
           repositories: ez-appsec-dashboard
 
+  # Job 2: run the full security scan and push results to the dashboard.
   scan:
     name: Security Scan
     needs: mint-token
@@ -52,9 +51,9 @@ jobs:
     container:
       image: ghcr.io/ez-appsec/ez-appsec:latest
       options: --user root --entrypoint ""
-    outputs:
-      findings-count: ${{ steps.summary.outputs.findings-count }}
     env:
+      EZ_APPSEC_OUTPUT_DIR: "scan-results"
+      EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
       # App token takes precedence; falls back to legacy PAT if App not configured.
       _PUSH_TOKEN: ${{ needs.mint-token.outputs.dashboard-token || secrets.DASHBOARD_PUSH_TOKEN }}
 
@@ -173,7 +172,6 @@ jobs:
                   lines.append(f"| {sev} | {n} |")
           lines.append("")
 
-          # List HIGH in full
           if by_sev["HIGH"]:
               lines.append("<details open><summary><strong>HIGH</strong></summary>")
               lines.append("")
@@ -186,7 +184,6 @@ jobs:
               lines.append("</details>")
               lines.append("")
 
-          # Summarize MEDIUM by message type (dedup)
           for sev in ["MEDIUM", "LOW"]:
               items = by_sev[sev]
               if not items:
