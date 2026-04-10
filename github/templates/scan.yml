@@ -25,7 +25,29 @@ env:
   EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
 
 jobs:
-  # Job 1: mint a short-lived dashboard-push token via the GitHub App.
+  # Advisory: check if a newer ez-appsec version is available.
+  # Runs in parallel with mint-token. Never blocks the scan — continue-on-error: true.
+  version-check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Check for newer ez-appsec release
+        run: |
+          LATEST=$(curl -sSf \
+            -H "Accept: application/vnd.github+json" \
+            -H "User-Agent: ez-appsec-version-check/1.0" \
+            https://api.github.com/repos/ez-appsec/ez-appsec/releases/latest \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
+          CURRENT="${{ vars.EZ_APPSEC_VERSION || 'latest' }}"
+          if [ "$CURRENT" = "latest" ]; then
+            echo "::warning::ez-appsec: using 'latest' image tag. Pin EZ_APPSEC_VERSION to a specific version for reproducible scans. Current release: ${LATEST}"
+          elif [ "$CURRENT" != "$LATEST" ]; then
+            echo "::warning::ez-appsec ${CURRENT} is outdated. Latest release: ${LATEST}. Update the EZ_APPSEC_VERSION variable."
+          else
+            echo "ez-appsec ${CURRENT} is up to date."
+          fi
+
+  # Job 2: mint a short-lived dashboard-push token via the GitHub App.
   # Runs on ubuntu-latest (Node.js available) so create-github-app-token works.
   # Skipped gracefully if App secrets are not configured — scan still runs.
   mint-token:
