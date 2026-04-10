@@ -349,14 +349,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Mint App token for dashboard push
+        id: dash-token
+        if: vars.EZ_APPSEC_DASHBOARD_REPO != '' && secrets.EZ_APPSEC_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.EZ_APPSEC_APP_ID }}
+          private-key: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
+          owner: ez-appsec
+          repositories: ez-appsec-dashboard
+
       - name: Push scan results to dashboard
         env:
-          DASHBOARD_PUSH_TOKEN: ${{ secrets.DASHBOARD_PUSH_TOKEN }}
+          _PUSH_TOKEN: ${{ steps.dash-token.outputs.token }}
           EZ_APPSEC_DASHBOARD_REPO: ${{ vars.EZ_APPSEC_DASHBOARD_REPO || 'ez-appsec/ez-appsec-dashboard' }}
           VERSION: ${{ needs.semantic-release.outputs.new_release_version }}
         run: |
-          if [ -z "${DASHBOARD_PUSH_TOKEN}" ]; then
-            echo "DASHBOARD_PUSH_TOKEN not set — skipping dashboard update."
+          if [ -z "${_PUSH_TOKEN}" ]; then
+            echo "No push token available — skipping dashboard update."
             exit 0
           fi
           if [ ! -f scan-results/vulnerabilities.json ]; then
@@ -366,7 +376,7 @@ jobs:
           SLUG="ez-appsec-ez-appsec"
           DASH_DIR=$(mktemp -d)
           git clone \
-            "https://x-access-token:${DASHBOARD_PUSH_TOKEN}@github.com/${EZ_APPSEC_DASHBOARD_REPO}.git" \
+            "https://x-access-token:${_PUSH_TOKEN}@github.com/${EZ_APPSEC_DASHBOARD_REPO}.git" \
             "${DASH_DIR}/dashboard"
           mkdir -p "${DASH_DIR}/dashboard/data/projects/${SLUG}"
           cp scan-results/vulnerabilities.json \

@@ -1,0 +1,66 @@
+# Installed and kept current by /ez-appsec update-dashboard.
+# Updates the dashboard web app (index.html, app-github.js, style.css)
+# to the latest (or a specified) ez-appsec release.
+
+name: Update Dashboard Assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'ez-appsec version tag (e.g. v1.7.0). Leave blank for latest.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            TAG="${{ inputs.version }}"
+          else
+            TAG=$(curl -sSf \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/ez-appsec/ez-appsec/releases/latest \
+              | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])")
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "Updating dashboard to ${TAG}"
+
+      - name: Download dashboard assets
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          BASE="https://raw.githubusercontent.com/ez-appsec/ez-appsec/${TAG}/github/dashboard/public"
+          for ASSET in index.html app-github.js style.css; do
+            curl -sSfL "${BASE}/${ASSET}" -o "${ASSET}"
+            echo "  ✓ ${ASSET}"
+          done
+
+      - name: Write version metadata
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          mkdir -p data
+          printf '{\n  "ez_appsec_version": "%s"\n}\n' "${TAG#v}" > data/config.json
+          echo "  ✓ data/config.json → ${TAG#v}"
+
+      - name: Commit and push
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html app-github.js style.css data/config.json
+          if git diff --staged --quiet; then
+            echo "Dashboard assets already at ${TAG} — nothing to commit."
+          else
+            git commit -m "chore: update dashboard assets to ${TAG}"
+            git push
+            echo "  ✓ Dashboard updated to ${TAG}"
+          fi

@@ -360,7 +360,7 @@ gh api --method PUT repos/YOUR_ORG/ez-appsec-dashboard/pages \
   -f '{"source":{"branch":"main","path":"/public"}}'
 ```
 
-Each scanned repo sends results to the dashboard via `DASHBOARD_PUSH_TOKEN` (a PAT with `repo` scope set as a repository secret).
+Each scanned repo pushes results to the dashboard using a short-lived token minted by the ez-appsec GitHub App — no stored PAT required.
 
 ## API Usage
 
@@ -436,9 +436,9 @@ gh repo fork ez-appsec/ez-appsec-dashboard --org YOUR_ORG --clone
 gh api --method PUT repos/YOUR_ORG/ez-appsec-dashboard/pages \
   -f '{"source":{"branch":"main","path":"/public"}}'
 
-# 3. Add DASHBOARD_PUSH_TOKEN secret to each repo you want to scan
-#    (a PAT with repo scope)
-gh secret set DASHBOARD_PUSH_TOKEN --repo YOUR_ORG/YOUR_REPO
+# 3. Install the ez-appsec GitHub App on each repo you want to scan
+#    (provisions the scan workflow and secrets automatically)
+#    https://github.com/apps/ez-appsec/installations/new
 ```
 
 For GitLab, run `/ez-appsec-install-dashboard <group-path>` in Claude Code to create and configure the dashboard project automatically.

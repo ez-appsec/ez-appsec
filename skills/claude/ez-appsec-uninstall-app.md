@@ -58,7 +58,6 @@ WORKFLOW_SHA=$(gh api /repos/${TARGET_REPO}/contents/.github/workflows/ez-appsec
 # Which secrets/variables are set? (check presence, not values)
 HAS_APP_ID=$(gh secret list --repo=${TARGET_REPO} 2>/dev/null | grep -c "EZ_APPSEC_APP_ID" || echo 0)
 HAS_PRIVATE_KEY=$(gh secret list --repo=${TARGET_REPO} 2>/dev/null | grep -c "EZ_APPSEC_PRIVATE_KEY" || echo 0)
-HAS_LEGACY_TOKEN=$(gh secret list --repo=${TARGET_REPO} 2>/dev/null | grep -c "DASHBOARD_PUSH_TOKEN" || echo 0)
 HAS_DASHBOARD_VAR=$(gh variable list --repo=${TARGET_REPO} 2>/dev/null | grep -c "EZ_APPSEC_DASHBOARD_REPO" || echo 0)
 ```
 
@@ -102,7 +101,6 @@ This will remove:
   • .github/workflows/ez-appsec-scan.yml       [workflow file]
   • Secret: EZ_APPSEC_APP_ID                   [if present]
   • Secret: EZ_APPSEC_PRIVATE_KEY              [if present]
-  • Secret: DASHBOARD_PUSH_TOKEN               [if present]
   • Variable: EZ_APPSEC_DASHBOARD_REPO         [if present]
   • Dashboard data: <DASHBOARD_FILE_PATH>      [if found]
 
@@ -130,7 +128,6 @@ REPO_NAME=$(echo "$TARGET_REPO" | cut -d/ -f2)
 WORKFLOW_SHA="<WORKFLOW_SHA>"
 HAS_APP_ID=<HAS_APP_ID>
 HAS_PRIVATE_KEY=<HAS_PRIVATE_KEY>
-HAS_LEGACY_TOKEN=<HAS_LEGACY_TOKEN>
 HAS_DASHBOARD_VAR=<HAS_DASHBOARD_VAR>
 DASHBOARD_REPO="ez-appsec/ez-appsec-dashboard"
 DASHBOARD_FILE_PATH="<DASHBOARD_FILE_PATH>"   # empty string if not found
@@ -157,8 +154,7 @@ fi
 echo "Removing secrets..."
 for SECRET in \
   ${HAS_APP_ID:+EZ_APPSEC_APP_ID} \
-  ${HAS_PRIVATE_KEY:+EZ_APPSEC_PRIVATE_KEY} \
-  ${HAS_LEGACY_TOKEN:+DASHBOARD_PUSH_TOKEN}; do
+  ${HAS_PRIVATE_KEY:+EZ_APPSEC_PRIVATE_KEY}; do
   [ -z "$SECRET" ] && continue
   if gh secret delete "$SECRET" --repo="$TARGET_REPO" 2>/tmp/ez_err; then
     echo "  ✓ Secret ${SECRET} removed"

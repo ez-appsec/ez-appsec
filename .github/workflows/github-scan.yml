@@ -3,7 +3,7 @@
 # gitleaks, semgrep, grype, kics.
 #
 # Two-job pattern: mint-token runs on ubuntu-latest to get a short-lived App token;
-# scan runs in the ez-appsec container and uses that token (or falls back to DASHBOARD_PUSH_TOKEN).
+# scan runs in the ez-appsec container and uses that token.
 
 name: ez-appsec Security Scan
 
@@ -77,8 +77,7 @@ jobs:
     outputs:
       findings-count: ${{ steps.summary.outputs.findings-count }}
     env:
-      # App token takes precedence; falls back to legacy PAT if App not configured.
-      _PUSH_TOKEN: ${{ needs.mint-token.outputs.dashboard-token || secrets.DASHBOARD_PUSH_TOKEN }}
+      _PUSH_TOKEN: ${{ needs.mint-token.outputs.dashboard-token }}
 
     steps:
       - name: Checkout code

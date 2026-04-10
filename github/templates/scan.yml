@@ -76,8 +76,7 @@ jobs:
     env:
       EZ_APPSEC_OUTPUT_DIR: "scan-results"
       EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
-      # App token takes precedence; falls back to legacy PAT if App not configured.
-      _PUSH_TOKEN: ${{ needs.mint-token.outputs.dashboard-token || secrets.DASHBOARD_PUSH_TOKEN }}
+      _PUSH_TOKEN: ${{ needs.mint-token.outputs.dashboard-token }}
 
     steps:
       - name: Checkout code
