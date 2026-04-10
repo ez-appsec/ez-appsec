@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/ez-appsec/ez-appsec/compare/v1.3.0...v1.4.0) (2026-04-10)
+
+
+### Features
+
+* add install-app subcommand to ez-appsec skill ([9b4c063](https://github.com/ez-appsec/ez-appsec/commit/9b4c06370e0b284bbae04f7df883013fc087a903))
+
 # [1.3.0](https://github.com/ez-appsec/ez-appsec/compare/v1.2.0...v1.3.0) (2026-04-10)
 
 
