@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/ez-appsec/ez-appsec/compare/v1.4.1...v1.5.0) (2026-04-10)
+
+
+### Features
+
+* add version-check job (warning only); streamline install-app skill to single script ([6b0397b](https://github.com/ez-appsec/ez-appsec/commit/6b0397b9baa5141ba047242fe8e22c81d6c73654))
+
 ## [1.4.1](https://github.com/ez-appsec/ez-appsec/compare/v1.4.0...v1.4.1) (2026-04-10)
 
 
