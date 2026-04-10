@@ -65,9 +65,9 @@ jobs:
         with:
           app-id: ${{ secrets.EZ_APPSEC_APP_ID }}
           private-key: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
-        continue-on-error: true
           owner: ez-appsec
           repositories: ez-appsec-dashboard
+        continue-on-error: true
 
   scan:
     name: Security Scan
