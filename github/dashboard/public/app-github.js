@@ -391,7 +391,9 @@ class GitHubDashboard {
         if (slug === 'all') {
             await this.loadAllProjects();
         } else {
-            await this.loadVulnerabilities(`data/projects/${slug}/vulnerabilities.json`);
+            const proj = this.projects.find(p => p.slug === slug);
+            const vulnPath = proj && proj.path ? `data/${proj.path}` : `data/vulnerabilities/${slug}.json`;
+            await this.loadVulnerabilities(vulnPath);
         }
     }
 
@@ -401,7 +403,7 @@ class GitHubDashboard {
         const results = await Promise.allSettled(
             this.projects.map(async p => {
                 const projectUrl = `https://github.com/${p.project_path || p.slug}`;
-                const r = await fetch(`data/projects/${p.slug}/vulnerabilities.json`);
+                const r = await fetch(p.path ? `data/${p.path}` : `data/vulnerabilities/${p.slug}.json`);
                 if (!r.ok) throw new Error(`Could not load ${p.slug}`);
                 const data = await r.json();
                 const vulns = Array.isArray(data)
