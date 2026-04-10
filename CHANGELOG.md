@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/ez-appsec/ez-appsec/compare/v1.4.0...v1.4.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* use workflow file presence to detect prior provisioning (installation API requires App JWT) ([984538c](https://github.com/ez-appsec/ez-appsec/commit/984538c4c8a2bc5feaf7c5dd80244e0f4bd11f59))
+
 # [1.4.0](https://github.com/ez-appsec/ez-appsec/compare/v1.3.0...v1.4.0) (2026-04-10)
 
 
