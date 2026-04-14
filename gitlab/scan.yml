@@ -14,7 +14,6 @@ variables:
 # EZ_APPSEC_DASHBOARD_DEPLOY_KEY: base64-encoded ed25519 private key (env var, not file type).
 # The dashboard project's CI then aggregates index.json and deploys Pages.
 .ingest-script: &ingest-script
-  - apk add --no-cache git openssh-client
   - mkdir -p ~/.ssh && chmod 700 ~/.ssh
   - echo "${EZ_APPSEC_DASHBOARD_DEPLOY_KEY}" | base64 -d > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
   - ssh-keyscan gitlab.com >> ~/.ssh/known_hosts 2>/dev/null

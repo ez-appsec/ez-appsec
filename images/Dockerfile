@@ -31,6 +31,7 @@ SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 RUN apk add --no-cache \
     python3=3.11.12-r1 \
     git=2.40.4-r0 \
+    openssh-client=9.3_p2-r3 \
     curl=8.12.1-r0 \
     bash=5.2.15-r5 \
     ca-certificates=20241121-r1 \
