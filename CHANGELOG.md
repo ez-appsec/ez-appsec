@@ -1,3 +1,11 @@
+## [1.7.8](https://github.com/ez-appsec/ez-appsec/compare/v1.7.7...v1.7.8) (2026-04-14)
+
+
+### Bug Fixes
+
+* downgrade @semantic-release/exec to v6 for compatibility with semantic-release v22 ([81a13f6](https://github.com/ez-appsec/ez-appsec/commit/81a13f6bb60194e8cb571684682c79ffc58219f7))
+* stamp VERSION file on release and auto-update dashboard UI assets after release ([3392f9d](https://github.com/ez-appsec/ez-appsec/commit/3392f9d96391df6707029426ab0b292ae235f150))
+
 ## [1.7.7](https://github.com/ez-appsec/ez-appsec/compare/v1.7.6...v1.7.7) (2026-04-14)
 
 
