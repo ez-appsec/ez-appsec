@@ -12,6 +12,7 @@ ez-appsec slash command dispatcher. Routes to the correct subcommand based on th
 /ez-appsec scan [path]                      — scan with Docker and load findings into context
 /ez-appsec load [project]                   — load a project's vulnerabilities from the dashboard into context
 /ez-appsec remediate [filter]               — prioritized remediation plan + apply fixes (balances severity vs risk)
+/ez-appsec test [suite ...]                 — run the command test harness (smoke scan load github gitlab dashboard all)
 /ez-appsec help                             — show available subcommands
 ```
 
@@ -55,6 +56,10 @@ Follow all steps in the `ez-appsec-remediate` skill using the remainder of `$ARG
 
 Follow all steps in the `ez-appsec-load-vulns` skill using the remainder of `$ARGUMENTS` as the project slug or `owner/repo`.
 
+### `test`
+
+Follow all steps in the `ez-appsec-test` skill using the remainder of `$ARGUMENTS` as the suite list.
+
 ### `help` or no subcommand
 
 Print:
@@ -71,5 +76,6 @@ Subcommands:
   scan [path]                       Scan with Docker and load findings into context for analysis
   load [project]                    Load a project's vulnerabilities from the dashboard into context
   remediate [filter]                Prioritized fix plan — balances severity vs risk, minimal prompting
+  test [suite ...]                  Run the command test harness (smoke scan load github gitlab dashboard all)
   help                              Show this message
 ```

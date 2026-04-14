@@ -39,6 +39,8 @@ The `/ez-appsec` skill routes based on the first word of the argument:
 | `/ez-appsec uninstall [path]` | **GitLab** — removes `scan.yml` include via merge request |
 | `/ez-appsec scan [path]` | Scan with Docker and load findings into context for analysis |
 | `/ez-appsec load [project]` | Load a project's vulnerabilities from the dashboard into context for analysis |
+| `/ez-appsec remediate [filter]` | Prioritized fix plan — severity/risk-balanced, minimal prompting |
+| `/ez-appsec test [suite ...]` | Run the command test harness (`smoke scan load github gitlab dashboard all`) |
 | `/ez-appsec help` | Print available subcommands |
 
 ## GitHub Copilot / Cursor
@@ -67,6 +69,8 @@ skills/
     ez-appsec-uninstall.md            GitLab uninstall skill
     ez-appsec-scan.md                 Scan with Docker and load findings into context
     ez-appsec-load-vulns.md           Load project vulnerabilities from dashboard into context
+    ez-appsec-remediate.md            Severity/risk-balanced remediation plan + apply fixes
+    ez-appsec-test.md                 Command test harness (smoke/scan/load/github/gitlab/dashboard)
   copilot/
     instructions.md                   GitHub Copilot workspace instructions
   cursor/
