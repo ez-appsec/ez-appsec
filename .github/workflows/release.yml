@@ -351,7 +351,7 @@ jobs:
 
       - name: Mint App token for dashboard push
         id: dash-token
-        if: vars.EZ_APPSEC_DASHBOARD_REPO != '' && secrets.EZ_APPSEC_APP_ID != ''
+        if: vars.EZ_APPSEC_DASHBOARD_REPO != ''
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.EZ_APPSEC_APP_ID }}
