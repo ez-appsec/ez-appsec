@@ -53,10 +53,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     index_json: bytes = b"{}"
 
     def do_GET(self):
-        if self.path in ("/data/vulnerabilities.json",
-                         "/data/projects/juice-shop-public/vulnerabilities.json"):
+        path = self.path.split("?")[0]
+        # Serve mock vulns for any vulnerabilities JSON path the app might request
+        if (path == "/data/vulnerabilities.json"
+                or path.startswith("/data/vulnerabilities/")
+                or path.startswith("/data/projects/")):
             self._serve_bytes(self.vulns_json, "application/json")
-        elif self.path == "/data/index.json":
+        elif path == "/data/index.json":
             self._serve_bytes(self.index_json, "application/json")
         else:
             super().do_GET()
@@ -138,8 +141,8 @@ def take_screenshots(vulns_json: bytes, index_json: bytes):
             # 3. Vulnerability list
             # ------------------------------------------------------------------
             print("  [3/8] dashboard-vuln-list.png")
-            # Wait for at least one row
-            page.wait_for_selector(".vuln-row")
+            # Wait for at least one row (60s — CI runners can be slow)
+            page.wait_for_selector(".vuln-row", timeout=60000)
             # Scroll the list into view
             page.locator(".vuln-table").scroll_into_view_if_needed()
             page.screenshot(path=str(OUT_DIR / "dashboard-vuln-list.png"),
@@ -162,7 +165,7 @@ def take_screenshots(vulns_json: bytes, index_json: bytes):
             # 5. Finding detail modal
             # ------------------------------------------------------------------
             print("  [5/8] dashboard-finding-detail.png")
-            page.wait_for_selector(".vuln-row")
+            page.wait_for_selector(".vuln-row", timeout=60000)
             first_row = page.locator(".vuln-row").first
             first_row.click()
             modal = page.locator("#vuln-modal")

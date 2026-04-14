@@ -4,6 +4,7 @@
     {
       "slug": "juice-shop-public",
       "name": "juice-shop-public",
+      "path": "vulnerabilities/juice-shop-public.json",
       "project_path": "ez-appsec/juice-shop-public",
       "github_url": "https://github.com/ez-appsec/juice-shop-public",
       "last_updated": "2026-04-08T14:22:00Z",
@@ -19,6 +20,7 @@
     {
       "slug": "myapp-backend",
       "name": "myapp-backend",
+      "path": "vulnerabilities/myapp-backend.json",
       "project_path": "ez-appsec/myapp-backend",
       "github_url": "https://github.com/ez-appsec/myapp-backend",
       "last_updated": "2026-04-07T09:15:00Z",
