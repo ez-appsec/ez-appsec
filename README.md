@@ -174,6 +174,15 @@ AI-assisted contributions are encouraged. When using Claude Code or another agen
 
 See [ROADMAP.md](ROADMAP.md) for the full list of planned work and [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup and coding conventions.
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the path to feature parity with commercial AppSec platforms — 18 independent plans across developer feedback, compliance, platform expansion, and enterprise features. Each plan is claimable by any contributor (human or AI).
+
+| | |
+|---|---|
+| GitHub Project | [ez-appsec Roadmap](https://github.com/orgs/ez-appsec/projects/2) |
+| GitLab Tracking | [jfelten.work-group/ez_appsec/ez-appsec-roadmap](https://gitlab.com/jfelten.work-group/ez_appsec/ez-appsec-roadmap) |
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
