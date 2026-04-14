@@ -134,7 +134,45 @@ When `OPENAI_API_KEY` is set in the scanning environment, each finding is enrich
 
 ## Contributing
 
-Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are welcome from humans, AI agents, and human+AI teams.
+
+There are two contribution paths depending on the size of the change.
+
+### Small changes — no plan required
+
+Bug fixes, documentation corrections, minor refactors, and small tweaks can go straight to a PR.
+
+Open a **[Small Change issue](https://github.com/ez-appsec/ez-appsec/issues/new?template=small-change.md)** to track the work, then submit a PR that references it. The bar is: `pytest tests/` passes, no scope creep.
+
+### Significant work — plan first
+
+New features, integrations, and anything that touches multiple modules require a plan before implementation begins. This prevents conflicts between contributors working in parallel and keeps PRs reviewable.
+
+**Option A — Claim an existing roadmap item**
+
+Browse the [ez-appsec Roadmap project](https://github.com/orgs/ez-appsec/projects/2) and pick an unassigned plan. Leave a comment on the issue saying you are claiming it, then self-assign and move it to *In Progress*. The issue already contains scope, technical approach, and done criteria.
+
+**Option B — Propose a new plan**
+
+If your idea is not on the roadmap, open a **[Plan issue](https://github.com/ez-appsec/ez-appsec/issues/new?template=plan.md)** first. Describe what you are building, the scope, technical approach, and test strategy. Wait for a maintainer to acknowledge before opening a draft PR. This avoids duplicate work and surfaces conflicts early.
+
+### Human + AI workflows
+
+AI-assisted contributions are encouraged. When using Claude Code or another agent to implement a plan:
+
+- The plan issue is the agent's scope boundary — it should not touch modules outside the plan
+- Use `/ez-appsec test` to verify nothing regressed before opening a PR
+- The PR description should note which parts were AI-generated and which were human-reviewed
+- All tests must pass; the agent is not exempt from the done criteria
+
+### Ground rules
+
+- **Tests ship with the code.** Every plan lists required test files. PRs without tests for new behavior will not be merged.
+- **Plans are independent.** If your change conflicts with another open plan, coordinate in the issue before proceeding.
+- **Schema is append-only.** The `vulnerabilities.json` schema may gain new fields but existing fields must not be renamed or removed — downstream tools depend on them.
+- **Docker size budget.** Adding a runtime dependency requires verifying the standard image stays under 2 GB.
+
+See [ROADMAP.md](ROADMAP.md) for the full list of planned work and [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup and coding conventions.
 
 ## License
 
