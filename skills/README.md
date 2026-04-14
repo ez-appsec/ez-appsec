@@ -38,6 +38,7 @@ The `/ez-appsec` skill routes based on the first word of the argument:
 | `/ez-appsec uninstall-app [owner/repo]` | **GitHub** — removes workflow and prunes dashboard data |
 | `/ez-appsec uninstall [path]` | **GitLab** — removes `scan.yml` include via merge request |
 | `/ez-appsec scan [path]` | Run a local security scan using the ez-appsec Docker image |
+| `/ez-appsec load [project]` | Load a project's vulnerabilities from the dashboard into context for analysis |
 | `/ez-appsec help` | Print available subcommands |
 
 ## GitHub Copilot / Cursor
@@ -65,6 +66,7 @@ skills/
     ez-appsec-uninstall-app.md        GitHub uninstall skill
     ez-appsec-uninstall.md            GitLab uninstall skill
     ez-appsec-scan.md                 Local scan skill
+    ez-appsec-load-vulns.md           Load project vulnerabilities from dashboard into context
   copilot/
     instructions.md                   GitHub Copilot workspace instructions
   cursor/

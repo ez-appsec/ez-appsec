@@ -73,6 +73,7 @@ The `/ez-appsec` Claude Code skill is a dispatcher — the first word routes to 
 | Command | Description |
 |---------|-------------|
 | `/ez-appsec scan [path]` | Run a local security scan using the ez-appsec Docker image |
+| `/ez-appsec load [project]` | Load a project's vulnerabilities from the dashboard into context for analysis |
 
 ### Maintenance
 

@@ -10,6 +10,7 @@ ez-appsec slash command dispatcher. Routes to the correct subcommand based on th
 /ez-appsec install-dashboard [owner/repo]   — create/configure the GitHub dashboard repo (assets + App secrets + Pages)
 /ez-appsec update-dashboard [owner/repo]    — provision App secrets + update dashboard web assets to the latest release
 /ez-appsec scan [path]                      — run a security scan
+/ez-appsec load [project]                   — load a project's vulnerabilities from the dashboard into context
 /ez-appsec help                             — show available subcommands
 ```
 
@@ -45,6 +46,10 @@ Follow all steps in the `ez-appsec-update-dashboard` skill using the remainder o
 
 Follow all steps in the `ez-appsec-scan` skill using the remainder of `$ARGUMENTS` as the target path.
 
+### `load`
+
+Follow all steps in the `ez-appsec-load-vulns` skill using the remainder of `$ARGUMENTS` as the project slug or `owner/repo`.
+
 ### `help` or no subcommand
 
 Print:
@@ -59,5 +64,6 @@ Subcommands:
   install-dashboard [owner/repo]    Create/configure GitHub dashboard repo (assets + App secrets + GitHub Pages)
   update-dashboard [owner/repo]     Provision App secrets + update dashboard web assets to latest release
   scan [path]                       Run a security scan using the ez-appsec Docker image
+  load [project]                    Load a project's vulnerabilities from the dashboard into context
   help                              Show this message
 ```
