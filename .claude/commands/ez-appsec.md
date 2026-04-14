@@ -11,6 +11,7 @@ ez-appsec slash command dispatcher. Routes to the correct subcommand based on th
 /ez-appsec update-dashboard [owner/repo]    — provision App secrets + update dashboard web assets to the latest release
 /ez-appsec scan [path]                      — scan with Docker and load findings into context
 /ez-appsec load [project]                   — load a project's vulnerabilities from the dashboard into context
+/ez-appsec remediate [filter]               — prioritized remediation plan + apply fixes (balances severity vs risk)
 /ez-appsec help                             — show available subcommands
 ```
 
@@ -46,6 +47,10 @@ Follow all steps in the `ez-appsec-update-dashboard` skill using the remainder o
 
 Follow all steps in the `ez-appsec-scan` skill using the remainder of `$ARGUMENTS` as the target path.
 
+### `remediate`
+
+Follow all steps in the `ez-appsec-remediate` skill using the remainder of `$ARGUMENTS` as the optional filter.
+
 ### `load`
 
 Follow all steps in the `ez-appsec-load-vulns` skill using the remainder of `$ARGUMENTS` as the project slug or `owner/repo`.
@@ -65,5 +70,6 @@ Subcommands:
   update-dashboard [owner/repo]     Provision App secrets + update dashboard web assets to latest release
   scan [path]                       Scan with Docker and load findings into context for analysis
   load [project]                    Load a project's vulnerabilities from the dashboard into context
+  remediate [filter]                Prioritized fix plan — balances severity vs risk, minimal prompting
   help                              Show this message
 ```
