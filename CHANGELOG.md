@@ -1,3 +1,10 @@
+## [1.7.2](https://github.com/ez-appsec/ez-appsec/compare/v1.7.1...v1.7.2) (2026-04-14)
+
+
+### Features
+
+* add /ez-appsec load command to pull project vulns from dashboard into context ([ef60555](https://github.com/ez-appsec/ez-appsec/commit/ef605555bc85f0bbc4e9bfc505ab596f34ce4a70))
+
 ## [1.7.1](https://github.com/ez-appsec/ez-appsec/compare/v1.7.0...v1.7.1) (2026-04-14)
 
 
