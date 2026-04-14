@@ -9,8 +9,7 @@ ez-appsec slash command dispatcher. Routes to the correct subcommand based on th
 /ez-appsec uninstall-app [owner/repo]       — remove ez-appsec from a GitHub repo and dashboard
 /ez-appsec install-dashboard [owner/repo]   — create/configure the GitHub dashboard repo (assets + App secrets + Pages)
 /ez-appsec update-dashboard [owner/repo]    — provision App secrets + update dashboard web assets to the latest release
-/ez-appsec scan [path]                      — run a security scan (CLI output only)
-/ez-appsec scan-context [path]              — scan with Docker and load findings into context
+/ez-appsec scan [path]                      — scan with Docker and load findings into context
 /ez-appsec load [project]                   — load a project's vulnerabilities from the dashboard into context
 /ez-appsec help                             — show available subcommands
 ```
@@ -47,10 +46,6 @@ Follow all steps in the `ez-appsec-update-dashboard` skill using the remainder o
 
 Follow all steps in the `ez-appsec-scan` skill using the remainder of `$ARGUMENTS` as the target path.
 
-### `scan-context`
-
-Follow all steps in the `ez-appsec-scan-context` skill using the remainder of `$ARGUMENTS` as the target path.
-
 ### `load`
 
 Follow all steps in the `ez-appsec-load-vulns` skill using the remainder of `$ARGUMENTS` as the project slug or `owner/repo`.
@@ -68,8 +63,7 @@ Subcommands:
   uninstall-app [owner/repo]        Remove ez-appsec from a GitHub repo and prune its dashboard data
   install-dashboard [owner/repo]    Create/configure GitHub dashboard repo (assets + App secrets + GitHub Pages)
   update-dashboard [owner/repo]     Provision App secrets + update dashboard web assets to latest release
-  scan [path]                       Run a security scan using the ez-appsec Docker image (CLI output only)
-  scan-context [path]               Scan with Docker and load findings into context for analysis
+  scan [path]                       Scan with Docker and load findings into context for analysis
   load [project]                    Load a project's vulnerabilities from the dashboard into context
   help                              Show this message
 ```

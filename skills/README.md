@@ -37,8 +37,7 @@ The `/ez-appsec` skill routes based on the first word of the argument:
 | `/ez-appsec update-dashboard [owner/repo]` | Re-provision secrets and update dashboard web assets to the latest release |
 | `/ez-appsec uninstall-app [owner/repo]` | **GitHub** — removes workflow and prunes dashboard data |
 | `/ez-appsec uninstall [path]` | **GitLab** — removes `scan.yml` include via merge request |
-| `/ez-appsec scan [path]` | Run a local security scan using the ez-appsec Docker image (CLI output) |
-| `/ez-appsec scan-context [path]` | Scan with Docker and load findings into context for analysis |
+| `/ez-appsec scan [path]` | Scan with Docker and load findings into context for analysis |
 | `/ez-appsec load [project]` | Load a project's vulnerabilities from the dashboard into context for analysis |
 | `/ez-appsec help` | Print available subcommands |
 
@@ -66,8 +65,7 @@ skills/
     ez-appsec-update-dashboard.md     Dashboard update skill
     ez-appsec-uninstall-app.md        GitHub uninstall skill
     ez-appsec-uninstall.md            GitLab uninstall skill
-    ez-appsec-scan.md                 Local scan — CLI output only
-    ez-appsec-scan-context.md         Scan with Docker and load findings into context
+    ez-appsec-scan.md                 Scan with Docker and load findings into context
     ez-appsec-load-vulns.md           Load project vulnerabilities from dashboard into context
   copilot/
     instructions.md                   GitHub Copilot workspace instructions
