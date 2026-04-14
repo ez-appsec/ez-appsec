@@ -1,3 +1,10 @@
+## [1.7.3](https://github.com/ez-appsec/ez-appsec/compare/v1.7.2...v1.7.3) (2026-04-14)
+
+
+### Features
+
+* add /ez-appsec scan-context command — scan with Docker and load findings into context ([28d2abe](https://github.com/ez-appsec/ez-appsec/commit/28d2abe55ed4649d38ce485cfe9416f7e53cafda))
+
 ## [1.7.2](https://github.com/ez-appsec/ez-appsec/compare/v1.7.1...v1.7.2) (2026-04-14)
 
 
