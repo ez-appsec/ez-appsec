@@ -41,6 +41,7 @@ SKILLS=(
   ez-appsec-load-vulns
   ez-appsec-remediate
   ez-appsec-test
+  ez-appsec-update
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

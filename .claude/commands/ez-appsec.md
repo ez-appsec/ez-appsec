@@ -15,6 +15,7 @@ ez-appsec slash command dispatcher. Routes to the correct subcommand based on th
 /ez-appsec load [project]                   — load a project's vulnerabilities from the dashboard into context
 /ez-appsec remediate [filter]               — prioritized remediation plan + apply fixes (balances severity vs risk)
 /ez-appsec test [suite ...]                 — run the command test harness (smoke scan load github gitlab dashboard all)
+/ez-appsec update [tag]                     — reinstall skills from latest release (or pinned tag)
 /ez-appsec version                          — show the installed skill version
 /ez-appsec help                             — show available subcommands
 ```
@@ -63,6 +64,10 @@ Follow all steps in the `ez-appsec-load-vulns` skill using the remainder of `$AR
 
 Follow all steps in the `ez-appsec-test` skill using the remainder of `$ARGUMENTS` as the suite list.
 
+### `update`
+
+Follow all steps in the `ez-appsec-update` skill using the remainder of `$ARGUMENTS` as the optional tag.
+
 ### `version`
 
 Read the `<!-- ez-appsec-skills: ... -->` comment at the top of this file and print:
@@ -93,6 +98,7 @@ Subcommands:
   load [project]                    Load a project's vulnerabilities from the dashboard into context
   remediate [filter]                Prioritized fix plan — balances severity vs risk, minimal prompting
   test [suite ...]                  Run the command test harness (smoke scan load github gitlab dashboard all)
+  update [tag]                      Reinstall skills from latest release (or pinned tag)
   version                           Show installed skill version
   help                              Show this message
 ```
