@@ -1,3 +1,10 @@
+## [1.7.6](https://github.com/ez-appsec/ez-appsec/compare/v1.7.5...v1.7.6) (2026-04-14)
+
+
+### Features
+
+* add version stamping to skills — installer tags dispatcher with version, /ez-appsec version subcommand reads it ([1489685](https://github.com/ez-appsec/ez-appsec/commit/148968583775e21ba75690bbb1b11d677e3f5934))
+
 ## [1.7.5](https://github.com/ez-appsec/ez-appsec/compare/v1.7.4...v1.7.5) (2026-04-14)
 
 
