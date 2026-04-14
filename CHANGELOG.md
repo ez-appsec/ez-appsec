@@ -1,3 +1,10 @@
+## [1.7.4](https://github.com/ez-appsec/ez-appsec/compare/v1.7.3...v1.7.4) (2026-04-14)
+
+
+### Features
+
+* add /ez-appsec remediate command — severity/risk-balanced fix plan with minimal prompting ([6c8090b](https://github.com/ez-appsec/ez-appsec/commit/6c8090ba1de123990fa19eb5fb4f9edf1c432c60))
+
 ## [1.7.3](https://github.com/ez-appsec/ez-appsec/compare/v1.7.2...v1.7.3) (2026-04-14)
 
 
