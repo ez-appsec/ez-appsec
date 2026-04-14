@@ -1,3 +1,10 @@
+## [1.7.7](https://github.com/ez-appsec/ez-appsec/compare/v1.7.6...v1.7.7) (2026-04-14)
+
+
+### Features
+
+* add /ez-appsec update command — reinstalls latest skills with version diff report ([3df99b4](https://github.com/ez-appsec/ez-appsec/commit/3df99b4fe7405136ce343cf00d7e4ef6ce59cfe7))
+
 ## [1.7.6](https://github.com/ez-appsec/ez-appsec/compare/v1.7.5...v1.7.6) (2026-04-14)
 
 
