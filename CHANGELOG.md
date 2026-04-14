@@ -1,3 +1,10 @@
+## [1.7.9](https://github.com/ez-appsec/ez-appsec/compare/v1.7.8...v1.7.9) (2026-04-14)
+
+
+### Bug Fixes
+
+* screenshot generator timeout — serve mock vulns for all /data/vulnerabilities/* paths ([47ac0a7](https://github.com/ez-appsec/ez-appsec/commit/47ac0a7288307f6891c522a5d0782600d3dc1240))
+
 ## [1.7.8](https://github.com/ez-appsec/ez-appsec/compare/v1.7.7...v1.7.8) (2026-04-14)
 
 
