@@ -1,3 +1,20 @@
+## [1.7.1](https://github.com/ez-appsec/ez-appsec/compare/v1.7.0...v1.7.1) (2026-04-14)
+
+
+### Bug Fixes
+
+* add openssh-client to runtime image; remove runtime apk-add from ingest-script ([31476d3](https://github.com/ez-appsec/ez-appsec/commit/31476d34731337b7051d6a162a19d8621092f49f))
+* correct YAML syntax in mint-token step ([8986712](https://github.com/ez-appsec/ez-appsec/commit/89867126a1959192c627c422d3284c33fbddb895))
+* remove secrets from release workflow if condition (not allowed in GitHub Actions) ([c018bd1](https://github.com/ez-appsec/ez-appsec/commit/c018bd1eca6a8119afb104c10667c34814a723ba))
+* remove secrets from workflow if condition (not allowed) and add continue-on-error ([3228a66](https://github.com/ez-appsec/ez-appsec/commit/3228a66072012b9a7ebc2f26c6321a710f1f9605))
+* run scan on master branch (for repos using master instead of main) ([0d08e50](https://github.com/ez-appsec/ez-appsec/commit/0d08e50aeda875172af94ea6a50ba7f247df7ed7))
+* use GitHub App token in dashboard workflows instead of GITHUB_TOKEN ([9ae3173](https://github.com/ez-appsec/ez-appsec/commit/9ae3173256142a6d90415fc6f8b03b393139c755))
+
+
+### Features
+
+* add update-dashboard command and remove DASHBOARD_PUSH_TOKEN ([eba69f0](https://github.com/ez-appsec/ez-appsec/commit/eba69f098e49c36c343748779e9d33628c9af4a7))
+
 # [1.7.0](https://github.com/ez-appsec/ez-appsec/compare/v1.6.0...v1.7.0) (2026-04-10)
 
 
