@@ -7,7 +7,8 @@ ez-appsec slash command dispatcher. Routes to the correct subcommand based on th
 /ez-appsec uninstall [path]                 — remove ez-appsec from a GitLab project
 /ez-appsec install-app [owner/repo]         — install via GitHub App (provisions workflow + secrets automatically)
 /ez-appsec uninstall-app [owner/repo]       — remove ez-appsec from a GitHub repo and dashboard
-/ez-appsec update-dashboard [owner/repo]    — update dashboard web assets to the latest ez-appsec release
+/ez-appsec install-dashboard [owner/repo]   — create/configure the GitHub dashboard repo (assets + App secrets + Pages)
+/ez-appsec update-dashboard [owner/repo]    — provision App secrets + update dashboard web assets to the latest release
 /ez-appsec scan [path]                      — run a security scan
 /ez-appsec help                             — show available subcommands
 ```
@@ -32,6 +33,10 @@ Follow all steps in the `ez-appsec-install-app` skill using the remainder of `$A
 
 Follow all steps in the `ez-appsec-uninstall-app` skill using the remainder of `$ARGUMENTS` as the target repo (`owner/repo`).
 
+### `install-dashboard`
+
+Follow all steps in the `ez-appsec-install-dashboard` command using the remainder of `$ARGUMENTS` as the optional target dashboard repo (`owner/repo`, default `ez-appsec/ez-appsec-dashboard`).
+
 ### `update-dashboard`
 
 Follow all steps in the `ez-appsec-update-dashboard` skill using the remainder of `$ARGUMENTS` as the optional target dashboard repo (`owner/repo`).
@@ -51,7 +56,8 @@ Subcommands:
   uninstall [path]                  Remove ez-appsec from a GitLab project via MR
   install-app [owner/repo]          Install via GitHub App — provisions workflow, secrets, and triggers scan
   uninstall-app [owner/repo]        Remove ez-appsec from a GitHub repo and prune its dashboard data
-  update-dashboard [owner/repo]     Update dashboard web assets to the latest ez-appsec release
+  install-dashboard [owner/repo]    Create/configure GitHub dashboard repo (assets + App secrets + GitHub Pages)
+  update-dashboard [owner/repo]     Provision App secrets + update dashboard web assets to latest release
   scan [path]                       Run a security scan using the ez-appsec Docker image
   help                              Show this message
 ```

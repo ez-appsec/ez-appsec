@@ -73,7 +73,7 @@ If the project already has a `stages:` key, replace it with the merged list (ret
 
 Fetch the latest released version:
 ```bash
-LATEST_VERSION=$(gh api /repos/ez-appsec/ez-appsec/releases/latest --jq '.tag_name' 2>/dev/null | tr -d 'v' || echo "")
+LATEST_VERSION=$(gh api /repos/ez-appsec/ez-appsec/releases/latest --jq '.tag_name' 2>/dev/null || echo "")
 ```
 Fall back to `"latest"` if empty.
 

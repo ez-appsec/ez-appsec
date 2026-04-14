@@ -1,9 +1,9 @@
-Update the ez-appsec dashboard web app to the latest release — installs or updates the
-`update-assets.yml` workflow in the dashboard repo, then triggers it to pull the latest
-`app-github.js`, `index.html`, and `style.css` from the newest ez-appsec release.
+Update the ez-appsec dashboard web app to the latest release — provisions App secrets on the
+dashboard repo, installs or updates the `update-assets.yml` workflow, then triggers it to pull
+the latest `app-github.js`, `index.html`, and `style.css` from the newest ez-appsec release.
 
-The `update-assets.yml` workflow is always kept current: it is installed on first run and
-re-synced on every subsequent run before being triggered.
+Provisioning runs on every update so secrets are always current. The `update-assets.yml`
+workflow is always kept current: it is installed on first run and re-synced on every subsequent run.
 
 ## Usage
 
@@ -76,6 +76,23 @@ LAST_UPDATE=$(gh api /repos/${DASHBOARD_REPO}/commits/main \
 WORKFLOW_SHA=$(gh api /repos/${DASHBOARD_REPO}/contents/.github/workflows/update-assets.yml \
   2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('sha',''))" 2>/dev/null || echo "")
 WORKFLOW_STATUS=$( [ -n "$WORKFLOW_SHA" ] && echo "installed" || echo "not installed" )
+
+# Locate ez-appsec source for provision.py
+EZ_APPSEC_SRC=$(git -C "$(git rev-parse --show-toplevel 2>/dev/null || echo .)" rev-parse --show-toplevel 2>/dev/null || echo ".")
+
+# Read App credentials for provisioning
+ENV_FILE="$(dirname "$EZ_APPSEC_SRC")/.env"
+APP_ID="${EZ_APPSEC_APP_ID:-}"
+PEM="${EZ_APPSEC_PRIVATE_KEY_PATH:-}"
+if [ -f "$ENV_FILE" ] && [ -z "$APP_ID" ]; then
+  APP_ID=$(grep -E '^EZ_APPSEC_APP_ID=' "$ENV_FILE" | cut -d= -f2 | tr -d '"' | xargs 2>/dev/null || echo "")
+fi
+if [ -f "$ENV_FILE" ] && [ -z "$PEM" ]; then
+  PEM=$(ls "$(dirname "$EZ_APPSEC_SRC")"/*.private-key.pem 2>/dev/null | head -1 || echo "")
+fi
+# Fall back to known App ID for ez-appsec
+[ -z "$APP_ID" ] && APP_ID="3338152"
+PROVISION_STATUS=$( [ -n "$PEM" ] && echo "will provision" || echo "skipped (no PEM key found)" )
 ```
 
 ### 3. Present plan and ask permission — ONCE
@@ -92,20 +109,22 @@ Stop — do not ask permission.
 **Otherwise:**
 
 ```
-Dashboard: <DASHBOARD_REPO>
-Current:   <CURRENT_VERSION>   (last updated <LAST_UPDATE>)
-Latest:    <LATEST_TAG>
+Dashboard:   <DASHBOARD_REPO>
+Current:     <CURRENT_VERSION>   (last updated <LAST_UPDATE>)
+Latest:      <LATEST_TAG>
+App secrets: <PROVISION_STATUS>
 
 This will:
-  1. Install/update .github/workflows/update-assets.yml in <DASHBOARD_REPO>
-  2. Trigger the workflow to pull the latest assets and commit them
+  1. Provision EZ_APPSEC_APP_ID + EZ_APPSEC_PRIVATE_KEY on <DASHBOARD_REPO>  (if PEM available)
+  2. Install/update .github/workflows/update-assets.yml in <DASHBOARD_REPO>
+  3. Trigger the workflow to pull the latest assets and commit them
 
 Ready to update?
 ```
 
 Note whether the workflow is already installed or needs to be installed fresh:
-- If `WORKFLOW_STATUS` is "installed": say "Update" in item 1
-- If `WORKFLOW_STATUS` is "not installed": say "Install" in item 1
+- If `WORKFLOW_STATUS` is "installed": say "Update" in item 2
+- If `WORKFLOW_STATUS` is "not installed": say "Install" in item 2
 
 Use AskUserQuestion with yes/no. If no, stop.
 
@@ -119,7 +138,26 @@ EZ_APPSEC_REPO="ez-appsec/ez-appsec"
 DASHBOARD_REPO="<DASHBOARD_REPO>"
 LATEST_TAG="<LATEST_TAG>"
 WORKFLOW_SHA="<WORKFLOW_SHA>"   # empty string if not installed
+EZ_APPSEC_SRC="<EZ_APPSEC_SRC>"
+APP_ID="<APP_ID>"
+PEM="<PEM>"    # empty string if not found
+TOKEN=$(grep GITHUB_ACCESS_TOKEN "${EZ_APPSEC_SRC}/../.env" 2>/dev/null | cut -d= -f2 || gh auth token)
 ERRORS=0
+
+# ── 0. Provision App secrets ──────────────────────────────────────────────────
+if [ -n "$PEM" ]; then
+  echo "Provisioning App secrets on ${DASHBOARD_REPO}..."
+  (cd "$EZ_APPSEC_SRC" && python3 scripts/provision.py \
+    --token "$TOKEN" \
+    --repos "$DASHBOARD_REPO" \
+    --app-id "$APP_ID" \
+    --private-key "$PEM") \
+    && echo "  ✓ EZ_APPSEC_APP_ID + EZ_APPSEC_PRIVATE_KEY provisioned" \
+    || { echo "  ✗ Provisioning failed — workflow may not be able to mint tokens"; ERRORS=$((ERRORS+1)); }
+else
+  echo "Skipping secret provisioning — no PEM key found."
+  echo "  Set EZ_APPSEC_PRIVATE_KEY_PATH to provision automatically."
+fi
 
 # ── 1. Install/update the update-assets.yml workflow ─────────────────────────
 echo "Installing update-assets.yml workflow in ${DASHBOARD_REPO}..."

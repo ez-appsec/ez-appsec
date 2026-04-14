@@ -1,41 +1,15 @@
-# ez-appsec AI Skills
+# ez-appsec Skills
 
-Installs two Claude Code slash commands:
-
-| Command | Description |
-|---------|-------------|
-| `/ez-appsec-scan` | Run a full security scan on a directory |
-| `/ez-appsec-install` | Install ez-appsec into a GitLab project via `scan.yml` include + MR |
-
-Supported frameworks:
-
-| Framework | Files installed |
-|-----------|----------------|
-| Claude Code | `~/.claude/commands/ez-appsec-scan.md` (global) |
-| Claude Code | `~/.claude/commands/ez-appsec-install.md` (global) |
-| Claude Code | `.claude/commands/ez-appsec-scan.md` (project) |
-| Claude Code | `.claude/commands/ez-appsec-install.md` (project) |
-| GitHub Copilot | `.github/copilot-instructions.md` |
-| Cursor | `.cursor/rules/ez-appsec.md` |
+Installs the `/ez-appsec` Claude Code slash command dispatcher and optional AI assistant integrations for GitHub Copilot and Cursor.
 
 ## Quick install
 
 **Claude Code — global (works in every project):**
 ```bash
-./skills/install.sh
+curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/install.sh | bash
 ```
 
-**Everything at once:**
-```bash
-./skills/install.sh --all
-```
-
-**One-liner — project `.claude/commands/` (no clone required):**
-```bash
-curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/install.sh | bash -s -- --project
-```
-
-**One-liner — global `~/.claude/commands/` + Copilot + Cursor:**
+**Everything at once (global Claude + Copilot + Cursor):**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/install.sh | bash -s -- --all
 ```
@@ -43,68 +17,56 @@ curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/ins
 ## Install options
 
 ```
---global     Install Claude Code skill globally (default)
---project    Install Claude Code skill in the current project only
+--global     Install Claude Code skill globally in ~/.claude/commands/ (default)
+--project    Install in the current project's .claude/commands/ only
 --copilot    Append to .github/copilot-instructions.md
 --cursor     Add .cursor/rules/ez-appsec.md
 --all        All of the above (global Claude)
 --uninstall  Remove installed files
 ```
 
-## Using the skills
+## Commands
 
-### Claude Code — scan
-```
-/ez-appsec-scan              # scan current directory
-/ez-appsec-scan src/         # scan a subdirectory
-```
+The `/ez-appsec` skill routes based on the first word of the argument:
 
-### Claude Code — install into a GitLab project
-```
-/ez-appsec-install                        # install into current directory's GitLab repo
-/ez-appsec-install /path/to/other/repo    # install into another project
-```
+| Command | Description |
+|---------|-------------|
+| `/ez-appsec install-app [owner/repo]` | **GitHub** — installs the scan workflow, provisions App secrets, triggers first scan |
+| `/ez-appsec install [path]` | **GitLab** — patches `.gitlab-ci.yml` with the `scan.yml` include, opens merge request |
+| `/ez-appsec install-dashboard [owner/repo]` | **GitHub** — creates and configures the dashboard repo with Pages and App secrets |
+| `/ez-appsec update-dashboard [owner/repo]` | Re-provision secrets and update dashboard web assets to the latest release |
+| `/ez-appsec uninstall-app [owner/repo]` | **GitHub** — removes workflow and prunes dashboard data |
+| `/ez-appsec uninstall [path]` | **GitLab** — removes `scan.yml` include via merge request |
+| `/ez-appsec scan [path]` | Run a local security scan using the ez-appsec Docker image |
+| `/ez-appsec help` | Print available subcommands |
 
-This command will:
-1. Add an `include:` block referencing `scan.yml` to the project's `.gitlab-ci.yml`
-2. Push the changes to a branch named by `EZ_APPSEC_BRANCH` (default: `ez-appsec-pages`)
-3. Open a merge request via `glab` (or print a manual MR URL if `glab` is unavailable)
+## GitHub Copilot / Cursor
 
-### GitHub Copilot / Cursor
-Just ask naturally:
+Install with `--copilot` or `--cursor` and ask naturally:
+
 ```
 scan this project for security issues
 check for vulnerabilities
 run a security audit
 ```
 
-The instructions tell the assistant to use the ez-appsec Docker image automatically.
-
-## How it works
-
-The skill runs:
-```bash
-docker run --rm -v "$(pwd):/scan" ghcr.io/ez-appsec/ez-appsec:latest scan /scan
-```
-
-The image bundles four scanners:
-- **gitleaks** — hardcoded secrets and credentials
-- **semgrep** — static analysis (SAST)
-- **grype** — known CVEs in dependencies
-- **kics** — infrastructure-as-code misconfigurations
-
-No API key or cloud account required.
+The assistant instructions configure Copilot and Cursor to use the ez-appsec Docker image automatically.
 
 ## Files
 
 ```
 skills/
-  install.sh                   Universal installer
+  install.sh                          Universal installer
   claude/
-    ez-appsec-scan.md          Claude Code /ez-appsec-scan slash command
-    ez-appsec-install.md       Claude Code /ez-appsec-install slash command
+    ez-appsec-install-app.md          GitHub App install skill
+    ez-appsec-install.md              GitLab install skill
+    ez-appsec-install-dashboard.md    GitHub dashboard install skill
+    ez-appsec-update-dashboard.md     Dashboard update skill
+    ez-appsec-uninstall-app.md        GitHub uninstall skill
+    ez-appsec-uninstall.md            GitLab uninstall skill
+    ez-appsec-scan.md                 Local scan skill
   copilot/
-    instructions.md            GitHub Copilot workspace instructions
+    instructions.md                   GitHub Copilot workspace instructions
   cursor/
-    ez-appsec.md               Cursor AI rules
+    ez-appsec.md                      Cursor AI rules
 ```

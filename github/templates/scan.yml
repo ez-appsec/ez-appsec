@@ -1,7 +1,5 @@
 # ez-appsec Security Scan — customer workflow template
 # Provisioned automatically when you install the ez-appsec GitHub App.
-# Uses a two-job pattern so the App token can be minted on ubuntu-latest
-# (needs Node.js) before the scan runs inside the ez-appsec container.
 
 name: ez-appsec Security Scan
 
@@ -25,8 +23,7 @@ env:
   EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
 
 jobs:
-  # Advisory: check if a newer ez-appsec version is available.
-  # Runs in parallel with mint-token. Never blocks the scan — continue-on-error: true.
+  # Advisory: check if a newer ez-appsec version is available. Never blocks the scan.
   version-check:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -47,36 +44,12 @@ jobs:
             echo "ez-appsec ${CURRENT} is up to date."
           fi
 
-  # Job 2: mint a short-lived dashboard-push token via the GitHub App.
-  # Runs on ubuntu-latest (Node.js available) so create-github-app-token works.
-  # Skipped gracefully if App secrets are not configured — scan still runs.
-  mint-token:
-    runs-on: ubuntu-latest
-    outputs:
-      dashboard-token: ${{ steps.token.outputs.token }}
-    steps:
-      - name: Mint App token for dashboard push
-        id: token
-        if: ${{ vars.EZ_APPSEC_DASHBOARD_REPO != '' && secrets.EZ_APPSEC_APP_ID != '' }}
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.EZ_APPSEC_APP_ID }}
-          private-key: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
-          owner: ez-appsec
-          repositories: ez-appsec-dashboard
-
-  # Job 2: run the full security scan and push results to the dashboard.
   scan:
     name: Security Scan
-    needs: mint-token
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ez-appsec/ez-appsec:latest
       options: --user root --entrypoint ""
-    env:
-      EZ_APPSEC_OUTPUT_DIR: "scan-results"
-      EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
-      _PUSH_TOKEN: ${{ needs.mint-token.outputs.dashboard-token }}
 
     steps:
       - name: Checkout code
@@ -223,6 +196,70 @@ jobs:
           print("\n".join(lines))
           PYEOF
           fi
+
+      - name: Mint App token for dashboard push
+        id: mint-token
+        if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request' && vars.EZ_APPSEC_DASHBOARD_REPO != ''
+        env:
+          _APP_ID: ${{ secrets.EZ_APPSEC_APP_ID }}
+          _PRIVATE_KEY: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, sys, time, json, urllib.request, urllib.error
+          try:
+              import jwt
+          except ImportError:
+              import subprocess
+              subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'PyJWT[crypto]', '-q'],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              import jwt
+
+          app_id = os.environ.get('_APP_ID', '').strip()
+          pem = os.environ.get('_PRIVATE_KEY', '').strip()
+
+          if not app_id or not pem:
+              print('App credentials not configured — skipping token mint')
+              raise SystemExit(0)
+
+          now = int(time.time())
+          app_jwt = jwt.encode(
+              {'iat': now - 60, 'exp': now + 600, 'iss': str(app_id)},
+              pem, algorithm='RS256'
+          )
+
+          def gh(method, path, jwt_token):
+              req = urllib.request.Request(
+                  f'https://api.github.com{path}',
+                  method=method,
+                  headers={
+                      'Authorization': f'Bearer {jwt_token}',
+                      'Accept': 'application/vnd.github+json',
+                      'User-Agent': 'ez-appsec/1.0',
+                  }
+              )
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return json.load(r)
+              except urllib.error.HTTPError as e:
+                  print(f'GitHub API error {e.code}: {e.read().decode()}', file=sys.stderr)
+                  raise
+
+          installs = gh('GET', '/app/installations', app_jwt)
+          if not installs:
+              print('No app installations found — skipping token mint')
+              raise SystemExit(0)
+
+          install_id = installs[0]['id']
+          token_data = gh('POST', f'/app/installations/{install_id}/access_tokens', app_jwt)
+          token = token_data['token']
+
+          # Mask token in Actions logs, then write to GITHUB_ENV for downstream steps
+          print(f'::add-mask::{token}')
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f'_PUSH_TOKEN={token}\n')
+          print('App token minted successfully')
+          PYEOF
+        continue-on-error: true
 
       - name: Push scan results to dashboard (update:vulns)
         if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request'
