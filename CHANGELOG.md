@@ -1,3 +1,10 @@
+## [1.7.5](https://github.com/ez-appsec/ez-appsec/compare/v1.7.4...v1.7.5) (2026-04-14)
+
+
+### Features
+
+* add /ez-appsec test command — LLM-executable harness for all commands ([b05bc01](https://github.com/ez-appsec/ez-appsec/commit/b05bc0113801c9cf2031d4929cc0def4bb5114f3))
+
 ## [1.7.4](https://github.com/ez-appsec/ez-appsec/compare/v1.7.3...v1.7.4) (2026-04-14)
 
 
