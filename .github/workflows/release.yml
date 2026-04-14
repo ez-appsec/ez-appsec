@@ -457,3 +457,30 @@ jobs:
           gh release edit "v${VERSION}" --notes-file /tmp/release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-dashboard-assets:
+    name: Update Dashboard UI Assets
+    runs-on: ubuntu-latest
+    needs: [semantic-release, update-github-release]
+    if: needs.semantic-release.outputs.new_release_published == 'true' && vars.EZ_APPSEC_DASHBOARD_REPO != ''
+    steps:
+      - name: Mint App token for dashboard
+        id: dash-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.EZ_APPSEC_APP_ID }}
+          private-key: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
+          owner: ez-appsec
+          repositories: ez-appsec-dashboard
+
+      - name: Trigger update-assets.yml in dashboard repo
+        env:
+          GH_TOKEN: ${{ steps.dash-token.outputs.token }}
+          DASHBOARD_REPO: ${{ vars.EZ_APPSEC_DASHBOARD_REPO }}
+          VERSION: ${{ needs.semantic-release.outputs.new_release_version }}
+        run: |
+          gh workflow run update-assets.yml \
+            --repo "$DASHBOARD_REPO" \
+            --field version="v${VERSION}"
+          echo "✓ Triggered dashboard asset update to v${VERSION}"
+          echo "  Dashboard: https://github.com/${DASHBOARD_REPO}/actions/workflows/update-assets.yml"
