@@ -508,13 +508,70 @@ Plans are grouped into phases for orientation, but **each plan is independently 
 
 ---
 
+### Phase 6 — Observability
+
+> Know that the scanner itself is healthy, measure what it does, and prove it ran.
+
+---
+
+#### PLAN-19: Scan Telemetry & Metrics
+
+**Problem:** There is no way to know how long scans take, which scanners are slow, or how finding counts change over time across the entire fleet. Operators can't detect regressions in scanner performance without instrumenting the scanner itself.
+
+**Scope:**
+- Emit structured metrics at the end of every scan: scan duration (total and per-scanner), finding count by scanner/severity, scanner exit codes, image size used
+- Export via two backends: `--metrics-file <path>` writes `metrics.json` locally; `--metrics-otlp <endpoint>` pushes spans/metrics to any OpenTelemetry-compatible collector (Prometheus, Datadog, Grafana Cloud, etc.)
+- Dashboard UI surfaces aggregate metrics for each project: avg scan duration, scanner error rate, last-scan timestamp
+- Grafana dashboard JSON bundled in `docs/grafana/ez-appsec-dashboard.json` as a ready-to-import starter
+
+**Out of scope:** Custom metric dimensions per rule; distributed tracing within the scanner; alerting rules.
+
+**Technical approach:**
+- New `ez_appsec/telemetry.py` with `ScanMetrics` dataclass and two emitters: `JsonFileEmitter` and `OtlpEmitter` (uses `opentelemetry-sdk`, optional dep)
+- `ScanMetrics` populated in `ez_appsec/scanner.py` via context manager wrapping each scanner call
+- `metrics.json` schema mirrors the history entry shape from PLAN-05 with added `duration_ms` and `scanner_errors` fields
+- `opentelemetry-sdk` added as an optional `extras_require` group in `setup.py`
+
+**Done criteria:**
+- `tests/test_telemetry.py` covering: correct per-scanner duration capture, JSON file written with correct schema, OTLP emitter calls mocked collector endpoint with correct span attributes
+- Existing test suite passes
+- `docs/observability.md` documents the `metrics.json` schema, OTLP setup, and Grafana import steps
+
+---
+
+#### PLAN-20: Audit Log
+
+**Problem:** Compliance frameworks (SOC 2 CC7, PCI DSS 10.x) require evidence that security scans ran, when they ran, who triggered them, and what changed. Today there is no tamper-evident record.
+
+**Scope:**
+- Append-only `data/projects/<slug>/audit.json` written by the scanner at the end of each run
+- Each entry records: ISO timestamp, trigger actor (`CI_COMMIT_AUTHOR` / `GITHUB_ACTOR` / `--actor` flag), trigger type (`push`, `schedule`, `manual`), scanner version, finding delta vs previous scan, policy outcome
+- `ez-appsec audit --project <slug>` CLI command prints the log in human-readable table form
+- `ez-appsec audit --project <slug> --format json` outputs the raw array (pipe-friendly)
+- Dashboard surface: "Last scan by / at" shown on each project card; full log accessible via a project detail panel
+
+**Out of scope:** Cryptographic signing of log entries; log forwarding to SIEM; retention policy enforcement.
+
+**Technical approach:**
+- New `ez_appsec/audit.py` with `AuditEntry` dataclass and `append_audit_entry(slug, entry, dashboard_repo)` function
+- Called at end of scan pipeline in `ez_appsec/scanner.py`, after policy evaluation
+- Dashboard repo write via the same `git commit` mechanism used for `vulnerabilities.json` ingest
+- `audit` sub-command added to the CLI via `ez_appsec/cli.py`
+
+**Done criteria:**
+- `tests/test_audit.py` covering: entry appended on scan completion, finding delta calculated correctly, missing previous scan treated as all-new, `--format json` output is valid JSON array
+- Existing test suite passes
+- Docs: `docs/observability.md` extended with audit log schema reference and compliance mapping (SOC 2 CC7, PCI DSS 10.2)
+
+---
+
 ## Execution Plan
 
 ### Step 1 — This document ✅
 Create `ROADMAP.md` as the canonical source of truth for planned work.
 
 ### Step 2 — GitHub Project
-Create a GitHub Project at `github.com/orgs/ez-appsec/projects` with one issue per PLAN. Issues use the labels: `roadmap`, `phase-1` through `phase-5`, and `good first issue` for PLAN-01, PLAN-02, PLAN-03.
+Create a GitHub Project at `github.com/orgs/ez-appsec/projects` with one issue per PLAN. Issues use the labels: `roadmap`, `phase-1` through `phase-6`, and `good first issue` for PLAN-01, PLAN-02, PLAN-03.
 
 ### Step 3 — GitLab Mirror
 Create a GitLab group-level board at `gitlab.com/jfelten.work-group/ez_appsec` mirroring the GitHub issues. GitLab is used for sprint reporting and burn-down tracking.

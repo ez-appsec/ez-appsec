@@ -176,7 +176,7 @@ See [ROADMAP.md](ROADMAP.md) for the full list of planned work and [CONTRIBUTING
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the path to feature parity with commercial AppSec platforms — 18 independent plans across developer feedback, compliance, platform expansion, and enterprise features. Each plan is claimable by any contributor (human or AI).
+See [ROADMAP.md](ROADMAP.md) for the path to feature parity with commercial AppSec platforms — 20 independent plans across developer feedback, compliance, platform expansion, enterprise features, and observability. Each plan is claimable by any contributor (human or AI).
 
 | | |
 |---|---|
