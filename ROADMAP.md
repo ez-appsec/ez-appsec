@@ -565,6 +565,54 @@ Plans are grouped into phases for orientation, but **each plan is independently 
 
 ---
 
+### Phase 7 — Agentic
+
+> Make ez-appsec a first-class participant in multi-agent systems, not just a CLI tool.
+
+---
+
+#### PLAN-21: Reusable Security Agent with MCP & Multi-Transport
+
+**Problem:** The current `ez-appsec-mcp` server is a thin tool wrapper with no agent loop, no multi-step reasoning, and no ability to autonomously triage and act on findings. It only supports stdio transport, locking it to Claude Code and Cursor. As AI orchestration evolves (MCP HTTP, A2A, OpenAI tool format), ez-appsec needs a proper agent core that works across all of them.
+
+**Scope:**
+- `ez_appsec/agent.py` — Claude-powered security agent using the Anthropic SDK with a full tool-use loop; callable from Python, CLI, MCP, and HTTP
+- Upgrade `ez-appsec-mcp` to use the agent as its backend (replacing direct function calls)
+- HTTP+SSE MCP transport alongside existing stdio — enables Claude.ai web and any HTTP-capable MCP client
+- MCP Resources — `vulnerabilities.json`, `history.json`, project list as browsable resources
+- MCP Prompts — reusable `security-audit`, `cve-triage`, `compliance-check` prompts
+- A2A agent card (`/.well-known/agent.json`) — makes ez-appsec callable from Google ADK, LangGraph, CrewAI, and any A2A 0.2+ orchestrator
+- Pluggable tool registry — PLAN-01 through PLAN-20 features register agent tools without modifying `agent.py`
+
+**Out of scope:** Building a multi-agent orchestration platform; replacing the MCP server entirely; IDE integrations (see PLAN-13).
+
+**Technical approach:**
+- `SecurityAgent` class with `run(task: str) -> AgentResult` and `register_tool()` for extensibility
+- Anthropic SDK tool-use loop with prompt caching on system prompt + tool definitions
+- `ez-appsec-mcp` gains `--transport http --port 8080` flag; HTTP server is FastAPI + SSE
+- A2A: `GET /.well-known/agent.json` agent card + `POST /a2a` Task/TaskResult endpoints
+- `ez-appsec agent "<natural language task>"` CLI command
+
+**Security requirements:**
+- **Input validation:** all tool arguments (`path`, `task`, A2A `message`) must be validated before use; path arguments must be resolved and checked against an allowlist/CWD to prevent path traversal; task strings must be length-capped (4 096 chars) to prevent prompt injection amplification
+- **Least privilege:** the agent may only read/write files under the path it was invoked on; it must not accept shell commands or eval arbitrary code from tool arguments or model output
+- **Secret hygiene:** `AgentResult` and all log output must redact values that match secret patterns (gitleaks rule IDs); the agent must never echo raw secret values in its summary or tool responses
+- **Transport security:** HTTP transport must require TLS in production (document how to run behind a reverse proxy with TLS termination); API key must be a minimum 32-byte random value; keys must be compared with `hmac.compare_digest` to prevent timing attacks
+- **Prompt injection hardening:** findings content injected into agent context must be wrapped in a clearly delimited block (`<finding>…</finding>`) so the model can distinguish data from instructions; the system prompt must include an explicit instruction not to follow commands embedded in finding content
+- **Rate limiting:** HTTP transport must enforce per-IP rate limiting (default: 60 req/min) via middleware; configurable via `EZ_APPSEC_RATE_LIMIT` env var
+- **Dependency pinning:** `pyproject.toml` must pin Anthropic SDK to a minor version range (`>=0.40,<1.0`) to prevent silent breaking changes from auto-upgrades
+- **`tests/test_agent_security.py`:** path traversal attempt raises `ValueError`; secret value redacted in `AgentResult.summary`; task string over 4 096 chars raises `ValueError`; prompt injection marker in finding content does not change agent tool-call behavior (mocked model returns canonical response regardless)
+
+**Done criteria:**
+- `tests/test_agent.py` — mocked Anthropic SDK: tool-use loop completes; `register_tool` adds to schema; `AgentResult` contains findings and summary
+- `tests/test_agent_security.py` — all security requirement cases above pass
+- `ez-appsec-mcp` tests: existing 4 tools backwards compatible; HTTP transport SSE stream works; `X-API-Key` missing → 401; API key compared with `hmac.compare_digest`
+- `tests/test_a2a.py` — valid agent card; `POST /a2a` with Task → TaskResult with findings
+- MCP Resources and Prompts render correctly in Claude Code (manual verification)
+- `pytest tests/` passes in both repos
+
+---
+
 ## Execution Plan
 
 ### Step 1 — This document ✅
@@ -594,3 +642,19 @@ Any contributor (human or AI agent) claims a plan by:
 - **Tests first.** Each plan's done criteria lists test file names. Write the tests before or alongside the implementation.
 - **Schema stability.** The unified `vulnerabilities.json` schema is append-only — new fields may be added but existing fields must not be renamed or removed.
 - **Docker size budget.** Plans that add new runtime dependencies must verify the standard image stays under 2 GB (`docker image inspect` after build).
+
+---
+
+## Proposed
+
+> Ideas that have been accepted but not yet fully spec'd into a PLAN issue.
+> Each entry is a one-liner. A maintainer converts it to a full plan issue when someone is ready to implement it.
+> To propose something new, open a [Plan Proposal issue](https://github.com/ez-appsec/ez-appsec/issues/new?template=plan-proposal.md) or start a discussion in [Ideas](https://github.com/ez-appsec/ez-appsec/discussions/categories/ideas).
+
+| ID | Problem | Phase | Source |
+|---|---|---|---|
+| PLAN-19 | Scan telemetry — emit structured metrics per scanner run and expose via OTLP | 6 | [ROADMAP](ROADMAP.md) |
+| PLAN-20 | Audit log — append-only tamper-evident record of every scan run for SOC2/PCI evidence | 6 | [ROADMAP](ROADMAP.md) |
+| PLAN-22 | Schema v2 — stable `finding_id`/`scan_id` primary keys, `first_seen`/`last_seen`/`sla_deadline` time fields, `trend` | 8 | [#23](https://github.com/ez-appsec/ez-appsec/issues/23) |
+| PLAN-23 | AI remediation attributes + storage adapters — `fix_type`, `fix_complexity`, `ai_context`; pluggable SQL/NoSQL `StorageBackend` | 8 | [#23](https://github.com/ez-appsec/ez-appsec/issues/23) |
+| PLAN-24 | Dashboard export + observability feed — CSV/SARIF/JSON export buttons; `otel_attributes` block; Prometheus `/metrics` endpoint | 8 | [#23](https://github.com/ez-appsec/ez-appsec/issues/23) |
