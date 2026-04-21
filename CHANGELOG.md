@@ -1,3 +1,10 @@
+## [1.7.10](https://github.com/ez-appsec/ez-appsec/compare/v1.7.9...v1.7.10) (2026-04-21)
+
+
+### Features
+
+* improve demo dashboard with curated findings and new UI features ([f6591ca](https://github.com/ez-appsec/ez-appsec/commit/f6591cad582471faf037a49463db799089014335))
+
 ## [1.7.9](https://github.com/ez-appsec/ez-appsec/compare/v1.7.8...v1.7.9) (2026-04-14)
 
 
