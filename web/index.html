@@ -9,6 +9,13 @@
 </head>
 <body>
 
+  <!-- ── Demo banner ────────────────────────────────────────────────────── -->
+  <div class="demo-banner">
+    <span class="demo-banner__badge">DEMO</span>
+    This dashboard shows a live scan of <strong>OWASP Juice Shop</strong> — an intentionally vulnerable app.
+    <a href="https://github.com/ez-appsec/ez-appsec" target="_blank" rel="noopener" class="demo-banner__link">Add ez-appsec to your repo →</a>
+  </div>
+
   <!-- ── Navigation ─────────────────────────────────────────────────────── -->
   <header class="nav">
     <div class="container nav__inner">
@@ -16,13 +23,11 @@
       <nav class="nav__links">
         <span id="version-label" class="nav__version" hidden></span>
         <a href="index.html" class="nav__active">Findings</a>
-        <a href="remediated.html">Remediated</a>
-        <a href="false-positives.html">False Positives</a>
-        <a href="dependencies.html">Dependencies (SBOM)</a>
-        <a href="threat-model.html">Threat Model</a>
       </nav>
       <div class="nav__actions">
         <a id="upgrade-btn" class="btn btn--upgrade btn--sm" target="_blank" rel="noopener" hidden>Upgrade</a>
+        <a href="https://github.com/ez-appsec/ez-appsec" class="btn btn--outline btn--sm" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/ez-appsec/ez-appsec#quickstart" class="btn btn--primary btn--sm" target="_blank" rel="noopener">Get Started</a>
       </div>
     </div>
   </header>
@@ -99,6 +104,14 @@
             <option value="kics">KICS</option>
           </select>
 
+          <select id="category-filter" class="filter-input" aria-label="Filter by category">
+            <option value="">All categories</option>
+            <option value="secrets">Secrets</option>
+            <option value="sast">SAST</option>
+            <option value="dependency_scanning">Dependencies</option>
+            <option value="iac">IaC</option>
+          </select>
+
           <input
             type="search"
             id="search-filter"
@@ -108,6 +121,8 @@
           />
 
           <button id="reset-filters" class="btn btn--outline btn--sm">Reset</button>
+          <button id="export-csv" class="btn btn--outline btn--sm" title="Export filtered findings as CSV">Export CSV</button>
+          <button id="export-json" class="btn btn--outline btn--sm" title="Export filtered findings as JSON">Export JSON</button>
         </div>
       </section>
 

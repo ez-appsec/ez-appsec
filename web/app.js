@@ -19,11 +19,14 @@ class VulnerabilityDashboard {
         this.PAGE_SIZE = 100;
 
         // DOM elements
-        this.severityFilter = document.getElementById('severity-filter');
-        this.scannerFilter  = document.getElementById('scanner-filter');
-        this.searchFilter   = document.getElementById('search-filter');
-        this.resetButton    = document.getElementById('reset-filters');
-        this.container      = document.getElementById('vulnerabilities-container');
+        this.severityFilter  = document.getElementById('severity-filter');
+        this.scannerFilter   = document.getElementById('scanner-filter');
+        this.categoryFilter  = document.getElementById('category-filter');
+        this.searchFilter    = document.getElementById('search-filter');
+        this.resetButton     = document.getElementById('reset-filters');
+        this.exportCsvButton = document.getElementById('export-csv');
+        this.exportJsonButton = document.getElementById('export-json');
+        this.container       = document.getElementById('vulnerabilities-container');
         this.projectTree    = document.getElementById('project-tree');
         this.sidebar        = document.getElementById('sidebar');
         this.dashTitle      = document.getElementById('dash-title');
@@ -185,15 +188,19 @@ class VulnerabilityDashboard {
     // ── Filters ────────────────────────────────────────────────────────────
 
     attachEventListeners() {
-        this.severityFilter.addEventListener('change', () => this.applyFilters());
-        this.scannerFilter.addEventListener('change',  () => this.applyFilters());
-        this.searchFilter.addEventListener('input',    () => this.applyFilters());
-        this.resetButton.addEventListener('click',     () => this.resetFilters());
+        this.severityFilter.addEventListener('change',  () => this.applyFilters());
+        this.scannerFilter.addEventListener('change',   () => this.applyFilters());
+        if (this.categoryFilter) this.categoryFilter.addEventListener('change', () => this.applyFilters());
+        this.searchFilter.addEventListener('input',     () => this.applyFilters());
+        this.resetButton.addEventListener('click',      () => this.resetFilters());
+        if (this.exportCsvButton)  this.exportCsvButton.addEventListener('click',  () => this.exportCSV());
+        if (this.exportJsonButton) this.exportJsonButton.addEventListener('click', () => this.exportJSON());
     }
 
     resetFilters() {
         this.severityFilter.value = '';
         this.scannerFilter.value  = '';
+        if (this.categoryFilter) this.categoryFilter.value = '';
         this.searchFilter.value   = '';
         this.applyFilters();
     }
@@ -538,6 +545,7 @@ class VulnerabilityDashboard {
 
     getFilePath(vuln) {
         if (vuln.location?.file) return vuln.location.file;
+        if (vuln.file_name) return vuln.file_name;
         if (vuln.file) return vuln.file;
         if (vuln.location?.dependency?.package?.name) {
             return `dependency: ${vuln.location.dependency.package.name}`;
@@ -547,6 +555,7 @@ class VulnerabilityDashboard {
 
     getLineNumber(vuln) {
         if (vuln.location?.start_line) return vuln.location.start_line;
+        if (vuln.start_line) return vuln.start_line;
         if (vuln.line) return vuln.line;
         return null;
     }
@@ -563,14 +572,16 @@ class VulnerabilityDashboard {
     applyFilters() {
         const severity = this.severityFilter.value;
         const scanner  = this.scannerFilter.value;
+        const category = this.categoryFilter ? this.categoryFilter.value : '';
         const search   = this.searchFilter.value.toLowerCase();
 
         this.currentPage = 0;
         this.filteredVulnerabilities = this.allVulnerabilities.filter(vuln => {
             if (severity && vuln.severity !== severity) return false;
             if (scanner  && !vuln.scanner.toLowerCase().includes(scanner)) return false;
+            if (category && vuln.category !== category) return false;
             if (search) {
-                const text = `${vuln.name} ${vuln.description} ${vuln.file} ${vuln.scanner} ${vuln.project || ''}`.toLowerCase();
+                const text = `${vuln.name} ${vuln.description} ${vuln.file} ${vuln.scanner} ${vuln.category} ${vuln.project || ''}`.toLowerCase();
                 if (!text.includes(search)) return false;
             }
             return true;
@@ -812,6 +823,38 @@ class VulnerabilityDashboard {
         const div = document.createElement('div');
         div.textContent = String(text || '');
         return div.innerHTML;
+    }
+
+    // ── Export ─────────────────────────────────────────────────────────────
+
+    exportCSV() {
+        const cols = ['severity', 'category', 'scanner', 'name', 'file', 'line', 'description', 'solution'];
+        const header = cols.join(',');
+        const rows = this.filteredVulnerabilities.map(v =>
+            cols.map(c => {
+                const val = String(v[c] || '').replace(/"/g, '""');
+                return `"${val}"`;
+            }).join(',')
+        );
+        this._downloadText([header, ...rows].join('\n'), 'findings.csv', 'text/csv');
+    }
+
+    exportJSON() {
+        const data = this.filteredVulnerabilities.map(v => ({
+            id: v.id, severity: v.severity, category: v.category, scanner: v.scanner,
+            name: v.name, file: v.file, line: v.line,
+            description: v.description, solution: v.solution,
+        }));
+        this._downloadText(JSON.stringify({ findings: data, exported_at: new Date().toISOString() }, null, 2), 'findings.json', 'application/json');
+    }
+
+    _downloadText(text, filename, mimeType) {
+        const blob = new Blob([text], { type: mimeType });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
     }
 }
 
