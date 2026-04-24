@@ -1,3 +1,10 @@
+## [1.7.11](https://github.com/ez-appsec/ez-appsec/compare/v1.7.10...v1.7.11) (2026-04-24)
+
+
+### Features
+
+* add gitlab/scan.yml (moved from scan.yml at root) ([395c25a](https://github.com/ez-appsec/ez-appsec/commit/395c25ad2b54956ddcbb24fd7e7a7b1c0e3335cb))
+
 ## [1.7.10](https://github.com/ez-appsec/ez-appsec/compare/v1.7.9...v1.7.10) (2026-04-21)
 
 
