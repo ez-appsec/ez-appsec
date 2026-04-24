@@ -1,5 +1,6 @@
 """Main CLI entry point for ez-appsec"""
 
+import json
 import click
 import sys
 from pathlib import Path
@@ -44,9 +45,16 @@ def scan(path, ai_prompt, languages, severity, output):
             for issue in results['issues'][:5]:
                 click.echo(f"  [{issue['severity']}] {issue['title']}")
                 click.echo(f"    {issue['description']}")
-        
+
         if output:
-            click.echo(f"\n✓ Results saved to: {output}")
+            # Write results to output file
+            try:
+                with open(output, 'w') as f:
+                    json.dump(results, f, indent=2)
+                click.echo(f"\n✓ Results saved to: {output}")
+            except Exception as e:
+                click.echo(f"\n✗ Error writing results to file: {str(e)}", err=True)
+                sys.exit(1)
             
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
@@ -272,6 +280,51 @@ def update_web(vulns_file, web_dir, serve, port):
             server.serve_forever()
         except KeyboardInterrupt:
             pass
+
+
+@main.command("github-scan")
+@click.argument("path", type=click.Path(exists=True), default=".")
+@click.option("--ai-prompt", help="Custom AI prompt for security analysis")
+@click.option("--languages", multiple=True, help="Programming languages to scan")
+@click.option("--severity", default="all", help="Minimum severity level to report")
+@click.option("--output", type=click.Path(), help="Output file for SARIF report")
+def github_scan(path, ai_prompt, languages, severity, output):
+    """Scan a codebase and output results in GitHub SARIF format
+
+    PATH: Directory or file to scan (default: current directory)
+
+    The SARIF format is compatible with GitHub Advanced Security and can be
+    uploaded to GitHub's Security tab using the SARIF upload action.
+    """
+    try:
+        config = Config(
+            languages=languages if languages else None,
+            severity=severity,
+            output_file=output
+        )
+
+        scanner = SecurityScanner(config)
+        results = scanner.scan_to_github_format(path, output, ai_prompt)
+
+        click.echo(f"\n✓ GitHub SARIF scan completed")
+        click.echo(f"  Total findings: {len(results['runs'][0]['results'])}")
+
+        if results['runs'][0]['results']:
+            click.echo("\nTop Findings:")
+            for result in results['runs'][0]['results'][:5]:
+                click.echo(f"  [{result['level']}] {result['ruleId']}")
+                click.echo(f"    {result['message']['text']}")
+
+        if output:
+            click.echo(f"\n✓ SARIF report saved to: {output}")
+        else:
+            click.echo("  Use --output to save SARIF report to file")
+
+    except Exception as e:
+        click.echo(f"✗ Error: {str(e)}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

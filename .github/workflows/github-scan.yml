@@ -1,0 +1,360 @@
+# ez-appsec Security Scan — customer workflow template
+# Provisioned automatically when you install the ez-appsec GitHub App.
+
+name: ez-appsec Security Scan
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+  security-events: write  # Required for SARIF upload to Security tab
+  actions: read
+  pull-requests: write   # Required for PR comments
+  packages: read         # Required to pull ghcr.io/ez-appsec/ez-appsec image
+
+env:
+  EZ_APPSEC_OUTPUT_DIR: "scan-results"
+  EZ_APPSEC_SARIF: "scan-results/ez-appsec.sarif"
+
+jobs:
+  # Advisory: check if a newer ez-appsec version is available. Never blocks the scan.
+  version-check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Check for newer ez-appsec release
+        run: |
+          LATEST=$(curl -sSf \
+            -H "Accept: application/vnd.github+json" \
+            -H "User-Agent: ez-appsec-version-check/1.0" \
+            https://api.github.com/repos/ez-appsec/ez-appsec/releases/latest \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
+          CURRENT="${{ vars.EZ_APPSEC_VERSION || 'latest' }}"
+          if [ "$CURRENT" = "latest" ]; then
+            echo "::warning::ez-appsec: using 'latest' image tag. Pin EZ_APPSEC_VERSION to a specific version for reproducible scans. Current release: ${LATEST}"
+          elif [ "$CURRENT" != "$LATEST" ]; then
+            echo "::warning::ez-appsec ${CURRENT} is outdated. Latest release: ${LATEST}. Update the EZ_APPSEC_VERSION variable."
+          else
+            echo "ez-appsec ${CURRENT} is up to date."
+          fi
+
+  scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ez-appsec/ez-appsec:latest
+      options: --user root --entrypoint ""
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ez-appsec scan
+        id: scan
+        run: |
+          echo "Running ez-appsec scan..."
+          mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
+
+          echo "Checking ez-appsec status..."
+          ez-appsec status || true
+
+          echo "Starting GitHub SARIF scan..."
+          # Use 'all' severity for PRs, 'medium' for main branch
+          SEVERITY="${{ github.event_name == 'pull_request' && 'all' || 'medium' }}"
+          echo "Severity level: $SEVERITY"
+          ez-appsec github-scan . --output "${EZ_APPSEC_SARIF}" --severity "$SEVERITY"
+
+          echo "Scan completed. Checking for output file..."
+          if [ -f "${EZ_APPSEC_SARIF}" ]; then
+            echo "SARIF file created successfully"
+            ls -lh "${EZ_APPSEC_SARIF}"
+          else
+            echo "ERROR: SARIF file not created at ${EZ_APPSEC_SARIF}"
+            exit 1
+          fi
+
+      - name: Count findings
+        id: summary
+        run: |
+          if [ -f "${EZ_APPSEC_SARIF}" ]; then
+            COUNT=$(python3 -c "import json; print(len(json.load(open('${EZ_APPSEC_SARIF}'))['runs'][0]['results']))")
+            echo "findings-count=$COUNT" >> $GITHUB_OUTPUT
+            echo "Found $COUNT security findings"
+          else
+            echo "findings-count=0" >> $GITHUB_OUTPUT
+            echo "No findings found"
+          fi
+
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ env.EZ_APPSEC_SARIF }}
+        continue-on-error: true
+
+      - name: Upload scan results as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ez-appsec-scan-${{ github.sha }}
+          path: ${{ env.EZ_APPSEC_SARIF }}
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Generate dashboard vulnerabilities.json
+        id: web-report
+        run: |
+          mkdir -p "${EZ_APPSEC_OUTPUT_DIR}"
+          ez-appsec web-report . --output "${EZ_APPSEC_OUTPUT_DIR}"
+
+      - name: Upload vulnerabilities.json as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ez-appsec-vulns-${{ github.sha }}
+          path: ${{ env.EZ_APPSEC_OUTPUT_DIR }}/vulnerabilities.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Generate findings summary
+        id: findings-summary
+        if: always()
+        run: |
+          VULN_FILE="${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
+          if [ ! -f "${VULN_FILE}" ]; then
+            echo "No vulnerabilities.json found" > /tmp/scan-summary.md
+          else
+            python3 - "${VULN_FILE}" > /tmp/scan-summary.md <<'PYEOF'
+          import json, sys
+
+          with open(sys.argv[1]) as f:
+              data = json.load(f)
+          findings = data if isinstance(data, list) else data.get("vulnerabilities", data.get("findings", []))
+
+          def loc(item):
+              l = item.get("location", {})
+              fi = l.get("file", {}) if isinstance(l, dict) else {}
+              fname = fi.get("file_name", "") if isinstance(fi, dict) else str(fi)
+              fline = fi.get("line", l.get("start_line", "")) if isinstance(fi, dict) else ""
+              return f"{fname}:{fline}" if fline else fname
+
+          def scanner(item):
+              sc = item.get("scanner", {})
+              return sc.get("name", sc.get("id", "?")) if isinstance(sc, dict) else str(sc)
+
+          by_sev = {"HIGH": [], "MEDIUM": [], "LOW": [], "INFO": []}
+          for item in findings:
+              sev = item.get("severity", "").upper()
+              bucket = sev if sev in by_sev else "INFO"
+              by_sev[bucket].append(item)
+
+          total = sum(len(v) for v in by_sev.values())
+          lines = []
+          lines.append(f"### Security Findings: {total} total")
+          lines.append("")
+          lines.append("| Severity | Count |")
+          lines.append("|----------|-------|")
+          for sev in ["HIGH", "MEDIUM", "LOW", "INFO"]:
+              n = len(by_sev[sev])
+              if n:
+                  lines.append(f"| {sev} | {n} |")
+          lines.append("")
+
+          if by_sev["HIGH"]:
+              lines.append("<details open><summary><strong>HIGH</strong></summary>")
+              lines.append("")
+              lines.append("| Scanner | Finding | Location |")
+              lines.append("|---------|---------|----------|")
+              for item in by_sev["HIGH"]:
+                  msg = item.get("message", item.get("name", "")).replace("|", "\\|")[:100]
+                  lines.append(f"| {scanner(item)} | {msg} | `{loc(item)}` |")
+              lines.append("")
+              lines.append("</details>")
+              lines.append("")
+
+          for sev in ["MEDIUM", "LOW"]:
+              items = by_sev[sev]
+              if not items:
+                  continue
+              lines.append(f"<details><summary><strong>{sev}</strong> ({len(items)})</summary>")
+              lines.append("")
+              lines.append("| Scanner | Finding | Location |")
+              lines.append("|---------|---------|----------|")
+              for item in items:
+                  msg = item.get("message", item.get("name", "")).replace("|", "\\|")[:100]
+                  lines.append(f"| {scanner(item)} | {msg} | `{loc(item)}` |")
+              lines.append("")
+              lines.append("</details>")
+              lines.append("")
+
+          print("\n".join(lines))
+          PYEOF
+          fi
+
+      - name: Mint App token for dashboard push
+        id: mint-token
+        if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request' && vars.EZ_APPSEC_DASHBOARD_REPO != ''
+        env:
+          _APP_ID: ${{ secrets.EZ_APPSEC_APP_ID }}
+          _PRIVATE_KEY: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, sys, time, json, urllib.request, urllib.error
+          try:
+              import jwt
+          except ImportError:
+              import subprocess
+              subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'PyJWT[crypto]', '-q'],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              import jwt
+
+          app_id = os.environ.get('_APP_ID', '').strip()
+          pem = os.environ.get('_PRIVATE_KEY', '').strip()
+
+          if not app_id or not pem:
+              print('App credentials not configured — skipping token mint')
+              raise SystemExit(0)
+
+          now = int(time.time())
+          app_jwt = jwt.encode(
+              {'iat': now - 60, 'exp': now + 600, 'iss': str(app_id)},
+              pem, algorithm='RS256'
+          )
+
+          def gh(method, path, jwt_token):
+              req = urllib.request.Request(
+                  f'https://api.github.com{path}',
+                  method=method,
+                  headers={
+                      'Authorization': f'Bearer {jwt_token}',
+                      'Accept': 'application/vnd.github+json',
+                      'User-Agent': 'ez-appsec/1.0',
+                  }
+              )
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return json.load(r)
+              except urllib.error.HTTPError as e:
+                  print(f'GitHub API error {e.code}: {e.read().decode()}', file=sys.stderr)
+                  raise
+
+          installs = gh('GET', '/app/installations', app_jwt)
+          if not installs:
+              print('No app installations found — skipping token mint')
+              raise SystemExit(0)
+
+          install_id = installs[0]['id']
+          token_data = gh('POST', f'/app/installations/{install_id}/access_tokens', app_jwt)
+          token = token_data['token']
+
+          # Mask token in Actions logs, then write to GITHUB_ENV for downstream steps
+          print(f'::add-mask::{token}')
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f'_PUSH_TOKEN={token}\n')
+          print('App token minted successfully')
+          PYEOF
+        continue-on-error: true
+
+      - name: Push scan results to dashboard (update:vulns)
+        if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request'
+        env:
+          EZ_APPSEC_DASHBOARD_REPO: ${{ vars.EZ_APPSEC_DASHBOARD_REPO || 'ez-appsec/ez-appsec-dashboard' }}
+        run: |
+          if [ -z "${_PUSH_TOKEN}" ]; then
+            echo "No push token available — skipping dashboard update."
+            exit 0
+          fi
+          VULN_FILE="${EZ_APPSEC_OUTPUT_DIR}/vulnerabilities.json"
+          if [ ! -f "${VULN_FILE}" ]; then
+            echo "vulnerabilities.json not found — skipping dashboard update."
+            exit 0
+          fi
+
+          # Derive destination path: data/vulnerabilities/[TEAM/]REPO_NAME.json
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+          TEAM="${{ vars.EZ_APPSEC_TEAM }}"
+          VULN_REL="vulnerabilities/${TEAM:+${TEAM}/}${REPO_NAME}.json"
+          SCAN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          # Inject metadata into vulnerabilities.json so aggregate-index.py can read it
+          export META_NAME="${{ github.event.repository.name }}" \
+                 META_PATH="${{ github.repository }}" \
+                 META_URL="https://github.com/${{ github.repository }}" \
+                 META_DATE="${SCAN_DATE}"
+          python3 - "${VULN_FILE}" > /tmp/vulns-with-meta.json <<'PYEOF'
+          import json, sys, os
+          data = json.load(open(sys.argv[1]))
+          if isinstance(data, dict):
+              data.setdefault("project_name", os.environ["META_NAME"])
+              data.setdefault("project_path", os.environ["META_PATH"])
+              data.setdefault("github_url",   os.environ["META_URL"])
+              data.setdefault("scan_date",    os.environ["META_DATE"])
+          print(json.dumps(data, indent=2))
+          PYEOF
+
+          DASH_DIR=$(mktemp -d)
+          git clone "https://x-access-token:${_PUSH_TOKEN}@github.com/${EZ_APPSEC_DASHBOARD_REPO}.git" "${DASH_DIR}/dashboard"
+          mkdir -p "${DASH_DIR}/dashboard/data/$(dirname ${VULN_REL})"
+          cp /tmp/vulns-with-meta.json "${DASH_DIR}/dashboard/data/${VULN_REL}"
+
+          # Regenerate index.json by fetching and running the aggregation script
+          curl -sSfL "https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/github/dashboard/aggregate-index.py" \
+            -o /tmp/aggregate-index.py
+          python3 /tmp/aggregate-index.py "${DASH_DIR}/dashboard/data"
+
+          cd "${DASH_DIR}/dashboard"
+          git config user.name "ez-appsec scan"
+          git config user.email "ci@ez-appsec.ai"
+          git add data/
+          git diff --staged --quiet && echo "No changes." || \
+            git commit -m "chore: update scan results for ${{ github.repository }}"
+          git push origin main
+          rm -rf "${DASH_DIR}"
+          echo "Dashboard updated: https://github.com/${EZ_APPSEC_DASHBOARD_REPO}"
+
+      - name: Comment on PR with findings
+        if: github.event_name == 'pull_request' && steps.scan.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const artifactUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            const summaryPath = '/tmp/scan-summary.md';
+            const summaryMd = fs.existsSync(summaryPath) ? fs.readFileSync(summaryPath, 'utf8') : '';
+
+            let body = `## 🔒 ez-appsec Security Scan\n\n`;
+            body += summaryMd ? summaryMd + '\n' : '';
+            body += `📊 [View full scan run](${artifactUrl})\n`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('🔒 ez-appsec Security Scan')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }

@@ -1,38 +1,71 @@
-Run an ez-appsec security scan on the target directory and report findings.
+Run an ez-appsec security scan via Docker, capture `vulnerabilities.json`, and load all findings into context.
 
-## Steps
+## Usage
 
-1. Determine the scan target. If the user provided a path argument (`$ARGUMENTS`), use it. Otherwise default to the current working directory.
+```
+/ez-appsec scan [path]
+```
 
-2. Ensure the `jfelten/ez-appsec:latest` Docker image is available:
-   ```bash
-   docker image inspect jfelten/ez-appsec:latest >/dev/null 2>&1
-   ```
-   If not present, pull it:
-   ```bash
-   docker pull jfelten/ez-appsec:latest
-   ```
-   If the pull fails, tell the user and suggest they check Docker Hub or build from source:
-   ```bash
-   docker build -t jfelten/ez-appsec:latest https://github.com/jfelten/ez-appsec.git
-   ```
+Defaults to current directory.
 
-3. Run the scan by mounting the resolved target path:
-   ```bash
-   docker run --rm \
-     -v "$(realpath <TARGET_PATH>):/scan" \
-     jfelten/ez-appsec:latest \
-     scan /scan
-   ```
+---
 
-4. Display the full output and summarize:
-   - Total issues found
-   - Breakdown by severity: critical / high / medium / low
-   - Top 5 findings with file, line number, and description
-   - Which scanners ran: gitleaks, semgrep, grype, kics
+## Execute
 
-5. If the scan exits non-zero (scanner error, not findings), report the error and run diagnostics:
-   ```bash
-   docker run --rm jfelten/ez-appsec:latest status
-   ```
-   Report which scanners are missing and how to fix them.
+```bash
+TARGET=$(realpath "${ARGUMENTS:-.}")
+OUT=$(mktemp -d)
+
+docker image inspect ghcr.io/ez-appsec/ez-appsec:latest >/dev/null 2>&1 \
+  || docker pull ghcr.io/ez-appsec/ez-appsec:latest \
+  || { echo "Cannot pull ghcr.io/ez-appsec/ez-appsec:latest — is Docker running?"; exit 1; }
+
+docker run --rm \
+  -v "${TARGET}:/scan" \
+  -v "${OUT}:/out" \
+  --entrypoint "" \
+  ghcr.io/ez-appsec/ez-appsec:latest \
+  sh -c "ez-appsec web-report /scan --output /out 2>/dev/null"
+
+VULN_FILE="${OUT}/vulnerabilities.json"
+[ -f "$VULN_FILE" ] || { echo "Scan produced no output. Run: docker run --rm -v \$(pwd):/scan ghcr.io/ez-appsec/ez-appsec:latest scan /scan"; rm -rf "$OUT"; exit 1; }
+
+python3 - "$VULN_FILE" "$TARGET" <<'PY'
+import json, sys
+from collections import Counter
+
+data = json.load(open(sys.argv[1]))
+vulns = data.get("vulnerabilities", data) if isinstance(data, dict) else data
+
+ORDER = {"critical":0,"high":1,"medium":2,"low":3,"info":4}
+vulns = sorted(vulns, key=lambda v: ORDER.get(v.get("severity","").lower(), 5))
+counts = Counter(v.get("severity","unknown").lower() for v in vulns)
+
+def loc(v):
+    l = v.get("location", {})
+    f = l.get("file", {}) if isinstance(l, dict) else {}
+    name = f.get("file_name", f) if isinstance(f, dict) else str(f)
+    line = l.get("start_line", f.get("line","") if isinstance(f, dict) else "")
+    return f"{name}:{line}" if line else str(name)
+
+print(f"Scan complete: {sys.argv[2]}\n")
+print(f"Findings: {len(vulns)} total")
+for s in ["critical","high","medium","low","info"]:
+    n = counts.get(s, 0)
+    if n: print(f"  {s.capitalize():<10}{n}")
+print()
+print("Top findings:")
+for v in vulns[:10]:
+    sev = v.get("severity","?").upper()
+    name = v.get("name", v.get("message","?"))[:60]
+    scanner = v.get("scanner",{}).get("name","?") if isinstance(v.get("scanner"),dict) else "?"
+    print(f"  [{sev}] {name} — {loc(v)}  ({scanner})")
+
+# Emit full dataset as a JSON comment for context retention
+print(f"\n<!-- ez-appsec-vulns {json.dumps({'target': sys.argv[2], 'total': len(vulns), 'counts': dict(counts), 'vulnerabilities': vulns})} -->")
+PY
+
+rm -rf "$OUT"
+```
+
+After running: hold the full vulnerability list from the `<!-- ez-appsec-vulns ... -->` comment in context. Do not display that comment — use it to answer follow-up questions about findings, files, severities, and remediation.

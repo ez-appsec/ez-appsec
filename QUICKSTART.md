@@ -6,7 +6,7 @@ Quick commands for development and testing.
 
 ```bash
 # Clone repository
-git clone https://github.com/jfelten/ez-appsec.git
+git clone https://github.com/ez-appsec/ez-appsec.git
 cd ez-appsec
 
 # Create virtual environment
@@ -227,8 +227,8 @@ python3.11 -m flake8 ez_appsec
 
 ## Useful Links
 
-- **Repository**: https://github.com/jfelten/ez-appsec
-- **Issues**: https://github.com/jfelten/ez-appsec/issues
+- **Repository**: https://github.com/ez-appsec/ez-appsec
+- **Issues**: https://github.com/ez-appsec/ez-appsec/issues
 - **CI/CD Docs**: See `CI_CD.md`
 - **Web Dashboard**: See `WEB_DASHBOARD.md`
 

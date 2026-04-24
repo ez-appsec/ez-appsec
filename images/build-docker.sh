@@ -7,13 +7,13 @@ echo "🐳 Building ez-appsec Docker images..."
 
 # Build main image
 echo "📦 Building standard image (ez-appsec:latest)..."
-docker build -t ez-appsec:latest .
+docker build -f images/Dockerfile -t ez-appsec:latest .
 STANDARD_SIZE=$(docker images ez-appsec:latest --format "{{.Size}}")
 echo "✓ Standard image size: $STANDARD_SIZE"
 
 # Build slim image
 echo "📦 Building slim image (ez-appsec:slim)..."
-docker build -f Dockerfile.slim -t ez-appsec:slim .
+docker build -f images/Dockerfile.slim -t ez-appsec:slim .
 SLIM_SIZE=$(docker images ez-appsec:slim --format "{{.Size}}")
 echo "✓ Slim image size: $SLIM_SIZE"
 

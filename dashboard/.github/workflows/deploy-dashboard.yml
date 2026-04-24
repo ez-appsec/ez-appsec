@@ -1,0 +1,39 @@
+# GitHub Pages Deployment for ez-appsec Security Dashboard
+
+name: Deploy Dashboard
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  aggregate-and-deploy:
+    name: Aggregate and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Aggregate project data
+        run: |
+          cd dashboard
+          python3 aggregate-index-github.py
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages
+          artifact_path: dashboard/public

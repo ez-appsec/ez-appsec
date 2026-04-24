@@ -1,0 +1,216 @@
+# Custom Semgrep Rules for ez-appsec
+# This file adds PHP vulnerability detection rules to address gaps identified in Phase 4
+
+rules:
+  # PHP SQL Injection Rules
+  - id: php.sql-injection-string-concat
+    pattern: |
+      (SELECT|UPDATE|INSERT|DELETE).*\s*(\$_GET|\$_POST|\$_REQUEST|\$_COOKIE)[^"]+.*
+    languages: [php]
+    severity: ERROR
+    message: SQL injection via string concatenation with user input
+
+  - id: php.sql-injection-string-interpolation
+    pattern: |
+      (SELECT|UPDATE|INSERT|DELETE).*\$[\{a-zA-Z_]+}
+    languages: [php]
+    severity: ERROR
+    message: SQL injection via template string interpolation
+
+  - id: php.sql-injection-mysql-query
+    pattern: |
+      mysql_query\(.*\$[\{a-zA-Z_]+}
+    languages: [php]
+    severity: ERROR
+    message: SQL injection via unsanitized mysql_query() with user input
+
+  - id: php.sql-injection-integer-bypass
+    pattern: |
+      (SELECT|UPDATE|DELETE|INSERT).*\s*\d+\s*
+    languages: [php]
+    severity: ERROR
+    message: SQL injection via integer bypass (quotes removed)
+
+  - id: php.sql-injection-error-exploitation
+    pattern: |
+      (mysql_error\(|mysql_close\(.*\$[\{a-zA-Z_]+})
+    languages: [php]
+    severity: ERROR
+    message: SQL injection exploiting error messages
+
+  # PHP XSS Rules
+  - id: php.xss-reflected-echo
+    pattern: |
+      echo\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]
+    languages: [php]
+    severity: HIGH
+    message: Reflected XSS via unsanitized echo statement
+
+  - id: php.xss-stored
+    pattern: |
+      (INSERT|UPDATE).*INTO.*\$[\{a-zA-Z_]+}
+    languages: [php]
+    severity: ERROR
+    message: Stored XSS via unsanitized user input in database operations
+
+  - id: php.xss-dom-print
+    pattern: |
+      print\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]
+    languages: [php]
+    severity: HIGH
+    message: XSS via unsanitized print statement
+
+  - id: php.xss-file-get-contents
+    pattern: |
+      file_get_contents\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]\)
+    languages: [php]
+    severity: ERROR
+    message: XSS via unsanitized file_get_contents() usage
+
+  - id: php.xss-include-require
+    pattern: |
+      include\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]
+    languages: [php]
+    severity: ERROR
+    message: Local file inclusion via unsanitized include() usage
+
+  # PHP CSRF Rules
+  - id: php.csrf-missing-token
+    pattern: |
+      <form[^>]*>(?!.*<input[^>]+type=["']hidden["'].*name=["']csrf["']|token["'])
+    languages: [php, html]
+    severity: ERROR
+    message: CSRF vulnerability - no token in form
+
+  - id: php.csrf-state-change-no-protection
+    pattern: |
+      (POST|PUT|DELETE)\s*\(/api/|/vulnerabilities/|/)[^>]+.*(?!.*X-Requested-With|.*csrf.*token)
+    languages: [php]
+    severity: ERROR
+    message: CSRF vulnerability - state change without token
+
+  # PHP Command Injection Rules
+  - id: php.cmd-injection-system
+    pattern: |
+      system\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]
+    languages: [php]
+    severity: CRITICAL
+    message: OS command injection via system() with user input
+
+  - id: php.cmd-injection-exec
+    pattern: |
+      exec\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;])
+    languages: [php]
+    severity: CRITICAL
+    message: OS command injection via exec() with user input
+
+  - id: php.cmd-injection-shell-exec
+    pattern: |
+      shell_exec\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;])
+    languages: [php]
+    severity: CRITICAL
+    message: OS command injection via shell_exec() with user input
+
+  - id: php.cmd-injection-backtick
+    pattern: |
+      `\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]+}|`\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]
+    languages: [php]
+    severity: CRITICAL
+    message: SQL injection via backtick/pipe command injection
+
+  - id: php.cmd-injection-semicolon
+    pattern: |
+      ;\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]+
+    languages: [php]
+    severity: CRITICAL
+    message: SQL injection via semicolon command chaining
+
+  # PHP File Inclusion Rules
+  - id: php.lfi-include
+    pattern: |
+      include\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;])
+    languages: [php]
+    severity: CRITICAL
+    message: Local file inclusion via include() with user input
+
+  - id: php.lfi-require
+    pattern: |
+      require\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;])
+    languages: [php]
+    severity: CRITICAL
+    message: Local file inclusion via require() with user input
+
+  - id: php.lfi-path-traversal
+    pattern: |
+      include.*\.\.\/|\.\.\.|\.\.\.\.|%2[eE]%2[fF]
+    languages: [php, javascript, python]
+    severity: ERROR
+    message: Path traversal via ../ or URL encoding
+
+  # PHP Hardcoded Secrets Rules
+  - id: php.hardcoded-secrets
+    pattern: |
+      (password|api_key|secret|token|credential|aws|database|db_password|mysql|postgres)\s*=\s*['"][']{0,}[a-z0-9_]{8,}["']
+    languages: [php]
+    severity: CRITICAL
+    message: Hardcoded credentials or secrets detected
+
+  # PHP Authentication Weakness Rules
+  - id: php.weak-password-weak-password
+    pattern: |
+      (password|pass)\s*=\s*['"][']admin|root|password|123456|password123|qwerty['"][']{0,}[a-z0-9]{4,}["']
+    languages: [php]
+    severity: WARNING
+    message: Weak password policy violation
+
+  - id: php.weak-password-predictable
+    pattern: |
+      (session_id|token)\s*=\s*['"][']rand\(1,[0-9]{5,}|md5\(.*['"][']{0,}[a-z0-9]{12,}['']
+    languages: [php]
+    severity: WARNING
+    message: Predictable session token or password
+
+  # PHP Brute Force Vulnerability Rules
+  - id: php.brute-force
+    pattern: |
+      (\$max_login_attempts|\$failed_login_attempts)\s*=\s*[0-9]+
+    languages: [php]
+    severity: WARNING
+    message: Brute force susceptible endpoint (missing rate limiting)
+
+  # PHP Unsafe Function Rules
+  - id: php.unsafe-eval
+    pattern: |
+      eval\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]\)
+    languages: [php]
+    severity: CRITICAL
+    message: Code execution via eval() with user input
+
+  - id: php.unsafe-exec
+    pattern: |
+      exec\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;])
+    languages: [php]
+    severity: CRITICAL
+    message: OS command execution via exec() with user input
+
+  - id: php.unsafe-passthru
+    pattern: |
+      passthru\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]\)
+    languages: [php]
+    severity: CRITICAL
+    message: PHP 7.x-12.8 disable_functions bypass
+
+  # PHP Information Disclosure Rules
+  - id: php.info-disclosure-phpinfo
+    pattern: |
+      phpinfo\(\s*\$_GET|_POST|\$_REQUEST|\$_COOKIE[^;]\)
+    languages: [php]
+    severity: WARNING
+    message: PHP information disclosure via phpinfo()
+
+  - id: php.info-disclosure-error
+    pattern: |
+      (trigger_error\(|mysqli_error\(|mysql_error\(.*\$[\{a-zA-Z_]+})
+    languages: [php]
+    severity: INFO
+    message: PHP error or warning message disclosure

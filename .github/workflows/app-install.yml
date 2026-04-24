@@ -1,0 +1,77 @@
+name: App Install Provisioner
+
+on:
+  repository_dispatch:
+    types: [app-install]
+
+permissions:
+  contents: read
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mint installation token
+        id: mint
+        env:
+          EZ_APPSEC_APP_ID: ${{ secrets.EZ_APPSEC_APP_ID }}
+          EZ_APPSEC_PRIVATE_KEY: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
+        run: |
+          INSTALLATION_ID="${{ github.event.client_payload.installation_id }}"
+          TOKEN=$(python3 scripts/mint-token.py \
+            "${EZ_APPSEC_APP_ID}" \
+            "${EZ_APPSEC_PRIVATE_KEY}" \
+            "${INSTALLATION_ID}")
+          echo "token=${TOKEN}" >> $GITHUB_OUTPUT
+
+      - name: Provision repos
+        id: provision
+        env:
+          PROVISION_TOKEN: ${{ steps.mint.outputs.token }}
+          EZ_APPSEC_APP_ID: ${{ secrets.EZ_APPSEC_APP_ID }}
+          EZ_APPSEC_PRIVATE_KEY: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
+        run: |
+          # Build comma-separated repo list from client_payload
+          REPOS="${{ join(github.event.client_payload.repos, ',') }}"
+          if [ -z "$REPOS" ] && [ -n "${{ github.event.client_payload.repo_full_name }}" ]; then
+            REPOS="${{ github.event.client_payload.repo_full_name }}"
+          fi
+          if [ -z "$REPOS" ]; then
+            echo "No repos in payload — nothing to provision."
+            exit 0
+          fi
+          python3 scripts/provision.py \
+            --token "${PROVISION_TOKEN}" \
+            --repos "${REPOS}" \
+            --app-id "${EZ_APPSEC_APP_ID}" \
+            --private-key "${EZ_APPSEC_PRIVATE_KEY}"
+          echo "repos=${REPOS}" >> $GITHUB_OUTPUT
+
+      - name: Trigger initial scan on provisioned repos
+        if: steps.provision.outputs.repos != ''
+        env:
+          PROVISION_TOKEN: ${{ steps.mint.outputs.token }}
+        run: |
+          # Allow GitHub time to index the newly pushed workflow file
+          sleep 15
+          IFS=',' read -ra REPO_LIST <<< "${{ steps.provision.outputs.repos }}"
+          for REPO in "${REPO_LIST[@]}"; do
+            REPO=$(echo "$REPO" | xargs)  # trim whitespace
+            DEFAULT_BRANCH=$(curl -sSf \
+              -H "Authorization: Bearer ${PROVISION_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "User-Agent: ez-appsec/1.0" \
+              "https://api.github.com/repos/${REPO}" \
+              | python3 -c "import json,sys; print(json.load(sys.stdin)['default_branch'])")
+            echo "Triggering scan on ${REPO} (branch: ${DEFAULT_BRANCH})..."
+            curl -sSf -X POST \
+              -H "Authorization: Bearer ${PROVISION_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "User-Agent: ez-appsec/1.0" \
+              "https://api.github.com/repos/${REPO}/actions/workflows/ez-appsec-scan.yml/dispatches" \
+              -d "{\"ref\": \"${DEFAULT_BRANCH}\"}" \
+              && echo "  ✓ Scan triggered on ${REPO}" \
+              || echo "  ✗ Could not trigger scan on ${REPO} — workflow may not be indexed yet"
+          done

@@ -1,0 +1,246 @@
+{
+  "version": "15.0.0",
+  "vulnerabilities": [
+    {
+      "id": "d6579efb-3e13-4d22-8888-a84d3d821d44",
+      "category": "sast",
+      "name": "Semgrep: generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "message": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+      "description": "Semgrep rule violation: generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "cve": "",
+      "severity": "medium",
+      "confidence": "medium",
+      "solution": "Review the code pattern and fix according to security best practices.",
+      "scanner": {
+        "id": "semgrep",
+        "name": "Semgrep"
+      },
+      "location": {
+        "file": "frontend/src/app/navbar/navbar.component.html",
+        "start_line": 17,
+        "end_line": 17,
+        "class": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+        "method": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var"
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_rule",
+          "name": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+          "value": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var"
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "d63faff7-b096-419e-b6e4-d5af60849a82",
+      "category": "sast",
+      "name": "Semgrep: generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "message": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+      "description": "Semgrep rule violation: generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "cve": "",
+      "severity": "medium",
+      "confidence": "medium",
+      "solution": "Review the code pattern and fix according to security best practices.",
+      "scanner": {
+        "id": "semgrep",
+        "name": "Semgrep"
+      },
+      "location": {
+        "file": "frontend/src/app/purchase-basket/purchase-basket.component.html",
+        "start_line": 15,
+        "end_line": 15,
+        "class": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+        "method": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var"
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_rule",
+          "name": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+          "value": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var"
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "593fae36-f767-43be-be52-adc848c724ce",
+      "category": "sast",
+      "name": "Semgrep: generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "message": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+      "description": "Semgrep rule violation: generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "cve": "",
+      "severity": "medium",
+      "confidence": "medium",
+      "solution": "Review the code pattern and fix according to security best practices.",
+      "scanner": {
+        "id": "semgrep",
+        "name": "Semgrep"
+      },
+      "location": {
+        "file": "frontend/src/app/search-result/search-result.component.html",
+        "start_line": 40,
+        "end_line": 40,
+        "class": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+        "method": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var"
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_rule",
+          "name": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+          "value": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var"
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "b8737af3-0c5c-4658-b2c8-589fb6f25013",
+      "category": "sast",
+      "name": "Semgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+      "message": "A hard-coded credential was detected. It is not recommended to store credentials in source-code, as this risks secrets being leaked and used by either an internal or external malicious adversary. It is recommended to use environment variables to securely provide credentials or retrieve credentials from a secure vault or HSM (Hardware Security Module).",
+      "description": "Semgrep rule violation: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+      "cve": "",
+      "severity": "medium",
+      "confidence": "medium",
+      "solution": "Review the code pattern and fix according to security best practices.",
+      "scanner": {
+        "id": "semgrep",
+        "name": "Semgrep"
+      },
+      "location": {
+        "file": "lib/insecurity.ts",
+        "start_line": 56,
+        "end_line": 56,
+        "class": "javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+        "method": "javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret"
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_rule",
+          "name": "javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+          "value": "javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret"
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "57a09458-23fb-4c35-bc49-a003fe7fd574",
+      "category": "sast",
+      "name": "Semgrep: javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect",
+      "message": "It looks like 'toUrl' is read from user input and it is used to as a redirect. Ensure 'toUrl' is not externally controlled, otherwise this is an open redirect.",
+      "description": "Semgrep rule violation: javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect",
+      "cve": "",
+      "severity": "medium",
+      "confidence": "medium",
+      "solution": "Review the code pattern and fix according to security best practices.",
+      "scanner": {
+        "id": "semgrep",
+        "name": "Semgrep"
+      },
+      "location": {
+        "file": "routes/redirect.ts",
+        "start_line": 19,
+        "end_line": 19,
+        "class": "javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect",
+        "method": "javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect"
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_rule",
+          "name": "javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect",
+          "value": "javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect"
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "7a409560-8a9d-405c-a2da-a188e5a9a07e",
+      "category": "sast",
+      "name": "Semgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+      "message": "Cannot determine what 'subs' is and it is used with a '<script>' tag. This could be susceptible to cross-site scripting (XSS). Ensure 'subs' is not externally controlled, or sanitize this data.",
+      "description": "Semgrep rule violation: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+      "cve": "",
+      "severity": "medium",
+      "confidence": "medium",
+      "solution": "Review the code pattern and fix according to security best practices.",
+      "scanner": {
+        "id": "semgrep",
+        "name": "Semgrep"
+      },
+      "location": {
+        "file": "routes/videoHandler.ts",
+        "start_line": 58,
+        "end_line": 58,
+        "class": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+        "method": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag"
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_rule",
+          "name": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+          "value": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag"
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "75c20ac0-a7ed-4e15-9745-7435b8603d1a",
+      "category": "sast",
+      "name": "Semgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+      "message": "Cannot determine what 'subs' is and it is used with a '<script>' tag. This could be susceptible to cross-site scripting (XSS). Ensure 'subs' is not externally controlled, or sanitize this data.",
+      "description": "Semgrep rule violation: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+      "cve": "",
+      "severity": "medium",
+      "confidence": "medium",
+      "solution": "Review the code pattern and fix according to security best practices.",
+      "scanner": {
+        "id": "semgrep",
+        "name": "Semgrep"
+      },
+      "location": {
+        "file": "routes/videoHandler.ts",
+        "start_line": 71,
+        "end_line": 71,
+        "class": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+        "method": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag"
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_rule",
+          "name": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+          "value": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag"
+        }
+      ],
+      "links": []
+    },
+    {
+      "id": "63ca3978-d866-450e-b517-e03b1ec5c6c4",
+      "category": "sast",
+      "name": "Semgrep: generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "message": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+      "description": "Semgrep rule violation: generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "cve": "",
+      "severity": "medium",
+      "confidence": "medium",
+      "solution": "Review the code pattern and fix according to security best practices.",
+      "scanner": {
+        "id": "semgrep",
+        "name": "Semgrep"
+      },
+      "location": {
+        "file": "views/dataErasureForm.hbs",
+        "start_line": 21,
+        "end_line": 21,
+        "class": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+        "method": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var"
+      },
+      "identifiers": [
+        {
+          "type": "semgrep_rule",
+          "name": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+          "value": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var"
+        }
+      ],
+      "links": []
+    }
+  ],
+  "remediations": []
+}

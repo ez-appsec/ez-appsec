@@ -43,6 +43,7 @@ class AIAnalyzer:
                 response = client.chat.completions.create(
                     model=self.model,
                     temperature=self.temperature,
+                    timeout=30,
                     messages=[
                         {
                             "role": "system",

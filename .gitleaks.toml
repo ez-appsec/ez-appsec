@@ -1,0 +1,17 @@
+# Gitleaks configuration for ez-appsec
+# https://github.com/gitleaks/gitleaks#configuration
+
+title = "ez-appsec gitleaks config"
+
+[allowlist]
+  description = "Ignore test fixtures and mock data containing intentional fake secrets"
+  paths = [
+    # Mock dashboard data — contains realistic fake passwords/JWTs as example findings
+    '''web/data/vulnerabilities\.json''',
+    '''public/data/vulnerabilities\.json''',
+    # Live test targets — intentionally vulnerable apps (WebGoat, Juice Shop, DVWA)
+    # and fixtures used to validate scanner detection. Not real credentials.
+    '''tests/live/''',
+    # Docs examples
+    '''docs/github-example\.md''',
+  ]

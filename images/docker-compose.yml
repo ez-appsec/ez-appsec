@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # Main orchestration container
+  ez-appsec:
+    build:
+      context: ..
+      dockerfile: images/Dockerfile.micro
+    volumes:
+      - .:/scan
+      - results:/results
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - semgrep-scanner
+    command: scan /scan --output /results/report.json
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "ez-appsec", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Separate semgrep container (largest scanner)
+  semgrep-scanner:
+    build:
+      context: ..
+      dockerfile: images/Dockerfile.semgrep
+    volumes:
+      - .:/scan:ro
+      - results:/results
+    profiles: ["with-semgrep"]
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "semgrep", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Results aggregator
+  aggregator:
+    image: alpine:latest
+    volumes:
+      - results:/results
+    command: sh -c "cat /results/*.json | jq -s 'reduce .[] as \$item ({}; . * \$item)' > /results/merged.json"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /results/merged.json || exit 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 1
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+volumes:
+  results:

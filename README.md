@@ -1,310 +1,196 @@
+<<<<<<< HEAD
 # ez-appsec v0.1.19
+=======
+# ez-appsec
+>>>>>>> 5aa96925a10103948669132448082f7a080b9274
 
-**AI-powered application security scanning** — A free, open-source replacement for GitLab and GitHub security scanning.
+**AI-powered application security scanning** — free, open-source, works with GitHub and GitLab.
 
-## Overview
+ez-appsec orchestrates four best-in-class scanners (gitleaks, semgrep, kics, grype), normalises their output into a unified schema, and pushes results to a hosted security dashboard. No cloud account or API key required.
 
-`ez-appsec` leverages artificial intelligence to analyze your codebase for security vulnerabilities, then provides AI-powered remediation guidance. It combines multiple detection mechanisms with OpenAI's language models to deliver fast, accurate, and actionable security insights.
+```
+Your codebase
+     │
+     ▼  ez-appsec scan
+┌────────────────────────────────────────────┐
+│  gitleaks · semgrep · kics · grype         │
+│  secrets    SAST      IaC    dependencies  │
+└──────────────────┬─────────────────────────┘
+                   │  unified vulnerability schema
+                   ▼
+     CLI · JSON · SARIF · GitLab format
+                   │
+                   ▼
+     Security Dashboard (GitHub / GitLab Pages)
+```
 
-### Key Features
+---
 
-- **🚀 External Scanner Integration**: Leverages gitleaks, semgrep, kics, and grype
-- **🤖 AI-Powered Remediation**: LLM-based guidance for fixing security issues
-- **🎯 Multi-Language Support**: Supports all languages covered by external scanners
-- **📊 Multiple Output Formats**: JSON, SARIF (GitHub/GitLab compatible), **GitLab Vulnerability Format**
-- **⚡ Zero Configuration**: Works out of the box with external tools
-- **🆓 Free & Open Source**: No cloud dependency, run locally
+## Quickstart with Claude Code
 
-## Installation
+The fastest way to add ez-appsec to any repository is through the Claude Code skill.
 
-### From Source
+**Step 1 — Install the skill** (one-time, works in every project):
 
 ```bash
-git clone https://github.com/jfelten/ez-appsec.git
-cd ez-appsec
-pip install -e .
+curl -fsSL https://raw.githubusercontent.com/ez-appsec/ez-appsec/main/skills/install.sh | bash
 ```
 
-### Docker
+**Step 2 — Add ez-appsec to a repository:**
 
-Pre-built image with all scanners included:
+```
+# GitHub
+/ez-appsec install-app owner/repo
+
+# GitLab
+/ez-appsec install /path/to/repo
+```
+
+That's it. The skill provisions the workflow, sets secrets, and triggers the first scan automatically.
+
+---
+
+## Platform Guides
+
+| Platform | Guide |
+|----------|-------|
+| GitHub | [docs/github.md](docs/github.md) |
+| GitLab | [docs/gitlab.md](docs/gitlab.md) |
+| Dashboard | [docs/dashboard.md](docs/dashboard.md) |
+
+---
+
+## ez-appsec Skills Reference
+
+The `/ez-appsec` Claude Code skill is a dispatcher — the first word routes to the right subcommand.
+
+### Installation
+
+| Command | Description |
+|---------|-------------|
+| `/ez-appsec install-app [owner/repo]` | **GitHub** — installs the scan workflow, provisions App secrets, and triggers the first scan |
+| `/ez-appsec install [path]` | **GitLab** — patches `.gitlab-ci.yml` with the `scan.yml` include and opens a merge request |
+| `/ez-appsec install-dashboard [owner/repo]` | **GitHub** — creates and configures the dashboard repo with GitHub Pages and App secrets |
+
+### Scanning
+
+| Command | Description |
+|---------|-------------|
+| `/ez-appsec scan [path]` | Scan with Docker and load findings into context for analysis |
+| `/ez-appsec load [project]` | Load a project's vulnerabilities from the dashboard into context for analysis |
+| `/ez-appsec remediate [filter]` | Prioritized fix plan balancing severity vs risk — applies safe fixes immediately, confirms risky ones once |
+
+### Maintenance
+
+| Command | Description |
+|---------|-------------|
+| `/ez-appsec update-dashboard [owner/repo]` | Re-provision App secrets and update dashboard web assets to the latest release |
+| `/ez-appsec uninstall-app [owner/repo]` | **GitHub** — removes the scan workflow and prunes the repo's dashboard data |
+| `/ez-appsec uninstall [path]` | **GitLab** — removes the `scan.yml` include via merge request |
+
+### Help
+
+| Command | Description |
+|---------|-------------|
+| `/ez-appsec help` | Print available subcommands |
+
+---
+
+## Scanners
+
+| Scanner | What it finds |
+|---------|--------------|
+| [gitleaks](https://github.com/gitleaks/gitleaks) | Secrets and credentials (140+ patterns) |
+| [semgrep](https://semgrep.dev/) | SAST — logic bugs, injection, misuse (1000+ rules) |
+| [kics](https://www.kics.io/) | Infrastructure-as-code misconfigurations |
+| [grype](https://github.com/anchore/grype) | Known CVEs in dependencies and SBOMs |
+
+All findings are normalised into a unified schema with consistent severity levels, file paths, and line numbers.
+
+---
+
+## Docker Images
 
 ```bash
-# Pull from Docker Hub (coming soon)
-docker pull jfelten/ez-appsec:latest
+# Standard (all scanners)
+docker pull ghcr.io/ez-appsec/ez-appsec:latest
 
-# Or build locally
-docker build -t ez-appsec:latest .
+# Slim (~300 MB, no semgrep)
+docker pull ghcr.io/ez-appsec/ez-appsec:slim
 
-# Run scan
-docker run --rm -v $(pwd):/scan ez-appsec scan .
+# Micro (secrets + CVEs only)
+docker pull ghcr.io/ez-appsec/ez-appsec:micro
+
+# Run a scan
+docker run --rm -v $(pwd):/scan ghcr.io/ez-appsec/ez-appsec:latest scan /scan
 ```
 
-Lightweight variant (~300MB):
-```bash
-docker build -f Dockerfile.slim -t ez-appsec:slim .
-docker run --rm -v $(pwd):/scan ez-appsec:slim scan .
-```
+---
 
-### From PyPI (Coming Soon)
+## AI Remediation
 
-```bash
-pip install ez-appsec
-```
+When `OPENAI_API_KEY` is set in the scanning environment, each finding is enriched with:
+- Plain-language risk explanation
+- Step-by-step fix instructions
+- Code example where applicable
 
-### Requirements
-
-- Python 3.9+
-- OpenAI API key (for AI-powered analysis, optional)
-
-## Quick Start
-
-### Install Claude Code Skill
-
-Add the `/ez-appsec-install` and `/ez-appsec-scan` slash commands to your project:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jfelten/ez-appsec/main/skills/install.sh | bash -s -- --project
-```
-
-Then use `/ez-appsec-install` to add ez-appsec scanning to any GitLab project via a `scan.yml` include and merge request.
-
-### Check Scanner Installation
-
-```bash
-# See which scanners are installed
-ez-appsec status
-
-# Install recommended scanners (macOS)
-brew install gitleaks semgrep kics grype
-```
-
-### Basic Security Scan
-
-```bash
-# Scan current directory
-ez-appsec scan
-
-# Scan specific path
-ez-appsec scan /path/to/project
-
-# Save results to JSON
-ez-appsec scan . --output results.json
-```
-
-### GitLab Vulnerability Format
-
-Generate reports compatible with GitLab's security dashboard:
-
-```bash
-# Scan and output in GitLab vulnerability format
-ez-appsec gitlab-scan . --output gitlab-report.json
-
-# With AI analysis and custom prompt
-ez-appsec gitlab-scan . --ai-prompt "Focus on critical issues" --output report.json
-```
-
-The GitLab format includes:
-- Standardized vulnerability schema
-- Severity levels (critical, high, medium, low, info)
-- Location information (file, line numbers)
-- Remediation suggestions
-- Scanner identification
-- CVE references where available
-
-### Initialize Configuration
-
-```bash
-# Create default .ez-appsec.yaml
-ez-appsec init
-```
-
-### Quick Check (No AI)
-
-```bash
-# Fast secrets detection without AI analysis
-ez-appsec check
-```
-
-### With AI Analysis
-
-```bash
-# Enable AI remediation guidance (requires OPENAI_API_KEY)
-export OPENAI_API_KEY=sk-...
-ez-appsec scan . --ai-prompt "Focus on SQL injection and authentication issues"
-```
-
-## Configuration
-
-Create a `.ez-appsec.yaml` file in your project root:
-
-```yaml
-# Programming languages to scan
-languages:
-  - python
-  - javascript
-  - go
-  - java
-
-# Minimum severity to report (critical, high, medium, low, all)
-severity: medium
-
-# AI model configuration
-ai:
-  model: gpt-4
-  temperature: 0.5
-
-# Custom detection rules
-custom_rules: []
-
-# Exclude patterns
-exclude:
-  - .git
-  - node_modules
-  - __pycache__
-  - .venv
-```
-
-## Detection Mechanisms
-
-ez-appsec relies entirely on industry-leading open-source security scanners:
-
-### External Scanners (Primary)
-
-- **[gitleaks](https://github.com/gitleaks/gitleaks)** - Secrets detection with 140+ patterns
-- **[semgrep](https://semgrep.dev/)** - SAST with 1000+ rules across languages
-- **[kics](https://www.kics.io/)** - Infrastructure as code security scanning
-- **[grype](https://github.com/anchore/grype)** - Vulnerability and SBOM analysis
-
-### AI Enhancement
-
-All findings from external scanners are enhanced with AI-powered analysis when OPENAI_API_KEY is provided, offering:
-- Detailed risk explanations
-- Step-by-step remediation guidance
-- Code examples for fixes
-
-### AI-Powered Analysis
-
-When OPENAI_API_KEY is set, each finding receives:
-- Detailed risk explanation
-- Step-by-step remediation guidance
-- Code examples for fixes
-
-## Example Output
-
-```
-✓ Security scan completed
-  Total issues found: 5
-
-Top Issues:
-  [critical] Potential hardcoded secrets
-    Found suspicious pattern in config.py
-  [high] Potential SQL injection
-    Found suspicious pattern in database.py
-  [medium] Potential unsafe eval
-    Found suspicious pattern in utils.py
-```
-
-## Integration with CI/CD
-
-### GitHub Actions
-
-```yaml
-- name: Run ez-appsec
-  uses: docker://jfelten/ez-appsec:latest
-  env:
-    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  with:
-    args: scan . --output sarif-report.sarif
-```
-
-### Docker Compose
-
-```yaml
-version: '3.8'
-services:
-  security-scan:
-    image: jfelten/ez-appsec:latest
-    volumes:
-      - .:/scan
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    command: scan . --output results.json
-```
-
-## API Usage
-
-### Basic Scanning
-
-```python
-from ez_appsec.scanner import SecurityScanner
-from ez_appsec.config import Config
-
-config = Config(severity="medium", ai_model="gpt-4")
-scanner = SecurityScanner(config)
-
-results = scanner.scan("/path/to/code")
-print(f"Found {results['total']} issues")
-```
-
-### GitLab Vulnerability Format
-
-```python
-from ez_appsec.scanner import SecurityScanner
-from ez_appsec.config import Config
-
-config = Config(severity="high")
-scanner = SecurityScanner(config)
-
-# Generate GitLab-compatible vulnerability report
-gitlab_report = scanner.scan_to_gitlab_format("/path/to/code", "report.json")
-print(f"Generated report with {len(gitlab_report['vulnerabilities'])} vulnerabilities")
-```
-
-### Individual Scanner Output Conversion
-
-```python
-from ez_appsec.converters import VulnerabilityConverters
-
-# Convert gitleaks output to GitLab format
-report = VulnerabilityConverters.convert_scanner_output(
-    "gitleaks", "gitleaks-output.json", "gitlab-report.json"
-)
-
-# Supported scanners: gitleaks, semgrep, kics, grype
-```
+---
 
 ## Contributing
 
-Contributions are welcome! Areas for improvement:
+Contributions are welcome from humans, AI agents, and human+AI teams.
 
-- [ ] Additional language support (Rust, C/C++, C#)
-- [ ] Custom rule definitions
-- [ ] Integration with more AI providers
-- [ ] Performance optimization for large codebases
-- [ ] Machine learning model for false positive reduction
+There are two contribution paths depending on the size of the change.
+
+### Small changes — no plan required
+
+Bug fixes, documentation corrections, minor refactors, and small tweaks can go straight to a PR.
+
+Open a **[Small Change issue](https://github.com/ez-appsec/ez-appsec/issues/new?template=small-change.md)** to track the work, then submit a PR that references it. The bar is: `pytest tests/` passes, no scope creep.
+
+### Significant work — plan first
+
+New features, integrations, and anything that touches multiple modules require a plan before implementation begins. This prevents conflicts between contributors working in parallel and keeps PRs reviewable.
+
+**Option A — Claim an existing roadmap item**
+
+Browse the [ez-appsec Roadmap project](https://github.com/orgs/ez-appsec/projects/2) and pick an unassigned plan. Leave a comment on the issue saying you are claiming it, then self-assign and move it to *In Progress*. The issue already contains scope, technical approach, and done criteria.
+
+**Option B — Propose a new plan**
+
+If your idea is not on the roadmap, open a **[Plan issue](https://github.com/ez-appsec/ez-appsec/issues/new?template=plan.md)** first. Describe what you are building, the scope, technical approach, and test strategy. Wait for a maintainer to acknowledge before opening a draft PR. This avoids duplicate work and surfaces conflicts early.
+
+### Human + AI workflows
+
+AI-assisted contributions are encouraged. When using Claude Code or another agent to implement a plan:
+
+- The plan issue is the agent's scope boundary — it should not touch modules outside the plan
+- Use `/ez-appsec test` to verify nothing regressed before opening a PR
+- The PR description should note which parts were AI-generated and which were human-reviewed
+- All tests must pass; the agent is not exempt from the done criteria
+
+### Ground rules
+
+- **Tests ship with the code.** Every plan lists required test files. PRs without tests for new behavior will not be merged.
+- **Plans are independent.** If your change conflicts with another open plan, coordinate in the issue before proceeding.
+- **Schema is append-only.** The `vulnerabilities.json` schema may gain new fields but existing fields must not be renamed or removed — downstream tools depend on them.
+- **Docker size budget.** Adding a runtime dependency requires verifying the standard image stays under 2 GB.
+
+See [ROADMAP.md](ROADMAP.md) for the full list of planned work and [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup and coding conventions.
 
 ## Roadmap
 
-- **v0.2.0**: Support for Rust and C/C++
-- **v0.3.0**: Custom rule engine and policy enforcement
-- **v0.4.0**: Integration with Claude, Gemini, and local LLMs
-- **v1.0.0**: Production-ready release
+See [ROADMAP.md](ROADMAP.md) for the path to feature parity with commercial AppSec platforms — 20 independent plans across developer feedback, compliance, platform expansion, enterprise features, and observability. Each plan is claimable by any contributor (human or AI).
+
+| | |
+|---|---|
+| GitHub Project | [ez-appsec Roadmap](https://github.com/orgs/ez-appsec/projects/2) |
+| GitLab Tracking | [jfelten.work-group/ez_appsec/ez-appsec-roadmap](https://gitlab.com/jfelten.work-group/ez_appsec/ez-appsec-roadmap) |
 
 ## License
 
-MIT License - See LICENSE file for details
-
-## Support
-
-- 📖 [Documentation](./docs)
-- 🐛 [Issue Tracker](https://github.com/jfelten/ez-appsec/issues)
-- 💬 [Discussions](https://github.com/jfelten/ez-appsec/discussions)
+MIT — see [LICENSE](LICENSE).
 
 ## Author
 
-Created by [John Felten](https://www.linkedin.com/in/john-felten/) - DevSecOps Engineer with 25+ years of experience
-
-## Disclaimer
-
-While ez-appsec aims to be comprehensive, no security tool catches all vulnerabilities. Always conduct thorough security reviews and penetration testing before deploying to production.
+Created by [John Felten](https://www.linkedin.com/in/john-felten/) — DevSecOps Engineer, 25+ years experience.
