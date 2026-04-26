@@ -117,8 +117,95 @@ Removes the workflow file and prunes the repo's data from the dashboard.
 | `EZ_APPSEC_DASHBOARD_REPO` | Repo variable | Dashboard repo to push results to (e.g. `owner/ez-appsec-dashboard`) |
 | `EZ_APPSEC_VERSION` | Repo variable | Docker image tag to use (default: `latest`) |
 | `EZ_APPSEC_TEAM` | Repo variable | (Optional) Group results under a team subfolder in the dashboard |
+| `GITHUB_TOKEN` | Auto-provided | GitHub token for PR comments — auto-available in Actions |
+| `GITHUB_EVENT_PATH` | Auto-provided | Path to event JSON — used to extract PR number |
 
 All secrets and variables are set automatically by `install-app`. You can override them in **Settings → Secrets and variables → Actions**.
+
+---
+
+## PR Inline Comments
+
+Findings are posted as inline review comments on pull requests automatically. Comments only appear on lines that were changed in the diff.
+
+To post comments manually:
+
+```bash
+ez-appsec pr-comment \
+  --platform github \
+  --findings vulnerabilities.json \
+  --repo owner/repo \
+  --pr 123
+```
+
+The command will automatically use `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, and `GITHUB_EVENT_PATH` if available. Multiple findings on the same file are grouped into a single comment thread.
+
+---
+
+## Configuration Reference (`.ez-appsec.yaml`)
+
+Place an `.ez-appsec.yaml` file in your repository root (or pass `--config path/to/file.yaml` to any scan command).
+
+```yaml
+# Target languages (optional — scanners auto-detect if omitted)
+languages:
+  - python
+  - javascript
+
+# Minimum severity to report: all | critical | high | medium | low
+severity: medium
+
+# AI analysis model
+ai:
+  model: gpt-4
+  temperature: 0.5
+
+# Ignore rules — suppress known false positives
+ignore:
+  # Suppress by scanner rule ID
+  - rule_id: generic-api-key
+    file_path: "tests/**"
+    reason: "Test fixtures with dummy credentials"
+    permanent: true
+
+  # Suppress by CVE ID with expiration
+  - cve_id: CVE-2023-1234
+    reason: "Mitigated by WAF rule, revisit in June"
+    until: "2025-06-01"
+
+  # Suppress by message substring
+  - message: "example.com"
+    reason: "Documentation URLs, not real endpoints"
+    permanent: true
+
+  # Suppress all findings in vendored code
+  - file_path: "vendor/**"
+    reason: "Third-party vendored code"
+    permanent: true
+```
+
+### Ignore rule fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `rule_id` | string | Match by scanner rule ID (semgrep check ID, gitleaks RuleID, etc.) |
+| `file_path` | string | Match by file path — supports glob patterns (`*`, `**`, `?`) |
+| `message` | string | Match by substring in finding message/description (case-insensitive) |
+| `cve_id` | string | Match by CVE identifier |
+| `permanent` | boolean | If `true`, rule never expires |
+| `until` | string | ISO date (`YYYY-MM-DD`) — rule expires after this date and findings resurface |
+| `reason` | string | **Required.** Why this finding is being suppressed |
+
+At least one matcher (`rule_id`, `file_path`, `message`, or `cve_id`) is required. Each rule must be either `permanent: true` or have an `until` date.
+
+Suppressed findings appear in scan output as a `[suppressed]` count — they are never silently hidden.
+
+### Validate your config
+
+```bash
+ez-appsec check-config                    # validates .ez-appsec.yaml
+ez-appsec check-config path/to/config.yaml  # validates a specific file
+```
 
 ---
 

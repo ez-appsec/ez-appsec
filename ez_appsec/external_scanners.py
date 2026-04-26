@@ -109,6 +109,50 @@ class GitleaksScanner(ScannerWrapper):
 class SemgrepScanner(ScannerWrapper):
     """Wrapper for semgrep SAST analysis"""
 
+    # Semgrep check IDs that are code quality, not security - exclude to reduce false positives
+    CODE_QUALITY_CHECK_IDS = {
+        # Code style and formatting
+        "python.use-none-param",
+        "python.bad-open-file-mode",
+        "python.bad-exception-caught",
+        "python.bad-open-mode",
+        "python.duplicate-function-def",
+        "python.useless-return",
+        "python.useless-else",
+        "python.redundant-unless",
+        "python.unreachable-code",
+        # Best practices (not security)
+        "python.use-setliteral",
+        "python.use-dict-literal",
+        "python.use-list-literal",
+        "javascript.comparison-with-nan",
+        "javascript.useless-assignment",
+        "javascript.no-delete-var",
+        "javascript.no-empty-block",
+        "javascript.no-template-curly-in-string",
+        "javascript.no-const-assign",
+        # Error handling (code quality)
+        "javascript.no-throw-literal",
+        "javascript.catch-error-name",
+        "javascript.no-console-spam",
+        # Performance/optimization
+        "javascript.performance",
+        "javascript.performance.*",
+        "python.performance.*",
+        # Testing
+        "pytest.*",
+        "unittest.*",
+        "mocha.*",
+        "jest.*",
+        # Code complexity (not security)
+        "complexity",
+        "cyclomatic-complexity",
+        "cognitive-complexity",
+        "max-params",
+        "max-lines",
+        "max-len",
+    }
+
     def is_installed(self) -> bool:
         """Check if semgrep is installed"""
         try:
@@ -140,6 +184,9 @@ class SemgrepScanner(ScannerWrapper):
             # Check if PHP files exist in the target
             has_php = any(Path(path).rglob('*.php'))
 
+            # Check if JS/TS files exist in the target
+            has_js = any(Path(path).rglob('*.{js,ts,jsx,tsx}'))
+
             # Build config flags
             config_flags = []
 
@@ -149,6 +196,13 @@ class SemgrepScanner(ScannerWrapper):
                 if custom_rules.exists():
                     config_flags.append(f"--config={custom_rules}")
                     logger.info(f"Using custom PHP vulnerability rules from {custom_rules}")
+
+            # Add custom JS/TS rules if JS files exist
+            if has_js:
+                js_rules = Path(__file__).parent.parent / "js-semgrep-rules.yaml"
+                if js_rules.exists():
+                    config_flags.append(f"--config={js_rules}")
+                    logger.info(f"Using custom JavaScript/TypeScript vulnerability rules from {js_rules}")
 
             # Prefer bundled GitLab SAST rules (language subdirs + ruby pack); fall back to registry
             sast_rules_root = "/usr/local/share/sast-rules"
@@ -178,21 +232,38 @@ class SemgrepScanner(ScannerWrapper):
                 return [], raw_output_path
 
             issues = []
+            filtered_count = 0
 
             for result_item in data.get("results", []):
+                check_id = result_item.get("check_id", "")
+                severity = result_item.get("extra", {}).get("severity", "")
+                metadata = result_item.get("extra", {}).get("metadata", {})
+                message = result_item.get("extra", {}).get("message", "")
+
+                # Skip code quality findings to reduce false positives
+                if self._is_code_quality(check_id, metadata, message):
+                    filtered_count += 1
+                    continue
+
+                # Downgrade INFO severity to low impact or skip entirely
+                if severity.upper() == "INFO":
+                    # Only keep INFO if it has explicit security metadata
+                    if not self._is_security_finding(metadata):
+                        filtered_count += 1
+                        continue
+
                 issues.append({
                     "type": "SAST",
-                    "title": result_item.get("check_id", "semgrep finding"),
-                    "description": result_item.get("extra", {}).get("message", "Code pattern security issue"),
+                    "title": check_id,
+                    "description": message,
                     "file": result_item.get("path", "unknown"),
                     "line": result_item.get("start", {}).get("line", 1),
-                    "severity": self._map_severity(
-                        result_item.get("extra", {}).get("severity"),
-                        result_item.get("extra", {}).get("metadata", {}).get("security-severity", "")
-                        or result_item.get("extra", {}).get("metadata", {}).get("impact", ""),
-                    ),
+                    "severity": self._map_severity(severity, metadata),
                     "scanner": "semgrep",
                 })
+
+            if filtered_count > 0:
+                logger.info(f"Semgrep: Filtered out {filtered_count} code quality/low-severity findings")
 
             return issues, raw_output_path
         except subprocess.TimeoutExpired:
@@ -204,27 +275,151 @@ class SemgrepScanner(ScannerWrapper):
         except Exception as e:
             logger.error(f"semgrep scan failed: {e}")
             return [], raw_output_path
-    
-    def _map_severity(self, semgrep_severity: str, security_severity: str = "") -> str:
-        """Map semgrep severity + GitLab security-severity metadata to standard levels.
-        ERROR + High → critical; WARNING + High → high; otherwise by semgrep level."""
+
+    def _is_code_quality(self, check_id: str, metadata: dict, message: str) -> bool:
+        """Check if a Semgrep finding is code quality (not security)"""
+        # Direct match against code quality check IDs
+        for quality_check in self.CODE_QUALITY_CHECK_IDS:
+            if quality_check in check_id.lower():
+                return True
+
+        # Check metadata for non-security categories
+        category = metadata.get("category", "").lower()
+        technology = metadata.get("technology", "").lower()
+        cwe = metadata.get("cwe", "")
+
+        # Code quality categories
+        quality_categories = [
+            "best practice",
+            "performance",
+            "correctness",
+            "maintainability",
+            "readability",
+            "code style",
+            "style",
+            "complexity",
+            "testing",
+            "quality",
+            "error-handling",
+        ]
+
+        for qc in quality_categories:
+            if qc in category:
+                return True
+
+        # Findings without CWE or OWASP references are likely code quality
+        if not cwe and "owasp" not in category and "security" not in category:
+            # Check if message mentions security
+            if not any(security_term in message.lower()
+                      for security_term in ["vulnerability", "injection", "xss", "csrf", "sql", "secret", "credential", "auth"]):
+                return True
+
+        return False
+
+    def _is_security_finding(self, metadata: dict) -> bool:
+        """Check if a finding has explicit security metadata"""
+        if metadata.get("cwe"):
+            return True
+        if "owasp" in metadata.get("category", "").lower():
+            return True
+        if metadata.get("security-severity"):
+            return True
+        if metadata.get("impact"):
+            return True
+        return False
+
+    def _map_severity(self, semgrep_severity: str, metadata: dict = None) -> str:
+        """Map semgrep severity + GitLab security-severity metadata to standard levels."""
+        if metadata is None:
+            metadata = {}
+
         sev = (semgrep_severity or "").upper()
-        ssev = security_severity.lower()
-        if sev == "ERROR" and ssev == "high":
-            return "critical"
-        if ssev == "high":
-            return "high"
+
+        # Use GitLab security-severity if available (more accurate)
+        security_severity = metadata.get("security-severity", "").lower()
+        if security_severity:
+            return security_severity
+
+        # Fallback to semgrep severity level
+        # ERROR → high, WARNING → medium, INFO → skip (handled by caller)
         mapping = {
             "ERROR": "high",
             "WARNING": "medium",
-            "INFO": "low",
         }
         return mapping.get(sev, "medium")
 
 
 class KicsScanner(ScannerWrapper):
     """Wrapper for KICS infrastructure as code scanning"""
-    
+
+    # KICS queries that are code quality, not security - exclude these to reduce false positives
+    CODE_QUALITY_QUERIES = {
+        # Code quality/pattern matching
+        "Unused container instruction",
+        "Container image tag",
+        "Container image digest is missing",
+        "Container image uses latest tag",
+        "Dockerfile command not latest",
+        "Dockerfile instruction should not be used multiple times",
+        "Dockerfile line length should be less than 200 characters",
+        "Dockerfile use JSON array for RUN instructions",
+        "File permissions",
+        "Inappropriate file permissions",
+        "Root user in container",
+        "User in Dockerfile",
+        "Missing health check",
+        "Health check not enabled",
+        "Kubernetes labels not present",
+        "Kubernetes annotations not present",
+        "Metadata labels not set",
+        "Missing Kubernetes labels",
+        "Missing Kubernetes annotations",
+        "Terraform output not defined",
+        "Terraform module has no source",
+        "Terraform module source is missing",
+        "Terraform variable not defined",
+        "Terraform variable is not used",
+        "Terraform output description",
+        "Terraform variable description",
+        "Terraform resource description",
+        "Terraform module description",
+        "Terraform provider description",
+        "Terraform resource tag",
+        "Terraform module tag",
+        "Terraform provider tag",
+        "Terraform variable tag",
+        "Terraform output tag",
+        "AWS resource missing tags",
+        "Missing tags",
+        "Resource tagging",
+        "Description missing",
+        "Description is missing",
+        "Comment missing",
+        "Best practices",
+        "Optimization",
+        "Performance",
+        "Cost optimization",
+        "Cost",
+        "Resource naming",
+        "Naming convention",
+        "Naming",
+        "Consistency",
+        "Maintainability",
+        "Readability",
+        "Code style",
+        "Style",
+        "Format",
+        "Formatting",
+        "Lint",
+        "Linter",
+        "Best Practice",
+        "Code organization",
+        "Code structure",
+        "Code layout",
+        "Code pattern",
+        "Pattern",
+    }
+
     def is_installed(self) -> bool:
         """Check if kics is installed"""
         try:
@@ -232,16 +427,16 @@ class KicsScanner(ScannerWrapper):
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
-    
+
     def install_command(self) -> str:
         """Return installation command"""
         return "brew install kics  # or: docker pull checkmarx/kics:latest"
-    
+
     def scan(self, path: str) -> List[Dict[str, Any]]:
         """Run KICS scan"""
         issues, _ = self.scan_with_raw_output(path)
         return issues
-    
+
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run KICS scan and return raw output file path"""
         if not self.is_installed():
@@ -272,17 +467,35 @@ class KicsScanner(ScannerWrapper):
                 return [], standalone_path
 
             issues = []
+            filtered_count = 0
             for query in data.get("queries", []):
+                query_name = query.get("queryName", "")
+                description = query.get("description", "")
+
+                # Skip code quality findings to reduce false positives
+                if self._is_code_quality(query_name, description):
+                    filtered_count += len(query.get("results", []))
+                    continue
+
+                # Skip INFO severity findings (mostly informational, low security impact)
+                severity = query.get("severity", "MEDIUM")
+                if severity == "INFO":
+                    filtered_count += len(query.get("results", []))
+                    continue
+
                 for result_item in query.get("results", []):
                     issues.append({
                         "type": "Infrastructure as Code",
-                        "title": query.get("queryName", "IaC Security Issue"),
-                        "description": query.get("description", "Infrastructure configuration security issue"),
+                        "title": query_name,
+                        "description": description,
                         "file": result_item.get("file", "unknown"),
                         "line": result_item.get("line", 1),
-                        "severity": self._map_severity(query.get("severity")),
+                        "severity": self._map_severity(severity),
                         "scanner": "kics",
                     })
+
+            if filtered_count > 0:
+                logger.info(f"KICS: Filtered out {filtered_count} code quality/low-severity findings")
 
             # Copy kics results to the standalone file for the caller
             shutil.copy2(kics_output_path, standalone_path)
@@ -298,14 +511,70 @@ class KicsScanner(ScannerWrapper):
             return [], standalone_path
         finally:
             shutil.rmtree(output_dir, ignore_errors=True)
-    
+
+    def _is_code_quality(self, query_name: str, description: str) -> bool:
+        """Check if a KICS query is code quality (not security)"""
+        query_lower = query_name.lower()
+        desc_lower = description.lower()
+
+        # Direct matches against code quality keywords
+        for quality_keyword in self.CODE_QUALITY_QUERIES:
+            if quality_keyword.lower() in query_lower:
+                return True
+            if quality_keyword.lower() in desc_lower:
+                return True
+
+        # Pattern-based exclusion
+        code_quality_patterns = [
+            # Best practice/optimization
+            "best practice",
+            "optimization",
+            "performance",
+            "cost optimization",
+            "resource naming",
+            "naming convention",
+            "maintainability",
+            "readability",
+            "code style",
+            "code organization",
+            "code structure",
+            "code layout",
+            "code pattern",
+            # Formatting/low-impact
+            "line length",
+            "formatting",
+            "format",
+            "indentation",
+            # Documentation
+            "description missing",
+            "comment missing",
+            "documentation",
+            # Tags/metadata (low security impact)
+            "missing tags",
+            "resource tagging",
+            "metadata labels",
+            "metadata annotations",
+            # Container health/monitoring (important but not security-critical)
+            "health check",
+            "liveness probe",
+            "readiness probe",
+            # User/permissions (context-dependent, often false positive)
+            "root user",
+            "user in dockerfile",
+        ]
+
+        for pattern in code_quality_patterns:
+            if pattern in query_lower or pattern in desc_lower:
+                return True
+
+        return False
+
     def _map_severity(self, kics_severity: str) -> str:
         """Map KICS severity to standard levels"""
         mapping = {
             "HIGH": "high",
             "MEDIUM": "medium",
             "LOW": "low",
-            "INFO": "low",
         }
         return mapping.get(kics_severity, "medium")
 

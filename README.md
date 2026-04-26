@@ -109,6 +109,49 @@ All findings are normalised into a unified schema with consistent severity level
 
 ---
 
+## Known Limitations
+
+ez-appsec is in active development. Current coverage and accuracy reflect testing against OWASP Juice Shop, DVWA, and production codebases. See [TEST_RESULTS.md](TEST_RESULTS.md) for full details.
+
+### Detection Accuracy
+
+| Category | Detection Rate | Notes |
+|----------|----------------|-------|
+| Infrastructure/Config (KICS) | ~100% | 254 findings, 12.5% false positive rate |
+| Secrets Scanning | 0% | Gitleaks integration pending |
+| SQL Injection | 0% | Pattern-based rules planned |
+| XSS | 0% | Framework-specific rules needed |
+| Authentication Failures | 0% | Runtime analysis required |
+| CSRF | 0% | CSRF token patterns only |
+
+### Coverage Gaps (High Priority)
+
+1. **Secrets Scanning** (Critical) - Hardcoded API keys, credentials, tokens
+2. **SQL Injection** - MySQL, PostgreSQL, SQLite patterns
+3. **XSS** - Reflected, stored, DOM-based XSS
+4. **NoSQL Injection** - MongoDB, Redis, Elasticsearch
+5. **Framework-Specific** - Laravel, Django, Spring, Express security patterns
+
+### False Positive Sources
+
+1. **Code Quality Issues** (~75%) - Unused imports, style violations
+2. **Context-Insensitive Matches** (~20%) - String literals flagged as SQL
+3. **Test Code** (~5%) - Test fixtures flagged
+
+False positives can be suppressed using `.gitleaks.toml` (gitleaks) and `.semgrepignore` (semgrep) files.
+
+### Performance Characteristics
+
+| Codebase Size | Files | Scan Time | Memory |
+|---------------|-------|-----------|---------|
+| Small | 50 | <10s | <500MB |
+| Medium | 200 | <30s | <1GB |
+| Large | 1,000 | <120s | <2GB |
+
+Linear scaling validated. CI/CD compatible: GitHub Actions (2-core, 7GB), GitLab CI (4-core, 4GB).
+
+---
+
 ## Docker Images
 
 ```bash

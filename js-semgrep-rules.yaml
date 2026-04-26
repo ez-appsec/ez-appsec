@@ -1,0 +1,512 @@
+# Custom Semgrep Rules for JavaScript/TypeScript/Angular/Node.js/Express
+# This file adds framework-specific vulnerability detection rules to address gaps identified in Phase 4
+
+rules:
+  # === NoSQL/MongoDB Injection Rules ===
+  - id: javascript.mongodb.nosql-injection-findone
+    pattern: |
+      $COL.findOne({ ...$INPUT })
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential NoSQL injection via MongoDB findOne with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-943"
+      references:
+        - https://owasp.org/www-project-web-security-testing-guide/v42/4-Web_Application_Security_Testing/07-Input_Validation_Testing/05.6-Testing_for_NoSQL_Injection
+
+  - id: javascript.mongodb.nosql-injection-find
+    pattern: |
+      $COL.find({ ...$INPUT })
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential NoSQL injection via MongoDB find with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-943"
+
+  - id: javascript.mongodb.nosql-injection-operator
+    pattern: |
+      { ...: { $<OPERATOR>: $INPUT } }
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential NoSQL injection via MongoDB operator with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-943"
+
+  # === ORM Injection Rules ===
+  - id: javascript.typeorm.user-input-in-query
+    pattern: |
+      $REPO.find({ where: { ...$INPUT } })
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential ORM injection via TypeORM with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-894"
+
+  - id: javascript.sequelize.user-input-in-query
+    pattern: |
+      $MODEL.findAll({ where: { ...$INPUT } })
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential ORM injection via Sequelize with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-894"
+
+  - id: javascript.mongoose.where-user-input
+    pattern: |
+      $MODEL.where({ ...$INPUT })
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential ORM injection via Mongoose where() with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-894"
+
+  # === Angular Security Rules ===
+  - id: angular.unsafe-innerhtml-binding
+    pattern: |
+      [innerHTML]="$INPUT"
+    languages: [typescript]
+    severity: ERROR
+    message: Angular innerHTML binding may cause XSS if $INPUT is not sanitized
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-79"
+      references:
+        - https://angular.io/guide/security#xss
+
+  - id: angular.unsafe-html-pipe
+    pattern: |
+      {{ $INPUT | safeHtml }}
+    languages: [typescript]
+    severity: ERROR
+    message: Angular safeHtml pipe may cause XSS if $INPUT is not sanitized
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-79"
+
+  - id: angular.domsanitizer-bypass
+    pattern: |
+      DomSanitizer.bypassSecurityTrust$TRUST($INPUT)
+    languages: [typescript]
+    severity: ERROR
+    message: Angular DOM sanitizer bypass may cause XSS if $INPUT is not sanitized
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-79"
+
+  - id: angular.template-injection
+    pattern: |
+      TemplateRef.$METHOD($ELEMENT, { from: $INPUT })
+    languages: [typescript]
+    severity: ERROR
+    message: Angular template injection may cause XSS with unsanitized input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-79"
+
+  # === React Security Rules ===
+  - id: react.dangerously-set-inner-html
+    pattern: |
+      dangerouslySetInnerHTML={{ __html: $INPUT }}
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: React dangerouslySetInnerHTML may cause XSS if $INPUT is not sanitized
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-79"
+      references:
+        - https://react.dev/reference/react-dom/components/common#dangerously-setting-inner-html
+
+  # === Express/Node.js Security Rules ===
+  - id: express.csrf-missing
+    pattern-either:
+      - pattern: |
+          app.use(express.urlencoded({extended: true}))
+          ...
+          app.post(...)
+      - pattern: |
+          app.use(bodyParser.urlencoded({extended: true}))
+          ...
+          app.post(...)
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Express state-changing endpoint may be missing CSRF protection
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-352"
+
+  - id: express.helmet-missing
+    pattern: |
+      const express = require('express');
+      const app = express();
+      ...
+      $APP.listen(...)
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Express app missing Helmet security middleware
+    metadata:
+      category: security
+      owasp: "A05: Security Misconfiguration"
+      cwe: "CWE-693"
+      references:
+        - https://helmetjs.github.io/
+
+  - id: express.cors-permissive
+    pattern: |
+      cors({ origin: "*", credentials: true })
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Express CORS configuration allows all origins with credentials - insecure
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-942"
+
+  - id: express.unsafe-eval
+    pattern: |
+      eval($INPUT)
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: Code execution via eval() with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-94"
+
+  - id: express.unsafe-function-constructor
+    pattern: |
+      new Function($ARGS, $INPUT)
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: Code execution via Function constructor with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-94"
+
+  - id: express.child-process-injection
+    pattern: |
+      child_process.exec($INPUT, ...)
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: OS command injection via child_process.exec() with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-78"
+
+  - id: express.child-process-execsync-injection
+    pattern: |
+      child_process.execSync($INPUT, ...)
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: OS command injection via child_process.execSync() with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-78"
+
+  - id: express.shell-injection
+    pattern: |
+      require('child_process').exec($INPUT, ...)
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: OS command injection via shell exec with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-78"
+
+  # === JWT Security Rules ===
+  - id: jwt.hardcoded-secret
+    pattern: |
+      jwt.sign($PAYLOAD, "...")
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: Hardcoded JWT secret detected
+    metadata:
+      category: security
+      owasp: "A07: Identification and Authentication Failures"
+      cwe: "CWE-798"
+
+  - id: jwt.weak-algorithm
+    pattern: |
+      jwt.sign($PAYLOAD, $SECRET, { algorithm: "none" })
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: JWT signed with 'none' algorithm - bypass vulnerability
+    metadata:
+      category: security
+      owasp: "A07: Identification and Authentication Failures"
+      cwe: "CWE-347"
+
+  - id: jwt.missing-verification
+    pattern: |
+      jwt.verify($TOKEN, $SECRET, { ... })
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Ensure JWT verification is properly implemented
+    metadata:
+      category: security
+      owasp: "A07: Identification and Authentication Failures"
+      cwe: "CWE-287"
+
+  - id: jwt.no-expiration
+    pattern-either:
+      - pattern: |
+          jwt.sign($PAYLOAD, $SECRET)
+      - pattern: |
+          jwt.sign($PAYLOAD, $SECRET, { ... })
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: JWT may be missing expiration time
+    metadata:
+      category: security
+      owasp: "A07: Identification and Authentication Failures"
+      cwe: "CWE-613"
+
+  # === Hardcoded Secrets Rules ===
+  - id: javascript.hardcoded-api-key
+    pattern: |
+      (api_key|apikey|api-key|apikey)\s*[:=]\s*["'][a-zA-Z0-9]{20,}["']
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: Hardcoded API key detected
+    metadata:
+      category: security
+      owasp: "A07: Identification and Authentication Failures"
+      cwe: "CWE-798"
+
+  - id: javascript.hardcoded-aws-secret
+    pattern: |
+      (aws_secret_access_key|AWS_SECRET_ACCESS_KEY)\s*[:=]\s*["'][A-Za-z0-9/+=]{40}["']
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: Hardcoded AWS secret key detected
+    metadata:
+      category: security
+      owasp: "A07: Identification and Authentication Failures"
+      cwe: "CWE-798"
+
+  - id: javascript.hardcoded-password
+    pattern: |
+      (password|passwd|pwd)\s*[:=]\s*["'][^"']{6,}["']
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: Hardcoded password detected
+    metadata:
+      category: security
+      owasp: "A07: Identification and Authentication Failures"
+      cwe: "CWE-798"
+
+  - id: javascript.hardcoded-jwt-secret
+    pattern: |
+      (jwt_secret|jwtsecret|JWT_SECRET)\s*[:=]\s*["'][^"']{10,}["']
+    languages: [javascript, typescript]
+    severity: CRITICAL
+    message: Hardcoded JWT secret detected
+    metadata:
+      category: security
+      owasp: "A07: Identification and Authentication Failures"
+      cwe: "CWE-798"
+
+  # === Sensitive Data Exposure Rules ===
+  - id: javascript.console-log-sensitive
+    pattern: |
+      console.log($SENSITIVE)
+    languages: [javascript, typescript]
+    severity: INFO
+    message: Sensitive data may be logged to console
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-532"
+
+  - id: javascript.exposed-config-in-client
+    pattern: |
+      (API_KEY|DATABASE_URL|SECRET|PASSWORD)\s*=\s*["'][^"']["']
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Sensitive configuration exposed in client-side code
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-200"
+
+  # === Path Traversal Rules ===
+  - id: javascript.path-traversal-fs-readfile
+    pattern: |
+      fs.readFile($INPUT, ...)
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential path traversal via fs.readFile with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-22"
+
+  - id: javascript.path-traversal-fs-readfilesync
+    pattern: |
+      fs.readFileSync($INPUT, ...)
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential path traversal via fs.readFileSync with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-22"
+
+  - id: javascript.path-traversal-resolve
+    pattern: |
+      path.resolve($INPUT, ...)
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Potential path traversal via path.resolve with user input
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-22"
+
+  # === Debug Configuration Rules ===
+  - id: javascript.debug-enabled
+    pattern: |
+      (debug|DEBUG)\s*[:=]\s*true
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Debug mode enabled - may expose sensitive information
+    metadata:
+      category: security
+      owasp: "A05: Security Misconfiguration"
+      cwe: "CWE-489"
+
+  # === Weak Cryptography Rules ===
+  - id: javascript.weak-hash-md5
+    pattern: |
+      crypto.createHash("md5")
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Weak hash algorithm MD5 detected
+    metadata:
+      category: security
+      owasp: "A02: Cryptographic Failures"
+      cwe: "CWE-327"
+
+  - id: javascript.weak-hash-sha1
+    pattern: |
+      crypto.createHash("sha1")
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Weak hash algorithm SHA1 detected
+    metadata:
+      category: security
+      owasp: "A02: Cryptographic Failures"
+      cwe: "CWE-327"
+
+  - id: javascript.weak-cipher-des
+    pattern: |
+      createCipher("des")
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Weak cipher DES detected
+    metadata:
+      category: security
+      owasp: "A02: Cryptographic Failures"
+      cwe: "CWE-327"
+
+  - id: javascript.weak-cipher-rc4
+    pattern: |
+      createCipher("rc4")
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Weak cipher RC4 detected
+    metadata:
+      category: security
+      owasp: "A02: Cryptographic Failures"
+      cwe: "CWE-327"
+
+  # === SSRF Rules ===
+  - id: javascript.ssrf-http-request
+    pattern: |
+      http.get($USER_INPUT, ...)
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential SSRF via http.get with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-918"
+
+  - id: javascript.ssrf-axios
+    pattern: |
+      axios.get($USER_INPUT, ...)
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Potential SSRF via axios.get with unsanitized user input
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-918"
+
+  # === Session Management Rules ===
+  - id: javascript.insecure-session-cookie
+    pattern: |
+      session({ cookie: { secure: false } })
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Insecure session cookie - secure flag not set
+    metadata:
+      category: security
+      owasp: "A05: Security Misconfiguration"
+      cwe: "CWE-614"
+
+  - id: javascript.session-cookie-no-httponly
+    pattern: |
+      session({ cookie: { httpOnly: false } })
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Session cookie missing httpOnly flag - vulnerable to XSS
+    metadata:
+      category: security
+      owasp: "A05: Security Misconfiguration"
+      cwe: "CWE-1004"
+
+  # === Open Redirect Rules ===
+  - id: javascript.open-redirect
+    pattern: |
+      res.redirect($USER_INPUT)
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Potential open redirect via unsanitized user input
+    metadata:
+      category: security
+      owasp: "A01: Broken Access Control"
+      cwe: "CWE-601"
+
+  # === File Upload Security Rules ===
+  - id: javascript.unrestricted-file-upload
+    pattern: |
+      upload.single(...)
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: File upload without size/type restrictions
+    metadata:
+      category: security
+      owasp: "A03: Injection"
+      cwe: "CWE-434"

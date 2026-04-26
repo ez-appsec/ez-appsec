@@ -11,64 +11,103 @@ from ez_appsec.converters import VulnerabilityConverters, GitLabVulnerabilityFor
 
 class SecurityScanner:
     """Main security scanner orchestrating all detection mechanisms"""
-    
+
     def __init__(self, config: Config, use_external_scanners: bool = True):
         self.config = config
         self.use_external = use_external_scanners
-        
+
         # External scanners only - custom detectors removed
         self.external = ExternalScannerManager() if use_external_scanners else None
-        
+
         # AI analyzer
         self.ai = AIAnalyzer(config)
+
+        # Track suppressed findings for reporting
+        self.suppressed_count = 0
     
     def scan(self, path: str, custom_prompt: str = None) -> Dict[str, Any]:
         """Execute full security scan using external scanners only"""
-        
+
         base_path = Path(path)
         issues = []
         scanner_results = {}
-        
+
         # Run external scanners only (custom detectors removed)
         if self.use_external and self.external:
             external_issues = self.external.scan_all(path)
             issues.extend(external_issues)
             scanner_results["external"] = len(external_issues)
-        
+
         # AI-powered analysis and remediation
         if issues:
             ai_results = self.ai.analyze(issues, base_path, custom_prompt)
             issues = ai_results.get("enhanced_issues", issues)
-        
+
+        # Apply ignore rules (suppression)
+        issues, self.suppressed_count = self._apply_ignore_rules(issues)
+
         # Filter by severity
         if self.config.severity != "all":
             issues = self._filter_by_severity(issues, self.config.severity)
-        
+
         # Sort by severity
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         issues.sort(
             key=lambda x: severity_order.get(x.get("severity", "low"), 4)
         )
-        
+
         return {
             "issues": issues,
             "total": len(issues),
+            "suppressed": self.suppressed_count,
             "path": str(base_path),
             "scanner_results": scanner_results,
         }
+
+    def _apply_ignore_rules(self, issues: List[Dict]) -> tuple[List[Dict], int]:
+        """Apply ignore rules to suppress findings
+
+        Returns: (active_issues, suppressed_count)
+        """
+        if not self.config.ignore_rules:
+            return issues, 0
+
+        active_issues = []
+        suppressed_count = 0
+
+        for issue in issues:
+            matching_rule = self.config.get_matching_ignore_rule(issue)
+            if matching_rule:
+                suppressed_count += 1
+                # Add suppression metadata for transparency
+                issue["suppressed_by"] = {
+                    "reason": matching_rule.reason,
+                    "rule_id": matching_rule.rule_id,
+                    "file_path": matching_rule.file_path,
+                    "message": matching_rule.message,
+                    "cve_id": matching_rule.cve_id,
+                    "permanent": matching_rule.permanent,
+                    "until": matching_rule.until,
+                }
+                # Note: we keep the finding in a separate list for auditability
+                # but don't include it in the active issues returned
+            else:
+                active_issues.append(issue)
+
+        return active_issues, suppressed_count
     
     def scan_to_gitlab_format(self, path: str, output_file: str = None, custom_prompt: str = None) -> Dict[str, Any]:
         """Execute full security scan and output in GitLab vulnerability format"""
-        
+
         base_path = Path(path)
         scanner_results = {}
         raw_outputs = {}
-        
+
         # Run external scanners with raw output capture
         if self.use_external and self.external:
             issues, raw_outputs = self.external.scan_all_with_raw_outputs(path)
             scanner_results["external"] = len(issues)
-        
+
         # Convert raw outputs to GitLab format
         gitlab_reports = []
         for scanner_name, raw_path in raw_outputs.items():
@@ -83,48 +122,60 @@ class SecurityScanner:
                         os.unlink(raw_path)
                     except Exception:
                         pass
-        
+
         # Merge all reports
         if gitlab_reports:
             merged_report = VulnerabilityConverters.merge_reports(gitlab_reports)
         else:
             merged_report = GitLabVulnerabilityFormat.create_report([], "ez-appsec")
-        
+
+        # Convert to internal format for ignore rule processing
+        internal_issues = []
+        for vuln in merged_report.get("vulnerabilities", []):
+            internal_issues.append({
+                "type": vuln.get("category", "unknown"),
+                "title": vuln.get("name", ""),
+                "description": vuln.get("description", ""),
+                "file": vuln.get("location", {}).get("file", "unknown"),
+                "line": vuln.get("location", {}).get("start_line", 1),
+                "severity": vuln.get("severity", "medium"),
+                "scanner": "gitlab-converted",
+                "rule_id": vuln.get("id", ""),
+            })
+
+        # Apply ignore rules
+        active_issues, suppressed_count = self._apply_ignore_rules(internal_issues)
+
         # AI-powered analysis and remediation (optional for GitLab format)
-        if merged_report.get("vulnerabilities") and self.ai:
-            # Convert GitLab format back to internal format for AI analysis
-            internal_issues = []
-            for vuln in merged_report["vulnerabilities"]:
-                internal_issues.append({
-                    "type": vuln.get("category", "unknown"),
-                    "title": vuln.get("name", ""),
-                    "description": vuln.get("description", ""),
-                    "file": vuln.get("location", {}).get("file", "unknown"),
-                    "line": vuln.get("location", {}).get("start_line", 1),
-                    "severity": vuln.get("severity", "medium"),
-                    "scanner": "gitlab-converted"
-                })
-            
-            ai_results = self.ai.analyze(internal_issues, base_path, custom_prompt)
-            
+        if active_issues and self.ai:
+            ai_results = self.ai.analyze(active_issues, base_path, custom_prompt)
+
             # Update GitLab report with AI-enhanced descriptions
             for i, vuln in enumerate(merged_report["vulnerabilities"]):
                 if i < len(ai_results.get("enhanced_issues", [])):
                     enhanced = ai_results["enhanced_issues"][i]
                     vuln["description"] = enhanced.get("description", vuln["description"])
                     vuln["solution"] = enhanced.get("solution", vuln.get("solution", ""))
-        
+
         # Filter by severity
         if self.config.severity != "all":
-            filtered_vulns = self._filter_gitlab_vulnerabilities(merged_report["vulnerabilities"], self.config.severity)
-            merged_report["vulnerabilities"] = filtered_vulns
-        
+            filtered_vulns = self._filter_gitlab_vulnerabilities(
+                [v for v in merged_report.get("vulnerabilities", []) if not v.get("suppressed_by")],
+                self.config.severity
+            )
+            # Add suppressed findings at the end
+            suppressed_vulns = [v for v in merged_report.get("vulnerabilities", []) if v.get("suppressed_by")]
+            merged_report["vulnerabilities"] = filtered_vulns + suppressed_vulns
+
+        # Add suppressed count to report metadata
+        merged_report["suppressed_count"] = suppressed_count
+
         # Save to file if requested
         if output_file:
             import json
             with open(output_file, 'w') as f:
                 json.dump(merged_report, f, indent=2)
-        
+
         return merged_report
     
     def quick_check(self, path: str) -> Dict[str, Any]:

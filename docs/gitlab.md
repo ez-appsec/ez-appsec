@@ -95,8 +95,30 @@ Opens a merge request that removes the `scan.yml` include from `.gitlab-ci.yml`.
 | `EZ_APPSEC_DASHBOARD_PROJECT` | Group | Full path of the dashboard project (e.g. `your-group/ez_appsec/ez-appsec-dashboard`) |
 | `EZ_APPSEC_DASHBOARD_DEPLOY_KEY` | Group | Base64-encoded ed25519 private key — allows scan jobs to push to the dashboard |
 | `EZ_APPSEC_VERSION` | Project | Docker image tag to use (default: `latest`) — set by `install` automatically |
+| `GITLAB_ACCESS_TOKEN` | Project | Access token for MR comments — set in **Settings → CI/CD → Variables** |
+| `CI_PROJECT_ID` | Auto-provided | Project ID — auto-available in CI |
+| `CI_MERGE_REQUEST_IID` | Auto-provided | Merge request IID — auto-available in MR pipelines |
 
 Group variables are set automatically by `install-dashboard`. You can view and update them in **Group → Settings → CI/CD → Variables**.
+
+---
+
+## MR Inline Comments
+
+Findings are posted as inline diff notes on merge requests automatically. Comments only appear on lines that were changed in the diff.
+
+To post comments manually:
+
+```bash
+ez-appsec pr-comment \
+  --platform gitlab \
+  --findings vulnerabilities.json \
+  --repo PROJECT_ID \
+  --mr 123 \
+  --gitlab-url https://gitlab.com
+```
+
+The command will automatically use `GITLAB_ACCESS_TOKEN`, `CI_PROJECT_ID`, and `CI_MERGE_REQUEST_IID` if available. Multiple findings on the same file are grouped into a single comment thread.
 
 ---
 

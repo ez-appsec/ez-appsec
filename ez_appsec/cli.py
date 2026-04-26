@@ -1,6 +1,7 @@
 """Main CLI entry point for ez-appsec"""
 
 import json
+import os
 import click
 import sys
 from pathlib import Path
@@ -20,26 +21,31 @@ def main():
 @click.argument("path", type=click.Path(exists=True), default=".")
 @click.option("--ai-prompt", help="Custom AI prompt for security analysis")
 @click.option("--languages", multiple=True, help="Programming languages to scan")
-@click.option("--severity", default="all", help="Minimum severity level to report")
+@click.option("--severity", default=None, help="Minimum severity level to report")
 @click.option("--output", type=click.Path(), help="Output file for results (JSON)")
-def scan(path, ai_prompt, languages, severity, output):
+@click.option("--config", "config_file", type=click.Path(), default=".ez-appsec.yaml", help="Path to config file")
+def scan(path, ai_prompt, languages, severity, output, config_file):
     """Scan a codebase for security vulnerabilities using AI analysis
-    
+
     PATH: Directory or file to scan (default: current directory)
     """
     try:
-        config = Config(
-            languages=languages if languages else None,
-            severity=severity,
-            output_file=output
-        )
+        config = Config.from_file(config_file)
+        if languages:
+            config.languages = list(languages)
+        if severity:
+            config.severity = severity
+        if output:
+            config.output_file = output
         
         scanner = SecurityScanner(config)
         results = scanner.scan(path, ai_prompt)
         
         click.echo(f"\n✓ Security scan completed")
         click.echo(f"  Total issues found: {len(results['issues'])}")
-        
+        if results.get('suppressed', 0) > 0:
+            click.echo(f"  [suppressed] {results['suppressed']} finding(s) matched ignore rules")
+
         if results['issues']:
             click.echo("\nTop Issues:")
             for issue in results['issues'][:5]:
@@ -64,22 +70,27 @@ def scan(path, ai_prompt, languages, severity, output):
 @main.command()
 @click.argument("path", type=click.Path(exists=True), default=".")
 @click.option("--ai-prompt", help="Custom AI prompt for security analysis")
-@click.option("--severity", default="all", help="Minimum severity level to report")
+@click.option("--severity", default=None, help="Minimum severity level to report")
 @click.option("--output", type=click.Path(), help="Output file for GitLab vulnerability report (JSON)")
-def gitlab_scan(path, ai_prompt, severity, output):
+@click.option("--config", "config_file", type=click.Path(), default=".ez-appsec.yaml", help="Path to config file")
+def gitlab_scan(path, ai_prompt, severity, output, config_file):
     """Scan a codebase and output results in GitLab vulnerability format
-    
+
     PATH: Directory or file to scan (default: current directory)
     """
     try:
-        config = Config(severity=severity)
+        config = Config.from_file(config_file)
+        if severity:
+            config.severity = severity
         
         scanner = SecurityScanner(config)
         results = scanner.scan_to_gitlab_format(path, output, ai_prompt)
         
         click.echo(f"\n✓ GitLab vulnerability scan completed")
         click.echo(f"  Total vulnerabilities found: {len(results['vulnerabilities'])}")
-        
+        if results.get('suppressed_count', 0) > 0:
+            click.echo(f"  [suppressed] {results['suppressed_count']} finding(s) matched ignore rules")
+
         if results['vulnerabilities']:
             click.echo("\nTop Vulnerabilities:")
             for vuln in results['vulnerabilities'][:5]:
@@ -119,8 +130,15 @@ ai:
   model: gpt-4
   temperature: 0.5
 
-# Custom rules
-custom_rules: []
+# Ignore rules — suppress known false positives
+# ignore:
+#   - rule_id: generic-api-key
+#     file_path: "tests/**"
+#     reason: "Test fixtures with dummy credentials"
+#     permanent: true
+#   - cve_id: CVE-2023-1234
+#     reason: "Mitigated, revisit later"
+#     until: "2025-06-01"
 """
     
     with open(config_path, "w") as f:
@@ -149,6 +167,79 @@ def check(path):
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
         sys.exit(1)
+
+
+@main.command("check-config")
+@click.argument("config_path", type=click.Path(), default=".ez-appsec.yaml")
+def check_config(config_path):
+    """Validate an .ez-appsec.yaml configuration file
+
+    CONFIG_PATH: Path to config file (default: .ez-appsec.yaml)
+    """
+    config_file = Path(config_path)
+    if not config_file.exists():
+        click.echo(f"✗ Config file not found: {config_path}", err=True)
+        sys.exit(1)
+
+    try:
+        import yaml as _yaml
+        with open(config_file) as f:
+            raw = _yaml.safe_load(f)
+        if not isinstance(raw, dict):
+            click.echo(f"✗ Config file must be a YAML mapping, got {type(raw).__name__}", err=True)
+            sys.exit(1)
+    except _yaml.YAMLError as e:
+        click.echo(f"✗ Invalid YAML syntax: {e}", err=True)
+        sys.exit(1)
+
+    errors = []
+
+    valid_severities = {"all", "critical", "high", "medium", "low"}
+    if "severity" in raw and raw["severity"] not in valid_severities:
+        errors.append(f"Invalid severity '{raw['severity']}' — must be one of: {', '.join(sorted(valid_severities))}")
+
+    ignore_data = raw.get("ignore", [])
+    if not isinstance(ignore_data, list):
+        errors.append(f"'ignore' must be a list, got {type(ignore_data).__name__}")
+        ignore_data = []
+
+    for i, item in enumerate(ignore_data):
+        prefix = f"ignore[{i}]"
+        if not isinstance(item, dict):
+            errors.append(f"{prefix}: must be a mapping, got {type(item).__name__}")
+            continue
+        has_matcher = any(item.get(k) for k in ("rule_id", "file_path", "message", "cve_id"))
+        if not has_matcher:
+            errors.append(f"{prefix}: must specify at least one matcher (rule_id, file_path, message, or cve_id)")
+        if not item.get("permanent") and not item.get("until"):
+            errors.append(f"{prefix}: must set 'permanent: true' or provide 'until' date")
+        if item.get("until"):
+            try:
+                from datetime import datetime
+                datetime.fromisoformat(item["until"])
+            except (ValueError, TypeError):
+                errors.append(f"{prefix}: 'until' must be ISO date (YYYY-MM-DD), got '{item['until']}'")
+        if not item.get("reason"):
+            errors.append(f"{prefix}: 'reason' is required")
+
+    if errors:
+        click.echo(f"✗ {len(errors)} error(s) in {config_path}:")
+        for err in errors:
+            click.echo(f"  - {err}")
+        sys.exit(1)
+
+    try:
+        config = Config.from_file(config_path)
+    except Exception as e:
+        click.echo(f"✗ Config loading failed: {e}", err=True)
+        sys.exit(1)
+
+    rule_count = len(config.ignore_rules)
+    active_count = sum(1 for r in config.ignore_rules if r.is_active())
+    click.echo(f"✓ {config_path} is valid")
+    click.echo(f"  Severity: {config.severity}")
+    if rule_count:
+        click.echo(f"  Ignore rules: {rule_count} ({active_count} active)")
 
 
 @main.command()
@@ -286,9 +377,10 @@ def update_web(vulns_file, web_dir, serve, port):
 @click.argument("path", type=click.Path(exists=True), default=".")
 @click.option("--ai-prompt", help="Custom AI prompt for security analysis")
 @click.option("--languages", multiple=True, help="Programming languages to scan")
-@click.option("--severity", default="all", help="Minimum severity level to report")
+@click.option("--severity", default=None, help="Minimum severity level to report")
 @click.option("--output", type=click.Path(), help="Output file for SARIF report")
-def github_scan(path, ai_prompt, languages, severity, output):
+@click.option("--config", "config_file", type=click.Path(), default=".ez-appsec.yaml", help="Path to config file")
+def github_scan(path, ai_prompt, languages, severity, output, config_file):
     """Scan a codebase and output results in GitHub SARIF format
 
     PATH: Directory or file to scan (default: current directory)
@@ -297,11 +389,13 @@ def github_scan(path, ai_prompt, languages, severity, output):
     uploaded to GitHub's Security tab using the SARIF upload action.
     """
     try:
-        config = Config(
-            languages=languages if languages else None,
-            severity=severity,
-            output_file=output
-        )
+        config = Config.from_file(config_file)
+        if languages:
+            config.languages = list(languages)
+        if severity:
+            config.severity = severity
+        if output:
+            config.output_file = output
 
         scanner = SecurityScanner(config)
         results = scanner.scan_to_github_format(path, output, ai_prompt)
@@ -322,6 +416,116 @@ def github_scan(path, ai_prompt, languages, severity, output):
 
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@main.command("pr-comment")
+@click.option("--platform", type=click.Choice(["github", "gitlab"]), required=True, help="Platform (github or gitlab)")
+@click.option("--findings", type=click.Path(exists=True), required=True, help="Path to vulnerabilities.json or SARIF file")
+@click.option("--pr", type=int, help="Pull request number (GitHub)")
+@click.option("--mr", type=int, help="Merge request IID (GitLab)")
+@click.option("--repo", help="Repository (GitHub: owner/repo, GitLab: project ID)")
+@click.option("--gitlab-url", default="https://gitlab.com", help="GitLab instance URL")
+def pr_comment(platform, findings, pr, mr, repo, gitlab_url):
+    """Post security findings as inline PR/MR comments
+
+    Posts findings from a scan as inline review comments on pull requests
+    (GitHub) or merge requests (GitLab). Only comments on lines that were
+    changed in the diff.
+
+    For GitHub, uses GITHUB_TOKEN and GITHUB_REPOSITORY env vars if not provided.
+
+    For GitLab, uses GITLAB_ACCESS_TOKEN, CI_PROJECT_ID, and CI_MERGE_REQUEST_IID
+    env vars if not provided.
+    """
+    from ez_appsec.pr_commenter import (
+        GitHubPRCommenter,
+        GitLabMRCommenter,
+        load_findings_from_json
+    )
+
+    # Load findings
+    click.echo(f"Loading findings from {findings}...")
+    all_findings = load_findings_from_json(findings)
+
+    if not all_findings:
+        click.echo("No findings found in the specified file.")
+        return
+
+    click.echo(f"Loaded {len(all_findings)} findings.")
+
+    try:
+        if platform == "github":
+            # Get parameters from env vars if not provided
+            github_token = os.environ.get("GITHUB_TOKEN")
+            if not github_token:
+                click.echo("Error: GITHUB_TOKEN environment variable is required", err=True)
+                sys.exit(1)
+
+            repo_arg = repo or os.environ.get("GITHUB_REPOSITORY")
+            if not repo_arg:
+                click.echo("Error: --repo or GITHUB_REPOSITORY environment variable is required", err=True)
+                sys.exit(1)
+
+            pr_arg = pr or os.environ.get("GITHUB_EVENT_PATH")
+            if pr_arg and not pr:
+                # Try to extract PR number from event file
+                event_path = os.environ.get("GITHUB_EVENT_PATH")
+                if event_path and os.path.exists(event_path):
+                    try:
+                        with open(event_path) as f:
+                            event = json.load(f)
+                        pr_arg = event.get("pull_request", {}).get("number")
+                    except (json.JSONDecodeError, FileNotFoundError):
+                        pass
+
+            if not pr_arg:
+                click.echo("Error: --pr or GITHUB_EVENT_PATH with PR number is required", err=True)
+                sys.exit(1)
+
+            # Post comments
+            click.echo(f"Posting comments to {repo_arg} PR #{pr_arg}...")
+            commenter = GitHubPRCommenter(repo_arg, pr_arg, github_token)
+            results = commenter.post_findings(all_findings)
+
+            click.echo(f"\nResults:")
+            click.echo(f"  Posted: {results['posted']} findings")
+            click.echo(f"  Skipped: {results['skipped']} findings (not on changed lines)")
+            if results['files_commented']:
+                click.echo(f"  Files commented: {', '.join(results['files_commented'])}")
+
+        elif platform == "gitlab":
+            # Get parameters from env vars if not provided
+            gitlab_token = os.environ.get("GITLAB_ACCESS_TOKEN")
+            if not gitlab_token:
+                click.echo("Error: GITLAB_ACCESS_TOKEN environment variable is required", err=True)
+                sys.exit(1)
+
+            project_id = repo or os.environ.get("CI_PROJECT_ID")
+            if not project_id:
+                click.echo("Error: --repo or CI_PROJECT_ID environment variable is required", err=True)
+                sys.exit(1)
+
+            mr_arg = mr or os.environ.get("CI_MERGE_REQUEST_IID")
+            if not mr_arg:
+                click.echo("Error: --mr or CI_MERGE_REQUEST_IID environment variable is required", err=True)
+                sys.exit(1)
+
+            # Post comments
+            click.echo(f"Posting comments to {project_id} MR !{mr_arg}...")
+            commenter = GitLabMRCommenter(project_id, mr_arg, gitlab_token, gitlab_url)
+            results = commenter.post_findings(all_findings)
+
+            click.echo(f"\nResults:")
+            click.echo(f"  Posted: {results['posted']} findings")
+            click.echo(f"  Skipped: {results['skipped']} findings (not on changed lines)")
+            if results['files_commented']:
+                click.echo(f"  Files commented: {', '.join(results['files_commented'])}")
+
+    except Exception as e:
+        click.echo(f"\n✗ Error: {str(e)}", err=True)
         import traceback
         traceback.print_exc()
         sys.exit(1)

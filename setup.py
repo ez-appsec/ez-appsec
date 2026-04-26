@@ -39,6 +39,7 @@ setup(
             "black>=23.0",
             "flake8>=6.0",
             "mypy>=1.0",
+            "psutil>=5.9",
         ],
     },
     entry_points={
