@@ -1,0 +1,36 @@
+{
+  "issues": [
+    {
+      "rule_id": "generic-api-key",
+      "file": "config/database.yml",
+      "line": 12,
+      "severity": "critical",
+      "title": "Secret: Generic API Key",
+      "description": "Potential secret in config"
+    },
+    {
+      "rule_id": "sql-injection",
+      "file": "src/db.py",
+      "line": 50,
+      "severity": "high",
+      "title": "SQL Injection",
+      "description": "Unsanitised user input in query (line shifted)"
+    },
+    {
+      "rule_id": "xss-reflected",
+      "file": "src/views.py",
+      "line": 88,
+      "severity": "medium",
+      "title": "Reflected XSS",
+      "description": "Reflected cross-site scripting"
+    },
+    {
+      "rule_id": "hardcoded-password",
+      "file": "src/auth.py",
+      "line": 22,
+      "severity": "high",
+      "title": "Hardcoded Password",
+      "description": "Password hardcoded in source"
+    }
+  ]
+}

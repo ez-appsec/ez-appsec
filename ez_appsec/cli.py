@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ez_appsec.scanner import SecurityScanner
 from ez_appsec.config import Config
+from ez_appsec.baseline import load_baseline, diff_findings
 
 
 @click.group()
@@ -24,7 +25,9 @@ def main():
 @click.option("--severity", default=None, help="Minimum severity level to report")
 @click.option("--output", type=click.Path(), help="Output file for results (JSON)")
 @click.option("--config", "config_file", type=click.Path(), default=".ez-appsec.yaml", help="Path to config file")
-def scan(path, ai_prompt, languages, severity, output, config_file):
+@click.option("--baseline", "baseline_path", type=str, default=None, help="Baseline file path or URL for new-findings-only mode")
+@click.option("--baseline-threshold", type=int, default=0, help="Max new findings before non-zero exit (default: 0)")
+def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold):
     """Scan a codebase for security vulnerabilities using AI analysis
 
     PATH: Directory or file to scan (default: current directory)
@@ -37,12 +40,23 @@ def scan(path, ai_prompt, languages, severity, output, config_file):
             config.severity = severity
         if output:
             config.output_file = output
-        
+
         scanner = SecurityScanner(config)
         results = scanner.scan(path, ai_prompt)
-        
-        click.echo(f"\n✓ Security scan completed")
-        click.echo(f"  Total issues found: {len(results['issues'])}")
+
+        if baseline_path:
+            baseline = load_baseline(baseline_path)
+            new_findings, existing_findings = diff_findings(results["issues"], baseline)
+            results["issues"] = new_findings
+            results["total"] = len(new_findings)
+            results["baseline_existing"] = len(existing_findings)
+
+            click.echo(f"\n✓ Security scan completed (baseline mode)")
+            click.echo(f"  {len(new_findings)} new, {len(existing_findings)} existing (baseline-suppressed)")
+        else:
+            click.echo(f"\n✓ Security scan completed")
+            click.echo(f"  Total issues found: {len(results['issues'])}")
+
         if results.get('suppressed', 0) > 0:
             click.echo(f"  [suppressed] {results['suppressed']} finding(s) matched ignore rules")
 
@@ -53,7 +67,6 @@ def scan(path, ai_prompt, languages, severity, output, config_file):
                 click.echo(f"    {issue['description']}")
 
         if output:
-            # Write results to output file
             try:
                 with open(output, 'w') as f:
                     json.dump(results, f, indent=2)
@@ -61,7 +74,11 @@ def scan(path, ai_prompt, languages, severity, output, config_file):
             except Exception as e:
                 click.echo(f"\n✗ Error writing results to file: {str(e)}", err=True)
                 sys.exit(1)
-            
+
+        if baseline_path and len(results["issues"]) > baseline_threshold:
+            click.echo(f"\n✗ {len(results['issues'])} new finding(s) exceed threshold ({baseline_threshold})", err=True)
+            sys.exit(1)
+
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
         sys.exit(1)
