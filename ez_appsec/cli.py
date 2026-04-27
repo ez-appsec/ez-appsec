@@ -548,5 +548,83 @@ def pr_comment(platform, findings, pr, mr, repo, gitlab_url):
         sys.exit(1)
 
 
+@main.command("fix-pr")
+@click.option("--repo", required=True, help="Repository (GitHub: owner/repo, GitLab: project ID)")
+@click.option("--platform", type=click.Choice(["github", "gitlab"]), default="github", help="Platform")
+@click.option("--findings", type=click.Path(exists=True), required=True, help="Path to grype JSON or vulnerabilities.json")
+@click.option("--format", "findings_format", type=click.Choice(["grype", "gitlab"]), default="grype",
+              help="Findings file format (raw grype JSON or GitLab vulnerabilities.json)")
+@click.option("--path", "repo_path", type=click.Path(exists=True), default=".", help="Local repo checkout path")
+@click.option("--gitlab-url", default="https://gitlab.com", help="GitLab instance URL")
+@click.option("--dry-run", is_flag=True, help="Show what would be changed without creating a PR")
+def fix_pr(repo, platform, findings, findings_format, repo_path, gitlab_url, dry_run):
+    """Open a PR/MR that bumps vulnerable dependencies to fixed versions
+
+    Reads grype scan output (or GitLab-format vulnerabilities.json), groups
+    fixable CVEs by package ecosystem, bumps versions in manifest files,
+    and opens one PR per ecosystem.
+
+    Supports: package.json, requirements.txt, go.mod, Gemfile, pom.xml
+    """
+    from ez_appsec.fix_pr import (
+        parse_grype_findings,
+        parse_gitlab_findings,
+        group_by_ecosystem,
+        create_github_pr,
+        create_gitlab_mr,
+        build_pr_body,
+        build_branch_name,
+    )
+
+    try:
+        if findings_format == "grype":
+            deps = parse_grype_findings(findings)
+        else:
+            deps = parse_gitlab_findings(findings)
+
+        if not deps:
+            click.echo("No fixable dependency findings found.")
+            return
+
+        click.echo(f"Found {len(deps)} fixable dependency CVE(s).")
+
+        plans = group_by_ecosystem(deps, repo_path)
+        if not plans:
+            click.echo("No matching package manifests found in the repository.")
+            return
+
+        for plan in plans:
+            click.echo(f"  {plan.ecosystem} ({plan.manifest_file}): {len(plan.fixes)} fix(es)")
+
+        if platform == "github":
+            token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+            result = create_github_pr(repo, repo_path, plans, token=token, dry_run=dry_run)
+        else:
+            token = os.environ.get("GITLAB_ACCESS_TOKEN") or os.environ.get("GITLAB_TOKEN")
+            result = create_gitlab_mr(repo, repo_path, plans, token=token,
+                                      gitlab_url=gitlab_url, dry_run=dry_run)
+
+        if result.get("error"):
+            click.echo(f"\n✗ {result['error']}", err=True)
+            sys.exit(1)
+
+        if dry_run:
+            click.echo(f"\n[dry-run] Branch: {result['branch']}")
+            click.echo(f"[dry-run] Files modified: {', '.join(result['files_modified'])}")
+            click.echo(f"\n[dry-run] PR body preview:\n")
+            click.echo(build_pr_body(plans))
+        else:
+            url_key = "pr_url" if platform == "github" else "mr_url"
+            click.echo(f"\n✓ {'PR' if platform == 'github' else 'MR'} created: {result[url_key]}")
+            click.echo(f"  Branch: {result['branch']}")
+            click.echo(f"  Files: {', '.join(result['files_modified'])}")
+
+    except Exception as e:
+        click.echo(f"✗ Error: {str(e)}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()
