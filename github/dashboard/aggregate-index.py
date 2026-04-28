@@ -18,6 +18,8 @@ from pathlib import Path
 from datetime import datetime
 from collections import Counter
 
+from ez_appsec.history import append_history, make_entry
+
 
 def load_vulnerabilities(vuln_file: Path) -> tuple:
     """Load and parse a vulnerabilities file.
@@ -126,7 +128,16 @@ def main():
         rel = vuln_file.relative_to(vulns_dir)
         print(f"Aggregating: {rel}")
         try:
-            projects.append(aggregate_file(vuln_file, vulns_dir))
+            project = aggregate_file(vuln_file, vulns_dir)
+            projects.append(project)
+            s = project["summary"]
+            entry = make_entry(
+                date=project.get("last_updated"),
+                total=s["total"], critical=s["critical"],
+                high=s["high"], medium=s["medium"], low=s["low"],
+            )
+            history_path = data_dir / "history" / project["slug"] / "history.json"
+            append_history(project["slug"], entry, data_dir, history_file=history_path)
         except Exception as e:
             print(f"Error aggregating {rel}: {e}", file=sys.stderr)
 

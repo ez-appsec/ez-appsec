@@ -301,6 +301,9 @@ class GitHubDashboard {
                 this.makeTreeNode(p.slug, p.name, p.summary, false)
             );
         });
+
+        // Load history data and inject sparklines + trend indicators
+        this.projects.forEach(p => this.loadProjectHistory(p.slug));
     }
 
     makeTreeNode(slug, name, summary, isAll) {
@@ -809,6 +812,79 @@ class GitHubDashboard {
                     Place a <code>vulnerabilities.json</code> file in the <code>data/</code> directory
                 </p>
             </div>`;
+    }
+
+    // ── History / Sparklines / Trend ─────────────────────────────
+
+    async loadProjectHistory(slug) {
+        const paths = [
+            `data/projects/${slug}/history.json`,
+            `data/history/${slug}/history.json`,
+        ];
+        let history = null;
+        for (const p of paths) {
+            try {
+                const r = await fetch(p);
+                if (r.ok) { history = await r.json(); break; }
+            } catch (e) { /* try next */ }
+        }
+        if (!history || !Array.isArray(history) || history.length === 0) return;
+
+        const node = this.projectTree.querySelector(`[data-slug="${slug}"]`);
+        if (!node) return;
+
+        const trend = this.computeTrend(history);
+        const trendEl = document.createElement('span');
+        trendEl.className = `tree-node__trend tree-node__trend--${trend.cls}`;
+        trendEl.textContent = trend.symbol;
+        trendEl.title = trend.label;
+        node.appendChild(trendEl);
+
+        const sparkId = `spark-${slug.replace(/[^a-zA-Z0-9-]/g, '-')}`;
+        const sparkContainer = document.createElement('span');
+        sparkContainer.className = 'tree-node__sparkline';
+        sparkContainer.id = sparkId;
+        node.appendChild(sparkContainer);
+        this.renderSparkline(history, sparkId);
+    }
+
+    computeTrend(history) {
+        if (history.length < 2) return { symbol: '→', cls: 'stable', label: 'Stable' };
+        const prev = history[history.length - 2].total || 0;
+        const curr = history[history.length - 1].total || 0;
+        if (curr > prev) return { symbol: '↑', cls: 'worse', label: `${curr - prev} more findings` };
+        if (curr < prev) return { symbol: '↓', cls: 'better', label: `${prev - curr} fewer findings` };
+        return { symbol: '→', cls: 'stable', label: 'No change' };
+    }
+
+    renderSparkline(history, containerId) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+
+        const last30 = history.slice(-30);
+        if (last30.length < 2) return;
+
+        const values = last30.map(e => e.total || 0);
+        const max = Math.max(...values, 1);
+        const w = 60, h = 20;
+        const step = w / (values.length - 1);
+
+        const points = values.map((v, i) =>
+            `${(i * step).toFixed(1)},${(h - (v / max) * h).toFixed(1)}`
+        ).join(' ');
+
+        const last = values[values.length - 1];
+        const prev = values[values.length - 2];
+        const color = last > prev ? '#f87171' : last < prev ? '#34d399' : '#7a8099';
+
+        el.innerHTML = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" class="sparkline-svg">
+            <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>`;
+    }
+
+    renderTrendIndicator(history) {
+        const trend = this.computeTrend(history);
+        return `<span class="trend-indicator trend-indicator--${trend.cls}" title="${trend.label}">${trend.symbol}</span>`;
     }
 
     escapeHtml(text) {

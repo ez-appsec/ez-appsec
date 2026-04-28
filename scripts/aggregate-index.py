@@ -9,6 +9,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ez_appsec.history import append_history, make_entry
+
 PROJECTS_DIR = Path("public/data/projects")
 INDEX_FILE   = Path("public/data/index.json")
 
@@ -73,6 +75,9 @@ for vuln_file in sorted(PROJECTS_DIR.glob("*/vulnerabilities.json")):
 
     print(f"  {slug}: {summary['total']} findings "
           f"({summary['critical']}C {summary['high']}H {summary['medium']}M {summary['low']}L)")
+
+    entry = make_entry(date=last_updated, **summary)
+    append_history(slug, entry, Path("."))
 
 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 index = {"last_updated": now, "projects": projects}

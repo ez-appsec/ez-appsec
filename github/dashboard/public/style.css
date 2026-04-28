@@ -677,6 +677,30 @@ pre code { background: none; padding: 0; color: inherit; }
 .empty-state h3 { font-size: 1.3rem; margin-bottom: 10px; color: var(--text); }
 .empty-state p { font-size: .9rem; }
 
+/* ── Sparklines & trend indicators ──────────────────────────────────────── */
+
+.tree-node__sparkline { flex-shrink: 0; line-height: 0; }
+.sparkline-svg { display: block; }
+
+.tree-node__trend {
+  flex-shrink: 0;
+  font-size: .7rem;
+  font-weight: 800;
+  width: 16px;
+  text-align: center;
+}
+.tree-node__trend--worse  { color: var(--critical); }
+.tree-node__trend--better { color: var(--low); }
+.tree-node__trend--stable { color: var(--text-muted); }
+
+.trend-indicator {
+  font-weight: 800;
+  font-size: .75rem;
+}
+.trend-indicator--worse  { color: var(--critical); }
+.trend-indicator--better { color: var(--low); }
+.trend-indicator--stable { color: var(--text-muted); }
+
 @media (max-width: 768px) {
   .filter-bar { position: static; }
   .vuln-header { flex-direction: column; }
