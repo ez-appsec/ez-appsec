@@ -18,6 +18,8 @@ class GitHubDashboard {
         this.scanDates = [];          // ISO date strings used to compute avg age
         this.currentPage = 0;
         this.PAGE_SIZE = 100;
+        this.ownershipCache = {};     // slug -> {fingerprint: {owner, assigned_date, sla_days}}
+        this.slaConfig = { critical: 7, high: 30, medium: 90, low: 180 };
 
         // DOM elements
         this.severityFilter = document.getElementById('severity-filter');
@@ -205,6 +207,10 @@ class GitHubDashboard {
             const r = await fetch('data/config.json');
             if (!r.ok) return;
             this.config = await r.json();
+
+            if (this.config.sla) {
+                Object.assign(this.slaConfig, this.config.sla);
+            }
 
             if (this.config.ez_appsec_version) {
                 const versionLabel = document.getElementById('version-label');
@@ -394,6 +400,7 @@ class GitHubDashboard {
         if (slug === 'all') {
             await this.loadAllProjects();
         } else {
+            await this.loadOwnership(slug);
             const proj = this.projects.find(p => p.slug === slug);
             const vulnPath = proj && proj.path ? `data/${proj.path}` : `data/vulnerabilities/${slug}.json`;
             await this.loadVulnerabilities(vulnPath);
@@ -722,6 +729,7 @@ class GitHubDashboard {
                         <div class="solution-label">✓ Remediation</div>
                         ${this.escapeHtml(vuln.solution)}
                     </div>` : ''}
+                ${this.renderOwnershipPanel(vuln)}
             </div>`;
     }
 
@@ -885,6 +893,81 @@ class GitHubDashboard {
     renderTrendIndicator(history) {
         const trend = this.computeTrend(history);
         return `<span class="trend-indicator trend-indicator--${trend.cls}" title="${trend.label}">${trend.symbol}</span>`;
+    }
+
+    // ── Ownership / SLA ────────────────────────────────────────────
+
+    async loadOwnership(slug) {
+        if (slug === 'all' || this.ownershipCache[slug]) return;
+        const paths = [
+            `data/projects/${slug}/ownership.json`,
+        ];
+        for (const p of paths) {
+            try {
+                const r = await fetch(p);
+                if (r.ok) {
+                    this.ownershipCache[slug] = await r.json();
+                    return;
+                }
+            } catch (e) { /* try next */ }
+        }
+        this.ownershipCache[slug] = {};
+    }
+
+    calculateSlaStatus(record) {
+        if (!record || !record.assigned_date || !record.sla_days) return 'unknown';
+        const assigned = new Date(record.assigned_date);
+        if (isNaN(assigned.getTime())) return 'unknown';
+        const elapsed = (Date.now() - assigned.getTime()) / 86400000;
+        return elapsed > record.sla_days ? 'overdue' : 'ok';
+    }
+
+    findingFingerprint(vuln) {
+        const ruleId = vuln.raw?.rule_id || vuln.raw?.ruleId || vuln.raw?.id || vuln.id || vuln.name || '';
+        const filePath = vuln.file || '';
+        const startLine = String(vuln.line || '');
+        return `${ruleId}:${filePath}:${startLine}`;
+    }
+
+    renderOwnershipPanel(vuln) {
+        const slug = vuln._project_slug || vuln.raw?._project_slug || this.currentSlug;
+        const ownership = this.ownershipCache[slug] || {};
+
+        const fp = this.findingFingerprint(vuln);
+
+        let record = null;
+        for (const [key, val] of Object.entries(ownership)) {
+            if (key === fp) { record = val; break; }
+        }
+
+        if (!record) {
+            return `<div class="ownership-panel ownership-panel--unassigned">
+                <span class="ownership-label">Owner</span>
+                <span class="ownership-value">Unassigned</span>
+            </div>`;
+        }
+
+        const status = this.calculateSlaStatus(record);
+        const statusCls = status === 'overdue' ? 'ownership-sla--overdue' : 'ownership-sla--ok';
+        const statusText = status === 'overdue' ? 'OVERDUE' : 'On Track';
+        const assigned = new Date(record.assigned_date);
+        const elapsed = Math.floor((Date.now() - assigned.getTime()) / 86400000);
+
+        return `<div class="ownership-panel">
+            <div class="ownership-row">
+                <span class="ownership-label">Owner</span>
+                <span class="ownership-value">${this.escapeHtml(record.owner)}</span>
+            </div>
+            <div class="ownership-row">
+                <span class="ownership-label">Assigned</span>
+                <span class="ownership-value">${assigned.toLocaleDateString()}</span>
+            </div>
+            <div class="ownership-row">
+                <span class="ownership-label">SLA</span>
+                <span class="ownership-value">${record.sla_days}d (${elapsed}d elapsed)</span>
+                <span class="ownership-sla ${statusCls}">${statusText}</span>
+            </div>
+        </div>`;
     }
 
     escapeHtml(text) {
