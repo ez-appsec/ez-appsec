@@ -8,14 +8,16 @@ from ez_appsec.ai_analyzer import AIAnalyzer
 from ez_appsec.external_scanners import ExternalScannerManager
 from ez_appsec.converters import VulnerabilityConverters, GitLabVulnerabilityFormat
 from ez_appsec.policy import PolicyEngine
+from ez_appsec.license_checker import check_licenses
 
 
 class SecurityScanner:
     """Main security scanner orchestrating all detection mechanisms"""
 
-    def __init__(self, config: Config, use_external_scanners: bool = True):
+    def __init__(self, config: Config, use_external_scanners: bool = True, license_check: bool = False):
         self.config = config
         self.use_external = use_external_scanners
+        self.license_check = license_check
 
         # External scanners only - custom detectors removed
         self.external = ExternalScannerManager() if use_external_scanners else None
@@ -53,6 +55,13 @@ class SecurityScanner:
             engine = PolicyEngine(self.config.policy_rules)
             policy_result = engine.evaluate(issues)
 
+        # License compliance check
+        license_result = None
+        if self.license_check and self.config.license_policy:
+            policy = self.config.license_policy.to_policy()
+            license_result = check_licenses(str(base_path), policy)
+            issues.extend(license_result["findings"])
+
         # Filter by severity
         if self.config.severity != "all":
             issues = self._filter_by_severity(issues, self.config.severity)
@@ -75,6 +84,10 @@ class SecurityScanner:
             result["policy_violations"] = policy_result["violations"]
             result["policy_failed"] = policy_result["failed"]
             result["policy_summary"] = policy_result["summary"]
+
+        if license_result is not None:
+            result["license_summary"] = license_result["summary"]
+            result["license_packages"] = license_result["packages"]
 
         return result
 

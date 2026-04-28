@@ -9,6 +9,21 @@ from pydantic import BaseModel, Field, field_validator
 import yaml
 
 from ez_appsec.policy import PolicyRule
+from ez_appsec.license_checker import LicensePolicy
+
+
+class LicensePolicyConfig(BaseModel):
+    """License compliance policy configuration"""
+
+    allowed_licenses: List[str] = Field(default_factory=list)
+    denied_licenses: List[str] = Field(default_factory=list)
+
+    def to_policy(self) -> LicensePolicy:
+        """Convert to a LicensePolicy instance."""
+        return LicensePolicy(
+            allowed_licenses=self.allowed_licenses,
+            denied_licenses=self.denied_licenses,
+        )
 
 
 class IgnoreRule(BaseModel):
@@ -88,6 +103,7 @@ class Config(BaseModel):
     ai_temperature: float = 0.5
     ignore_rules: List[IgnoreRule] = Field(default_factory=list)
     policy_rules: List[PolicyRule] = Field(default_factory=list)
+    license_policy: Optional[LicensePolicyConfig] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -120,6 +136,11 @@ class Config(BaseModel):
                 if isinstance(item, dict):
                     policy_rules.append(PolicyRule(**item))
             data["policy_rules"] = policy_rules
+
+        # Parse license policy if present
+        license_data = data.pop("license_policy", None)
+        if isinstance(license_data, dict):
+            data["license_policy"] = LicensePolicyConfig(**license_data)
 
         return cls(**data)
 
