@@ -1,3 +1,10 @@
+## [1.7.13](https://github.com/ez-appsec/ez-appsec/compare/v1.7.12...v1.7.13) (2026-04-28)
+
+
+### Features
+
+* add Slack/Teams webhook notifications for scan findings (PLAN-07) ([e67c898](https://github.com/ez-appsec/ez-appsec/commit/e67c8988aff99bccd99773881fed3462f0ab74ca))
+
 ## [1.7.12](https://github.com/ez-appsec/ez-appsec/compare/v1.7.11...v1.7.12) (2026-04-28)
 
 
