@@ -1,3 +1,13 @@
+## [1.7.12](https://github.com/ez-appsec/ez-appsec/compare/v1.7.11...v1.7.12) (2026-04-28)
+
+
+### Features
+
+* add baseline comparison for scan findings (PLAN-03) ([1d9b7a6](https://github.com/ez-appsec/ez-appsec/commit/1d9b7a6fb8a7236692ea8f561c940d449feaf0b0))
+* add finding ownership and SLA tracking (PLAN-06) ([0ef9cca](https://github.com/ez-appsec/ez-appsec/commit/0ef9cca7225afe21b0d613723a3fd70e58a9ecd7))
+* add fix-pr command to auto-bump vulnerable dependencies (PLAN-04) ([0261d7e](https://github.com/ez-appsec/ez-appsec/commit/0261d7ee2dab31778074dfdc62251077d8a4a3a5))
+* add scan history tracking with trend indicators and sparklines (PLAN-05) ([a658bf9](https://github.com/ez-appsec/ez-appsec/commit/a658bf95da60d0b68985d90f59e274f1d20536cd))
+
 ## [1.7.11](https://github.com/ez-appsec/ez-appsec/compare/v1.7.10...v1.7.11) (2026-04-24)
 
 
