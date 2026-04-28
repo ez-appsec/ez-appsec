@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 
 import yaml
 
+from ez_appsec.policy import PolicyRule
+
 
 class IgnoreRule(BaseModel):
     """Single ignore rule for suppressing findings"""
@@ -85,6 +87,7 @@ class Config(BaseModel):
     ai_model: str = "gpt-4"
     ai_temperature: float = 0.5
     ignore_rules: List[IgnoreRule] = Field(default_factory=list)
+    policy_rules: List[PolicyRule] = Field(default_factory=list)
 
     class Config:
         arbitrary_types_allowed = True
@@ -108,6 +111,15 @@ class Config(BaseModel):
                 if isinstance(item, dict):
                     ignore_rules.append(IgnoreRule(**item))
             data["ignore_rules"] = ignore_rules
+
+        # Parse policy rules if present
+        policy_data = data.pop("policy", [])
+        if isinstance(policy_data, list):
+            policy_rules = []
+            for item in policy_data:
+                if isinstance(item, dict):
+                    policy_rules.append(PolicyRule(**item))
+            data["policy_rules"] = policy_rules
 
         return cls(**data)
 
