@@ -7,6 +7,7 @@ from ez_appsec.config import Config
 from ez_appsec.ai_analyzer import AIAnalyzer
 from ez_appsec.external_scanners import ExternalScannerManager
 from ez_appsec.converters import VulnerabilityConverters, GitLabVulnerabilityFormat
+from ez_appsec.policy import PolicyEngine
 
 
 class SecurityScanner:
@@ -46,6 +47,12 @@ class SecurityScanner:
         # Apply ignore rules (suppression)
         issues, self.suppressed_count = self._apply_ignore_rules(issues)
 
+        # Evaluate policy rules (before severity filter so all findings are considered)
+        policy_result = None
+        if self.config.policy_rules:
+            engine = PolicyEngine(self.config.policy_rules)
+            policy_result = engine.evaluate(issues)
+
         # Filter by severity
         if self.config.severity != "all":
             issues = self._filter_by_severity(issues, self.config.severity)
@@ -56,13 +63,20 @@ class SecurityScanner:
             key=lambda x: severity_order.get(x.get("severity", "low"), 4)
         )
 
-        return {
+        result = {
             "issues": issues,
             "total": len(issues),
             "suppressed": self.suppressed_count,
             "path": str(base_path),
             "scanner_results": scanner_results,
         }
+
+        if policy_result is not None:
+            result["policy_violations"] = policy_result["violations"]
+            result["policy_failed"] = policy_result["failed"]
+            result["policy_summary"] = policy_result["summary"]
+
+        return result
 
     def _apply_ignore_rules(self, issues: List[Dict]) -> tuple[List[Dict], int]:
         """Apply ignore rules to suppress findings

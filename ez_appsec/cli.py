@@ -140,6 +140,16 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
             if errors:
                 click.echo(f"  ⚠ {len(errors)} Jira error(s)", err=True)
 
+        # Policy evaluation results
+        if results.get("policy_violations"):
+            for v in results["policy_violations"]:
+                prefix = "✗ FAIL" if v["action"] == "fail" else "⚠ WARN"
+                click.echo(f"\n  {prefix}: {v['description']}", err=(v["action"] == "fail"))
+
+        if results.get("policy_failed"):
+            click.echo(f"\n✗ Policy check failed", err=True)
+            sys.exit(1)
+
         if baseline_path and len(results["issues"]) > baseline_threshold:
             click.echo(f"\n✗ {len(results['issues'])} new finding(s) exceed threshold ({baseline_threshold})", err=True)
             sys.exit(1)
@@ -221,6 +231,19 @@ ai:
 #   - cve_id: CVE-2023-1234
 #     reason: "Mitigated, revisit later"
 #     until: "2025-06-01"
+
+# Policy rules — enforce security standards
+# policy:
+#   - severity: critical
+#     action: fail
+#     max_count: 0
+#   - severity: high
+#     category: secrets
+#     action: fail
+#     max_count: 0
+#   - severity: high
+#     action: warn
+#     max_count: 5
 """
     
     with open(config_path, "w") as f:
@@ -304,6 +327,32 @@ def check_config(config_path):
         if not item.get("reason"):
             errors.append(f"{prefix}: 'reason' is required")
 
+    # Validate policy rules if present
+    policy_data = raw.get("policy", [])
+    if not isinstance(policy_data, list):
+        errors.append(f"'policy' must be a list, got {type(policy_data).__name__}")
+        policy_data = []
+
+    valid_policy_severities = {"critical", "high", "medium", "low"}
+    valid_policy_categories = {"secrets", "sast", "iac", "cve", "dependency_scanning"}
+    valid_policy_actions = {"fail", "warn", "ignore"}
+
+    for i, item in enumerate(policy_data):
+        prefix = f"policy[{i}]"
+        if not isinstance(item, dict):
+            errors.append(f"{prefix}: must be a mapping, got {type(item).__name__}")
+            continue
+        if "action" not in item:
+            errors.append(f"{prefix}: 'action' is required")
+        elif item["action"] not in valid_policy_actions:
+            errors.append(f"{prefix}: invalid action '{item['action']}' — must be one of: {', '.join(sorted(valid_policy_actions))}")
+        if "severity" in item and item["severity"] not in valid_policy_severities:
+            errors.append(f"{prefix}: invalid severity '{item['severity']}' — must be one of: {', '.join(sorted(valid_policy_severities))}")
+        if "category" in item and item["category"] not in valid_policy_categories:
+            errors.append(f"{prefix}: invalid category '{item['category']}' — must be one of: {', '.join(sorted(valid_policy_categories))}")
+        if "max_count" in item and not isinstance(item["max_count"], int):
+            errors.append(f"{prefix}: 'max_count' must be an integer")
+
     if errors:
         click.echo(f"✗ {len(errors)} error(s) in {config_path}:")
         for err in errors:
@@ -322,6 +371,8 @@ def check_config(config_path):
     click.echo(f"  Severity: {config.severity}")
     if rule_count:
         click.echo(f"  Ignore rules: {rule_count} ({active_count} active)")
+    if config.policy_rules:
+        click.echo(f"  Policy rules: {len(config.policy_rules)}")
 
 
 @main.command()
