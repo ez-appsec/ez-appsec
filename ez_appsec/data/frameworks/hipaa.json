@@ -1,0 +1,68 @@
+[
+  {
+    "control_id": "§164.312(a)(1)",
+    "title": "Access Control",
+    "description": "Implement technical policies and procedures for electronic information systems that maintain electronic protected health information to allow access only to those persons or software programs that have been granted access rights.",
+    "categories": ["secrets", "sast"]
+  },
+  {
+    "control_id": "§164.312(a)(2)(i)",
+    "title": "Unique User Identification",
+    "description": "Assign a unique name and/or number for identifying and tracking user identity.",
+    "categories": ["secrets"]
+  },
+  {
+    "control_id": "§164.312(a)(2)(iv)",
+    "title": "Encryption and Decryption",
+    "description": "Implement a mechanism to encrypt and decrypt electronic protected health information.",
+    "categories": ["secrets", "sast"]
+  },
+  {
+    "control_id": "§164.312(b)",
+    "title": "Audit Controls",
+    "description": "Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
+    "categories": ["sast", "iac"]
+  },
+  {
+    "control_id": "§164.312(c)(1)",
+    "title": "Integrity Controls",
+    "description": "Implement policies and procedures to protect electronic protected health information from improper alteration or destruction.",
+    "categories": ["sast", "iac"]
+  },
+  {
+    "control_id": "§164.312(d)",
+    "title": "Person or Entity Authentication",
+    "description": "Implement procedures to verify that a person or entity seeking access to electronic protected health information is the one claimed.",
+    "categories": ["secrets"]
+  },
+  {
+    "control_id": "§164.312(e)(1)",
+    "title": "Transmission Security",
+    "description": "Implement technical security measures to guard against unauthorized access to electronic protected health information that is being transmitted over an electronic communications network.",
+    "categories": ["secrets", "sast", "iac"]
+  },
+  {
+    "control_id": "§164.312(e)(2)(ii)",
+    "title": "Encryption of ePHI in Transit",
+    "description": "Implement a mechanism to encrypt electronic protected health information whenever deemed appropriate.",
+    "categories": ["secrets", "sast"]
+  },
+  {
+    "control_id": "§164.308(a)(1)(ii)(A)",
+    "title": "Risk Analysis",
+    "description": "Conduct an accurate and thorough assessment of the potential risks and vulnerabilities to the confidentiality, integrity, and availability of electronic protected health information.",
+    "categories": ["cve", "dependency_scanning", "sast"]
+  },
+  {
+    "control_id": "§164.308(a)(5)(ii)(B)",
+    "title": "Protection from Malicious Software",
+    "description": "Procedures for guarding against, detecting, and reporting malicious software.",
+    "categories": ["cve", "dependency_scanning"]
+  },
+  {
+    "control_id": "§164.308(a)(8)",
+    "title": "Evaluation",
+    "description": "Perform a periodic technical and nontechnical evaluation based initially upon the standards implemented under this rule.",
+    "categories": ["cve", "dependency_scanning", "sast", "iac"]
+  }
+]

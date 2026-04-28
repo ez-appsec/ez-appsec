@@ -1,0 +1,62 @@
+[
+  {
+    "control_id": "CC6.1",
+    "title": "Logical and Physical Access Controls",
+    "description": "The entity implements logical access security software, infrastructure, and architectures over protected information assets.",
+    "categories": ["secrets", "sast"]
+  },
+  {
+    "control_id": "CC6.2",
+    "title": "User Authentication",
+    "description": "Prior to issuing system credentials and granting system access, the entity registers and authorizes new internal and external users.",
+    "categories": ["secrets"]
+  },
+  {
+    "control_id": "CC6.3",
+    "title": "Role-Based Access and Least Privilege",
+    "description": "The entity authorizes, modifies, or removes access to data, software, functions, and other protected information assets based on roles.",
+    "categories": ["sast"]
+  },
+  {
+    "control_id": "CC6.6",
+    "title": "Security Measures Against Threats Outside System Boundaries",
+    "description": "The entity implements controls to prevent or detect and act upon the introduction of unauthorized or malicious software.",
+    "categories": ["cve", "dependency_scanning"]
+  },
+  {
+    "control_id": "CC6.7",
+    "title": "Restriction of Data Transmission, Movement, and Removal",
+    "description": "The entity restricts the transmission, movement, and removal of information to authorized internal and external users and processes.",
+    "categories": ["secrets", "iac"]
+  },
+  {
+    "control_id": "CC6.8",
+    "title": "Prevention and Detection of Unauthorized Software",
+    "description": "The entity implements controls to prevent or detect and act upon the introduction of unauthorized or malicious software.",
+    "categories": ["cve", "dependency_scanning", "sast"]
+  },
+  {
+    "control_id": "CC7.1",
+    "title": "Detection and Monitoring of Security Events",
+    "description": "To meet its objectives, the entity uses detection and monitoring procedures to identify changes to configurations that result in the introduction of new vulnerabilities.",
+    "categories": ["cve", "dependency_scanning", "sast", "iac"]
+  },
+  {
+    "control_id": "CC7.2",
+    "title": "Monitoring System Components for Anomalies",
+    "description": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts.",
+    "categories": ["sast", "cve"]
+  },
+  {
+    "control_id": "CC8.1",
+    "title": "Change Management Process",
+    "description": "The entity authorizes, designs, develops or acquires, configures, documents, tests, approves, and implements changes to infrastructure, data, software, and procedures.",
+    "categories": ["sast", "iac", "dependency_scanning"]
+  },
+  {
+    "control_id": "CC9.1",
+    "title": "Risk Identification and Assessment",
+    "description": "The entity identifies, selects, and develops risk mitigation activities for risks arising from potential business disruptions.",
+    "categories": ["cve", "dependency_scanning", "license_compliance"]
+  }
+]
