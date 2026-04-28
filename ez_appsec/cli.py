@@ -10,6 +10,7 @@ from ez_appsec.scanner import SecurityScanner
 from ez_appsec.config import Config
 from ez_appsec.baseline import load_baseline, diff_findings
 from ez_appsec.notifier import notify_on_new_findings
+from ez_appsec.jira_sync import JiraConfig, sync_findings as jira_sync_findings, should_sync as jira_should_sync
 
 
 @click.group()
@@ -32,7 +33,11 @@ def main():
 @click.option("--teams-webhook", envvar="EZ_APPSEC_TEAMS_WEBHOOK", default=None, help="Teams incoming webhook URL for notifications")
 @click.option("--project-name", envvar="EZ_APPSEC_PROJECT_NAME", default=None, help="Project name for notifications")
 @click.option("--dashboard-url", envvar="EZ_APPSEC_DASHBOARD_URL", default=None, help="Dashboard URL included in notifications")
-def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url):
+@click.option("--jira-url", envvar="EZ_APPSEC_JIRA_URL", default=None, help="Jira instance URL (e.g. https://myteam.atlassian.net)")
+@click.option("--jira-email", envvar="EZ_APPSEC_JIRA_EMAIL", default=None, help="Jira user email for API auth")
+@click.option("--jira-token", envvar="EZ_APPSEC_JIRA_TOKEN", default=None, help="Jira API token")
+@click.option("--jira-project", envvar="EZ_APPSEC_JIRA_PROJECT", default=None, help="Jira project key for new issues")
+def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project):
     """Scan a codebase for security vulnerabilities using AI analysis
 
     PATH: Directory or file to scan (default: current directory)
@@ -99,6 +104,41 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
                 click.echo(f" ({', '.join(parts)})")
             elif notif["reason"]:
                 click.echo(f"\n  Notifications skipped: {notif['reason']}")
+
+        jira_cfg = None
+        if jira_url and jira_email and jira_token and jira_project:
+            jira_cfg = JiraConfig(
+                url=jira_url.rstrip("/"),
+                email=jira_email,
+                token=jira_token,
+                project_key=jira_project,
+            )
+        elif not jira_url and not jira_email and not jira_token and not jira_project:
+            jira_cfg = JiraConfig.from_env()
+
+        if jira_cfg and results["issues"] and jira_should_sync(results["issues"]):
+            proj = project_name or os.path.basename(os.path.abspath(path))
+            map_path = os.path.join("data", "projects", proj, "jira_map.json")
+            jira_result = jira_sync_findings(
+                results["issues"],
+                jira_cfg,
+                map_path,
+                dashboard_url=dashboard_url or "",
+            )
+            created = jira_result["created"]
+            closed = jira_result["closed"]
+            errors = jira_result["errors"]
+            parts = []
+            if created:
+                parts.append(f"{len(created)} created")
+            if closed:
+                parts.append(f"{len(closed)} closed")
+            if jira_result["skipped_existing"]:
+                parts.append(f"{len(jira_result['skipped_existing'])} existing")
+            if parts:
+                click.echo(f"\n✓ Jira sync: {', '.join(parts)}")
+            if errors:
+                click.echo(f"  ⚠ {len(errors)} Jira error(s)", err=True)
 
         if baseline_path and len(results["issues"]) > baseline_threshold:
             click.echo(f"\n✗ {len(results['issues'])} new finding(s) exceed threshold ({baseline_threshold})", err=True)
