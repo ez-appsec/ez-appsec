@@ -9,6 +9,7 @@ from pathlib import Path
 from ez_appsec.scanner import SecurityScanner
 from ez_appsec.config import Config
 from ez_appsec.baseline import load_baseline, diff_findings
+from ez_appsec.notifier import notify_on_new_findings
 
 
 @click.group()
@@ -27,7 +28,11 @@ def main():
 @click.option("--config", "config_file", type=click.Path(), default=".ez-appsec.yaml", help="Path to config file")
 @click.option("--baseline", "baseline_path", type=str, default=None, help="Baseline file path or URL for new-findings-only mode")
 @click.option("--baseline-threshold", type=int, default=0, help="Max new findings before non-zero exit (default: 0)")
-def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold):
+@click.option("--slack-webhook", envvar="EZ_APPSEC_SLACK_WEBHOOK", default=None, help="Slack incoming webhook URL for notifications")
+@click.option("--teams-webhook", envvar="EZ_APPSEC_TEAMS_WEBHOOK", default=None, help="Teams incoming webhook URL for notifications")
+@click.option("--project-name", envvar="EZ_APPSEC_PROJECT_NAME", default=None, help="Project name for notifications")
+@click.option("--dashboard-url", envvar="EZ_APPSEC_DASHBOARD_URL", default=None, help="Dashboard URL included in notifications")
+def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url):
     """Scan a codebase for security vulnerabilities using AI analysis
 
     PATH: Directory or file to scan (default: current directory)
@@ -74,6 +79,26 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
             except Exception as e:
                 click.echo(f"\n✗ Error writing results to file: {str(e)}", err=True)
                 sys.exit(1)
+
+        if slack_webhook or teams_webhook:
+            proj = project_name or os.path.basename(os.path.abspath(path))
+            notif = notify_on_new_findings(
+                results["issues"],
+                project_name=proj,
+                dashboard_url=dashboard_url or "",
+                slack_webhook=slack_webhook,
+                teams_webhook=teams_webhook,
+            )
+            if notif["notified"]:
+                click.echo(f"\n✓ Notifications sent", nl=False)
+                parts = []
+                if notif["slack"]:
+                    parts.append("Slack")
+                if notif["teams"]:
+                    parts.append("Teams")
+                click.echo(f" ({', '.join(parts)})")
+            elif notif["reason"]:
+                click.echo(f"\n  Notifications skipped: {notif['reason']}")
 
         if baseline_path and len(results["issues"]) > baseline_threshold:
             click.echo(f"\n✗ {len(results['issues'])} new finding(s) exceed threshold ({baseline_threshold})", err=True)
