@@ -1,0 +1,18 @@
+rules:
+  - id: ez-laravel-idor-find
+    message: >-
+      Direct use of request input to find a database record without scoping to
+      the authenticated user. This allows IDOR — attackers can access other
+      users' records by changing the ID parameter.
+    severity: ERROR
+    languages: [php]
+    metadata:
+      cwe: "CWE-639"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: $MODEL::find($request->input(...))
+      - pattern: $MODEL::find($request->$PARAM)
+      - pattern: $MODEL::findOrFail($request->input(...))
+      - pattern: $MODEL::where('id', $request->input(...))->first()

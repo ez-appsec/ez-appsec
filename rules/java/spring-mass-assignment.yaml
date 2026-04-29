@@ -1,0 +1,27 @@
+rules:
+  - id: ez-spring-mass-assignment
+    message: >-
+      Binding request parameters directly to a JPA entity without @ModelAttribute
+      allow-listing or a DTO. An attacker can set sensitive fields like role or
+      isAdmin by adding unexpected request parameters. Use a DTO or explicit
+      @InitBinder with setAllowedFields.
+    severity: ERROR
+    languages: [java]
+    metadata:
+      cwe: "CWE-915"
+      owasp: "A04:2021 Insecure Design"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: |
+          public $RET $METHOD(@ModelAttribute $ENTITY $VAR, ...) {
+              ...
+              $REPO.save($VAR);
+              ...
+          }
+      - pattern: |
+          public $RET $METHOD($ENTITY $VAR, ...) {
+              ...
+              $REPO.save($VAR);
+              ...
+          }

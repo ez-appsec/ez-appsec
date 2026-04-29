@@ -1,0 +1,21 @@
+rules:
+  - id: ez-express-mass-assignment
+    message: >-
+      Spreading or directly passing req.body into a model create/update allows
+      mass assignment. An attacker can set sensitive fields like role or isAdmin
+      by adding unexpected fields to the request body.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-915"
+      owasp: "A04:2021 Insecure Design"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: $MODEL.create(req.body)
+      - pattern: $MODEL.create({...req.body})
+      - pattern: $MODEL.update(req.body, ...)
+      - pattern: $MODEL.findByIdAndUpdate($ID, req.body)
+      - pattern: $MODEL.findByIdAndUpdate($ID, {... req.body})
+      - pattern: new $MODEL(req.body)
+      - pattern: new $MODEL({...req.body})

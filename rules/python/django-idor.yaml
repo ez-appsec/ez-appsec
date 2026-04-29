@@ -1,0 +1,23 @@
+rules:
+  - id: ez-django-idor-get-parameter
+    message: >-
+      Direct use of user-supplied ID from request to query database without
+      ownership check. This can lead to Insecure Direct Object Reference (IDOR)
+      where attackers access other users' data by changing the ID parameter.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-639"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: MEDIUM
+    patterns:
+      - pattern: |
+          $OBJ = request.$METHOD.get($KEY)
+          ...
+          $MODEL.objects.get($FIELD=$OBJ)
+      - pattern-not-inside: |
+          if $OBJ.owner == request.user:
+              ...
+      - pattern-not-inside: |
+          $MODEL.objects.filter(user=request.user).get(...)

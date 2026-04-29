@@ -1,0 +1,25 @@
+rules:
+  - id: ez-django-mass-assignment
+    message: >-
+      Using **kwargs or request.POST.dict() to update model fields allows
+      mass assignment. An attacker can set fields like is_admin or is_staff
+      by adding unexpected POST parameters.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-915"
+      owasp: "A04:2021 Insecure Design"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: $MODEL.objects.create(**request.POST.dict())
+      - pattern: $MODEL.objects.update(**request.POST.dict())
+      - pattern: $MODEL(**request.POST.dict())
+      - pattern: |
+          $DATA = request.POST.dict()
+          ...
+          $MODEL.objects.create(**$DATA)
+      - pattern: |
+          $DATA = request.POST.dict()
+          ...
+          $MODEL(**$DATA)

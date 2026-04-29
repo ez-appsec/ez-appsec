@@ -1,0 +1,24 @@
+rules:
+  - id: ez-spring-idor-path-variable
+    message: >-
+      Direct use of @PathVariable ID to look up a record without verifying
+      the current user owns it. This allows IDOR — attackers can access other
+      users' data by changing the ID in the URL.
+    severity: ERROR
+    languages: [java]
+    metadata:
+      cwe: "CWE-639"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: MEDIUM
+    patterns:
+      - pattern: |
+          $REPO.findById($ID)
+      - pattern-inside: |
+          public $RET $METHOD(@PathVariable $TYPE $ID, ...) {
+              ...
+          }
+      - pattern-not-inside: |
+          if (...$ID...equals(...$USER...)) {
+              ...
+          }

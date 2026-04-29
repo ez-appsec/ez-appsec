@@ -1,0 +1,26 @@
+rules:
+  - id: ez-express-insecure-deserialization
+    message: >-
+      Using node-serialize, js-yaml.load (without safeLoad), or eval-based
+      deserialization on user input allows arbitrary code execution. Use
+      JSON.parse or safe alternatives instead.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-502"
+      owasp: "A08:2021 Software and Data Integrity Failures"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: serialize.unserialize(req.body.$DATA)
+      - pattern: serialize.unserialize(req.query.$DATA)
+      - pattern: $SERIALIZE.unserialize(req.body)
+      - pattern: yaml.load(req.body)
+      - pattern: |
+          $DATA = req.body
+          ...
+          serialize.unserialize($DATA)
+      - pattern: |
+          $DATA = req.body.$FIELD
+          ...
+          serialize.unserialize($DATA)

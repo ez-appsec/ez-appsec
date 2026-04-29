@@ -160,8 +160,52 @@ class GitleaksScanner(ScannerWrapper):
             return [], raw_output_path
 
 
+RULES_LANGUAGE_MAP = {
+    "python": "python",
+    "ruby": "ruby",
+    "java": "java",
+    "javascript": "javascript",
+    "js": "javascript",
+    "typescript": "javascript",
+    "ts": "javascript",
+    "php": "php",
+    "laravel": "php",
+    "django": "python",
+    "rails": "ruby",
+    "spring": "java",
+    "express": "javascript",
+}
+
+
+def resolve_rules_dirs(language_names: List[str]) -> List[str]:
+    """Map language/framework names to rule directory paths."""
+    package_rules = Path(__file__).parent.parent / "rules"
+    docker_rules = Path("/app/rules")
+    rules_root = package_rules if package_rules.is_dir() else docker_rules
+
+    dirs: List[str] = []
+    for name in language_names:
+        key = name.lower()
+        if key == "all":
+            for lang_dir in sorted(rules_root.iterdir()):
+                if lang_dir.is_dir() and not lang_dir.name.startswith("."):
+                    dirs.append(str(lang_dir))
+            break
+        mapped = RULES_LANGUAGE_MAP.get(key, key)
+        candidate = rules_root / mapped
+        if candidate.is_dir():
+            dirs.append(str(candidate))
+        else:
+            logger.warning(f"No rule pack found for '{name}' (looked in {candidate})")
+    return dirs
+
+
 class SemgrepScanner(ScannerWrapper):
     """Wrapper for semgrep SAST analysis"""
+
+    def __init__(self, enabled: bool = True, extra_rules_dirs: Optional[List[str]] = None):
+        super().__init__(enabled)
+        self.extra_rules_dirs = extra_rules_dirs or []
 
     def _add_ai_remediation_fields(
         self,
@@ -311,6 +355,11 @@ class SemgrepScanner(ScannerWrapper):
 
             if not config_flags:
                 config_flags = ["--config=p/security-audit"]
+
+            for rules_dir in self.extra_rules_dirs:
+                if os.path.isdir(rules_dir):
+                    config_flags.append(f"--config={rules_dir}")
+                    logger.info(f"Using custom rule pack from {rules_dir}")
 
             result = subprocess.run(
                 ["semgrep"] + config_flags + ["--json", "--output", raw_output_path, path],

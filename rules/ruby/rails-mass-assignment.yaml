@@ -1,0 +1,19 @@
+rules:
+  - id: ez-rails-mass-assignment-permit-all
+    message: >-
+      Using permit! or params.to_unsafe_h allows all request parameters to be
+      mass-assigned. An attacker can set sensitive fields like admin or role by
+      adding unexpected parameters. Use strong parameters with an explicit
+      allow-list instead.
+    severity: ERROR
+    languages: [ruby]
+    metadata:
+      cwe: "CWE-915"
+      owasp: "A04:2021 Insecure Design"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: params.permit!
+      - pattern: params.to_unsafe_h
+      - pattern: params.to_unsafe_hash
+      - pattern: params.require(...).permit!

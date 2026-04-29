@@ -1,0 +1,18 @@
+rules:
+  - id: ez-express-idor-param
+    message: >-
+      Direct use of req.params.id to find a database record without verifying
+      the current user owns it. This allows IDOR — attackers can access other
+      users' data by changing the ID in the URL.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-639"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: $MODEL.findById(req.params.$ID)
+      - pattern: $MODEL.findByPk(req.params.$ID)
+      - pattern: "$MODEL.findOne({where: {id: req.params.$ID}})"
+      - pattern: "$MODEL.findOne({_id: req.params.$ID})"

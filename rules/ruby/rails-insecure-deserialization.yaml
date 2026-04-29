@@ -1,0 +1,26 @@
+rules:
+  - id: ez-rails-insecure-deserialization
+    message: >-
+      Deserializing untrusted data with Marshal.load or YAML.load (without
+      safe_load) allows arbitrary code execution. An attacker can craft a payload
+      that runs arbitrary Ruby code on the server.
+    severity: ERROR
+    languages: [ruby]
+    metadata:
+      cwe: "CWE-502"
+      owasp: "A08:2021 Software and Data Integrity Failures"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: Marshal.load(params[...])
+      - pattern: Marshal.load(request.body.read)
+      - pattern: YAML.load(params[...])
+      - pattern: YAML.load(request.body.read)
+      - pattern: |
+          $DATA = params[...]
+          ...
+          Marshal.load($DATA)
+      - pattern: |
+          $DATA = params[...]
+          ...
+          YAML.load($DATA)

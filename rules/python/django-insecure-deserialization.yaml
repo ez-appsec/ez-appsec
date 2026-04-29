@@ -1,0 +1,33 @@
+rules:
+  - id: ez-django-insecure-deserialization
+    message: >-
+      Deserializing untrusted data with pickle or yaml.load (without SafeLoader)
+      allows arbitrary code execution. An attacker can craft a malicious payload
+      that runs arbitrary Python code on the server.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-502"
+      owasp: "A08:2021 Software and Data Integrity Failures"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: pickle.loads(request.$METHOD.get(...))
+      - pattern: pickle.loads(request.body)
+      - pattern: |
+          $DATA = request.$METHOD.get(...)
+          ...
+          pickle.loads($DATA)
+      - pattern: |
+          $DATA = request.body
+          ...
+          pickle.loads($DATA)
+      - pattern: yaml.load(request.body, ...)
+      - pattern: yaml.load(request.$METHOD.get(...), ...)
+      - patterns:
+          - pattern: yaml.load($DATA, ...)
+          - pattern-not: yaml.load($DATA, Loader=yaml.SafeLoader)
+          - pattern-not: yaml.load($DATA, Loader=yaml.CSafeLoader)
+          - pattern-inside: |
+              $DATA = request.$METHOD.get(...)
+              ...

@@ -1,0 +1,17 @@
+rules:
+  - id: ez-laravel-header-injection
+    message: >-
+      User input from the request is placed directly into a response header.
+      An attacker can inject CRLF characters to add arbitrary headers or split
+      the HTTP response, enabling cache poisoning or XSS.
+    severity: ERROR
+    languages: [php]
+    metadata:
+      cwe: "CWE-113"
+      owasp: "A03:2021 Injection"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: "response()->header($NAME, $request->input(...))"
+      - pattern: "$RESP->header($NAME, $request->input(...))"
+      - pattern: "header($NAME . ': ' . $request->input(...))"

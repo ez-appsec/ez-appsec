@@ -1,0 +1,26 @@
+rules:
+  - id: ez-spring-header-injection
+    message: >-
+      User input from request parameter or header is placed directly into a
+      response header. An attacker can inject CRLF characters to add arbitrary
+      headers or split the HTTP response.
+    severity: ERROR
+    languages: [java]
+    metadata:
+      cwe: "CWE-113"
+      owasp: "A03:2021 Injection"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: |
+          $VAL = $REQ.getParameter(...);
+          ...
+          $RESP.setHeader($NAME, $VAL);
+      - pattern: |
+          $VAL = $REQ.getParameter(...);
+          ...
+          $RESP.addHeader($NAME, $VAL);
+      - pattern: |
+          $VAL = $REQ.getHeader(...);
+          ...
+          $RESP.setHeader($NAME, $VAL);
