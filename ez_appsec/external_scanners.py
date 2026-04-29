@@ -914,6 +914,101 @@ class PHPVulnScanner(ScannerWrapper):
             return [], ""
 
 
+class GrypeImageScanner:
+    """Scans container images for OS-level CVEs using grype."""
+
+    def is_installed(self) -> bool:
+        try:
+            subprocess.run(["grype", "--version"], capture_output=True, check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
+    def scan(self, image: str, registry_auth: str = None) -> List[Dict[str, Any]]:
+        if not self.is_installed():
+            logger.warning("grype not installed")
+            return []
+
+        if not image:
+            raise ValueError("Image reference is required (e.g. 'nginx:latest')")
+
+        env = os.environ.copy()
+        if registry_auth:
+            parts = registry_auth.split(":", 1)
+            if len(parts) != 2:
+                raise ValueError("--registry-auth must be in user:token format")
+            env["GRYPE_REGISTRY_AUTH_USERNAME"] = parts[0]
+            env["GRYPE_REGISTRY_AUTH_PASSWORD"] = parts[1]
+
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
+            raw_output_path = temp_file.name
+
+        try:
+
+            db_check = subprocess.run(["grype", "db", "status"], capture_output=True, env=env)
+            if db_check.returncode != 0:
+                logger.info("grype database missing, updating...")
+                subprocess.run(["grype", "db", "update"], capture_output=True, timeout=120, env=env)
+
+            # grype exits non-zero when it finds vulns; we read findings from
+            # --file regardless, so we don't check returncode. We only surface
+            # an error if the output file is missing entirely (grype crashed
+            # before writing it).
+            proc = subprocess.run(
+                ["grype", image, "-o", "json", "--file", raw_output_path],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env=env,
+            )
+
+            try:
+                with open(raw_output_path) as f:
+                    data = json.load(f)
+            except FileNotFoundError:
+                logger.error(
+                    "grype did not produce output (exit %s): %s",
+                    proc.returncode,
+                    (proc.stderr or "").strip()[:500],
+                )
+                return []
+
+            issues = []
+            for match in data.get("matches", []):
+                vulnerability = match.get("vulnerability", {})
+                artifact = match.get("artifact", {})
+                severity_raw = (vulnerability.get("severity") or "medium").lower()
+                if severity_raw not in ("low", "medium", "high", "critical"):
+                    severity_raw = "medium"
+
+                issues.append({
+                    "type": "Dependency",
+                    "category": "container_scanning",
+                    "title": f"{artifact.get('name', 'unknown')} - {vulnerability.get('id', 'unknown')}",
+                    "description": vulnerability.get("description", "Known vulnerability in container image package"),
+                    "file": f"image: {image}",
+                    "severity": severity_raw,
+                    "scanner": "grype",
+                    "cve": vulnerability.get("id"),
+                })
+
+            return issues
+        except subprocess.TimeoutExpired:
+            logger.error("grype image scan timed out")
+            return []
+        except json.JSONDecodeError:
+            logger.error("grype image scan output is not valid JSON")
+            return []
+        except Exception as e:
+            logger.error(f"grype image scan failed: {e}")
+            return []
+        finally:
+            try:
+                os.unlink(raw_output_path)
+            except OSError:
+                pass
+
+
 class ExternalScannerManager:
     """Manages all external scanners"""
 

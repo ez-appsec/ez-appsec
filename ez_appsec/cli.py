@@ -40,7 +40,9 @@ def main():
 @click.option("--sbom/--no-sbom", default=False, help="Generate CycloneDX SBOM alongside scan results")
 @click.option("--sbom-output", type=click.Path(), default="sbom.cdx.json", help="Output path for SBOM file (default: sbom.cdx.json)")
 @click.option("--license-check", is_flag=True, default=False, help="Run license compliance check (requires syft)")
-def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project, sbom, sbom_output, license_check):
+@click.option("--image", default=None, help="Container image to scan for OS-level CVEs (e.g. nginx:latest)")
+@click.option("--registry-auth", default=None, help="Private registry credentials in user:token format")
+def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project, sbom, sbom_output, license_check, image, registry_auth):
     """Scan a codebase for security vulnerabilities using AI analysis
 
     PATH: Directory or file to scan (default: current directory)
@@ -56,6 +58,15 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
 
         scanner = SecurityScanner(config, license_check=license_check)
         results = scanner.scan(path, ai_prompt)
+
+        if image:
+            from ez_appsec.external_scanners import GrypeImageScanner
+            image_scanner = GrypeImageScanner()
+            image_findings = image_scanner.scan(image, registry_auth=registry_auth)
+            results["issues"].extend(image_findings)
+            results["total"] = len(results["issues"])
+            if image_findings:
+                click.echo(f"\n✓ Container image scan: {len(image_findings)} finding(s) from {image}")
 
         if baseline_path:
             baseline = load_baseline(baseline_path)
