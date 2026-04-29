@@ -66,8 +66,8 @@ class TestSecretRedaction:
         assert "[REDACTED]" in result
 
     def test_redacts_stripe_key(self):
-        prefix = "sk_test_"
-        text = prefix + "F" * 28
+        prefix = "sk_live_"
+        text = prefix + "x" * 26
         result = redact_secrets(text)
         assert prefix not in result
         assert "[REDACTED]" in result

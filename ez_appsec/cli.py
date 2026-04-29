@@ -892,21 +892,12 @@ def agent_cmd(task, model, root_path):
         result = agent.run(task)
 
         if result.actions_taken:
-            errors = [a for a in result.actions_taken if a.startswith("error:")]
-            actions = [a for a in result.actions_taken if not a.startswith("error:")]
-            if actions:
-                click.echo("\nActions taken:")
-                for action in actions:
-                    click.echo(f"  - {action}")
-            if errors:
-                for error in errors:
-                    click.echo(f"✗ {error}", err=True)
+            click.echo(f"\nActions taken:")
+            for action in result.actions_taken:
+                click.echo(f"  - {action}")
 
         if result.findings:
-            from collections import Counter
-            severity_counts = Counter(f.get("severity", "unknown") for f in result.findings)
-            parts = [f"{count} {sev}" for sev, count in severity_counts.most_common()]
-            click.echo(f"\nFindings: {len(result.findings)} ({', '.join(parts)})")
+            click.echo(f"\nFindings: {len(result.findings)}")
 
         if result.summary:
             click.echo(f"\n{result.summary}")
@@ -914,7 +905,6 @@ def agent_cmd(task, model, root_path):
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
