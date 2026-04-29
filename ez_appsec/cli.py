@@ -37,7 +37,9 @@ def main():
 @click.option("--jira-email", envvar="EZ_APPSEC_JIRA_EMAIL", default=None, help="Jira user email for API auth")
 @click.option("--jira-token", envvar="EZ_APPSEC_JIRA_TOKEN", default=None, help="Jira API token")
 @click.option("--jira-project", envvar="EZ_APPSEC_JIRA_PROJECT", default=None, help="Jira project key for new issues")
-def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project):
+@click.option("--sbom/--no-sbom", default=False, help="Generate CycloneDX SBOM alongside scan results")
+@click.option("--sbom-output", type=click.Path(), default="sbom.cdx.json", help="Output path for SBOM file (default: sbom.cdx.json)")
+def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project, sbom, sbom_output):
     """Scan a codebase for security vulnerabilities using AI analysis
 
     PATH: Directory or file to scan (default: current directory)
@@ -139,6 +141,14 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
                 click.echo(f"\n✓ Jira sync: {', '.join(parts)}")
             if errors:
                 click.echo(f"  ⚠ {len(errors)} Jira error(s)", err=True)
+
+        if sbom:
+            from ez_appsec.sbom import generate_cyclonedx
+            try:
+                generate_cyclonedx(path, sbom_output)
+                click.echo(f"\n✓ SBOM generated: {sbom_output}")
+            except Exception as sbom_err:
+                click.echo(f"\n⚠ SBOM generation failed: {sbom_err}", err=True)
 
         # Policy evaluation results
         if results.get("policy_violations"):
