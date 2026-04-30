@@ -468,7 +468,7 @@ class SemgrepScanner(ScannerWrapper):
         if metadata.get("cwe"):
             return True
         category = metadata.get("category", "").lower()
-        if category == "security" or "owasp" in category:
+        if "owasp" in category or "security" in category:
             return True
         if metadata.get("owasp"):
             return True

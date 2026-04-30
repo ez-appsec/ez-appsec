@@ -227,6 +227,9 @@ class GitHubPRCommenter:
             skipped_in_file = len(file_findings) - len(relevant_findings)
             results["skipped"] += skipped_in_file
 
+            skipped_in_file = len(file_findings) - len(relevant_findings)
+            results["skipped"] += skipped_in_file
+
             if not relevant_findings:
                 continue
 
