@@ -1,3 +1,18 @@
+## [1.7.14](https://github.com/ez-appsec/ez-appsec/compare/v1.7.13...v1.7.14) (2026-04-29)
+
+
+### Features
+
+* add Jira issue sync for scan findings (PLAN-08) ([024b92a](https://github.com/ez-appsec/ez-appsec/commit/024b92aa5741d06cf4f19659b826554a957dc3d1))
+* add policy engine for scan threshold enforcement (PLAN-09) ([6321514](https://github.com/ez-appsec/ez-appsec/commit/6321514461e5afa06f0dfa22976c050323672572))
+
+## [1.7.13](https://github.com/ez-appsec/ez-appsec/compare/v1.7.12...v1.7.13) (2026-04-28)
+
+
+### Features
+
+* add Slack/Teams webhook notifications for scan findings (PLAN-07) ([e67c898](https://github.com/ez-appsec/ez-appsec/commit/e67c8988aff99bccd99773881fed3462f0ab74ca))
+
 ## [1.7.12](https://github.com/ez-appsec/ez-appsec/compare/v1.7.11...v1.7.12) (2026-04-28)
 
 
