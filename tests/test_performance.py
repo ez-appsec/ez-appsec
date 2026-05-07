@@ -243,7 +243,10 @@ class TestScalingCharacteristics:
         # Check that doubling size approximately doubles time (within reasonable bounds)
         # Allow up to 3x for larger sizes (may have overhead)
         for i in range(1, len(sizes)):
-            ratio = durations[i] / durations[i-1]
+            # Floor durations to avoid unstable ratios when scans are very fast
+            d_prev = max(durations[i-1], 0.001)
+            d_curr = max(durations[i], 0.001)
+            ratio = d_curr / d_prev
             size_ratio = sizes[i] / sizes[i-1]
             # Time ratio should be between 0.5x and 3x of size ratio
             assert 0.5 * size_ratio <= ratio <= 3 * size_ratio, \

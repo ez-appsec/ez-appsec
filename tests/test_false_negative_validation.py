@@ -5,6 +5,7 @@ that are known to exist in vulnerable applications like OWASP Juice Shop.
 Based on the false negative analysis, current detection rate for app-level
 vulnerabilities is 0% - these tests help measure and improve coverage.
 """
+import shutil
 import pytest
 import tempfile
 import json
@@ -16,10 +17,13 @@ from ez_appsec.external_scanners import (
     KicsScanner,
 )
 
+_semgrep_available = shutil.which("semgrep") is not None
+
 
 class TestSQLInjectionDetection:
     """Test SQL injection vulnerability detection"""
 
+    @pytest.mark.skipif(not _semgrep_available, reason="semgrep not installed")
     def test_mysql_sql_injection_is_detected(self):
         """Verify MySQL SQL injection patterns are detected"""
         scanner = SemgrepScanner()

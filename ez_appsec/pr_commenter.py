@@ -8,6 +8,8 @@ import json
 import os
 import subprocess
 import logging
+import urllib.request
+import urllib.parse
 from typing import List, Dict, Any, Optional, Set
 from pathlib import Path
 from dataclasses import dataclass
@@ -233,10 +235,13 @@ class GitHubPRCommenter:
                 f for f in file_findings
                 if int(f.get('line', f.get('start_line', 0))) in changed_lines
             ]
+            skipped_in_file = len(file_findings) - len(relevant_findings)
 
             if not relevant_findings:
                 results["skipped"] += len(file_findings)
                 continue
+
+            results["skipped"] += skipped_in_file
 
             # Get the first changed line for the comment position
             first_line = min(int(f.get('line', f.get('start_line', 1))) for f in relevant_findings)
@@ -312,9 +317,6 @@ class GitHubPRCommenter:
         try:
             # Use gh CLI to create a review comment
             # We'll use the API directly for more control
-            import urllib.request
-            import urllib.parse
-
             # Get the PR's latest commit SHA
             cmd = [
                 "gh", "pr", "view", str(self.pr_number),
@@ -508,9 +510,6 @@ class GitLabMRCommenter:
             Note ID if successful, None otherwise
         """
         try:
-            import urllib.request
-            import urllib.parse
-
             # URL-encode the project ID (may contain slashes)
             encoded_project_id = urllib.parse.quote(self.project_id, safe='')
 
