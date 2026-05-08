@@ -46,6 +46,13 @@ class SecurityScanner:
             ai_results = self.ai.analyze(issues, base_path, custom_prompt)
             issues = ai_results.get("enhanced_issues", issues)
 
+        # License compliance check (before ignore rules so license findings can be suppressed)
+        license_result = None
+        if self.license_check and self.config.license_policy:
+            policy = self.config.license_policy.to_policy()
+            license_result = check_licenses(str(base_path), policy)
+            issues.extend(license_result["findings"])
+
         # Apply ignore rules (suppression)
         issues, self.suppressed_count = self._apply_ignore_rules(issues)
 
@@ -54,13 +61,6 @@ class SecurityScanner:
         if self.config.policy_rules:
             engine = PolicyEngine(self.config.policy_rules)
             policy_result = engine.evaluate(issues)
-
-        # License compliance check
-        license_result = None
-        if self.license_check and self.config.license_policy:
-            policy = self.config.license_policy.to_policy()
-            license_result = check_licenses(str(base_path), policy)
-            issues.extend(license_result["findings"])
 
         # Filter by severity
         if self.config.severity != "all":

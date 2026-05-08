@@ -136,11 +136,14 @@ def run_syft(path: str) -> Tuple[Optional[Dict[str, Any]], str]:
             text=True,
             timeout=300,
         )
+        if result.returncode != 0:
+            logger.error(f"syft exited with code {result.returncode}: {result.stderr.strip()}")
+            return None, raw_path
         with open(raw_path) as f:
             data = json.load(f)
         return data, raw_path
     except subprocess.TimeoutExpired:
-        logger.error("syft scan timed out")
+        logger.error("syft scan timed out after 300s")
         return None, raw_path
     except (json.JSONDecodeError, FileNotFoundError) as e:
         logger.error(f"syft output error: {e}")

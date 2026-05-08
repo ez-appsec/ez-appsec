@@ -1,6 +1,7 @@
 """Tests for the license compliance checker (PLAN-11)"""
 
 import os
+import subprocess
 import tempfile
 import json
 import pytest
@@ -536,3 +537,233 @@ class TestLicenseInScanOutput:
             results = scanner.scan(".")
 
         assert "license_summary" not in results
+
+    def test_license_findings_respect_ignore_rules(self):
+        """License findings should be suppressible via ignore rules."""
+        from unittest.mock import patch
+        from ez_appsec.scanner import SecurityScanner
+        from ez_appsec.config import IgnoreRule
+
+        config = Config(
+            license_policy=LicensePolicyConfig(denied_licenses=["GPL*"]),
+            ignore_rules=[
+                IgnoreRule(
+                    rule_id="license-denied-GPL-3.0",
+                    permanent=True,
+                    reason="Accepted risk for this dependency",
+                ),
+            ],
+        )
+        scanner = SecurityScanner(config, use_external_scanners=False, license_check=True)
+
+        with patch.object(scanner.ai, "analyze", return_value={"enhanced_issues": []}):
+            with patch("ez_appsec.scanner.check_licenses") as mock_check:
+                mock_check.return_value = {
+                    "findings": [
+                        {
+                            "type": "license_compliance",
+                            "category": "license_compliance",
+                            "title": "Denied license: GPL-3.0 in bad-dep@1.0.0",
+                            "description": "denied",
+                            "file": "dependency: bad-dep",
+                            "line": 1,
+                            "severity": "high",
+                            "scanner": "license-checker",
+                            "rule_id": "license-denied-GPL-3.0",
+                            "license": "GPL-3.0",
+                            "package": "bad-dep",
+                            "package_version": "1.0.0",
+                        }
+                    ],
+                    "packages": [
+                        {"name": "bad-dep", "version": "1.0.0", "licenses": ["GPL-3.0"], "type": "npm"},
+                    ],
+                    "summary": {"total": 1, "allowed": 0, "denied": 1, "unknown": 0},
+                }
+                results = scanner.scan(".")
+
+        license_findings = [i for i in results["issues"] if i.get("category") == "license_compliance"]
+        assert len(license_findings) == 0
+        assert results["suppressed"] == 1
+
+
+# --- Edge cases ---
+
+
+class TestPolicyEdgeCases:
+    def test_whitespace_only_license(self):
+        policy = LicensePolicy(allowed_licenses=["MIT"])
+        assert policy.check("   ") == "unknown"
+
+    def test_none_input(self):
+        policy = LicensePolicy(allowed_licenses=["MIT"])
+        assert policy.check(None) == "unknown"
+
+    def test_very_long_license_id(self):
+        policy = LicensePolicy(allowed_licenses=["MIT"], denied_licenses=["GPL*"])
+        long_id = "MIT-" + "x" * 1000
+        assert policy.check(long_id) == "unknown"
+
+    def test_special_characters_in_license(self):
+        policy = LicensePolicy(allowed_licenses=["MIT"])
+        assert policy.check("MIT (modified)") == "unknown"
+
+    def test_summary_counts_are_per_license_not_per_package(self):
+        """Verify that summary counts reflect individual license evaluations."""
+        policy = LicensePolicy(
+            allowed_licenses=["MIT"],
+            denied_licenses=["GPL*"],
+        )
+        syft_data = _syft_output([
+            _syft_artifact("dual", "1.0.0", ["MIT", "GPL-3.0"]),
+        ])
+        result = check_licenses(".", policy, syft_json=syft_data)
+        assert result["summary"]["total"] == 1  # 1 package
+        assert result["summary"]["allowed"] + result["summary"]["denied"] == 2  # 2 licenses
+
+
+# --- run_syft unit tests ---
+
+
+class TestRunSyft:
+    def test_syft_not_installed(self):
+        from unittest.mock import patch
+        from ez_appsec.license_checker import run_syft
+
+        with patch("ez_appsec.license_checker.subprocess.run", side_effect=FileNotFoundError):
+            data, raw_path = run_syft(".")
+        assert data is None
+        assert raw_path == ""
+
+    def test_syft_version_check_fails(self):
+        from unittest.mock import patch, MagicMock
+        from ez_appsec.license_checker import run_syft
+
+        with patch("ez_appsec.license_checker.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(1, "syft")
+            data, raw_path = run_syft(".")
+        assert data is None
+        assert raw_path == ""
+
+    def test_syft_nonzero_exit_code(self):
+        from unittest.mock import patch, MagicMock, call
+        from ez_appsec.license_checker import run_syft
+
+        version_result = MagicMock(returncode=0)
+        scan_result = MagicMock(returncode=1, stderr="error: bad path")
+
+        with patch("ez_appsec.license_checker.subprocess.run", side_effect=[version_result, scan_result]):
+            with patch("tempfile.NamedTemporaryFile") as mock_tmp:
+                mock_tmp.return_value.__enter__ = lambda s: MagicMock(name="/tmp/test.json")
+                mock_tmp.return_value.__exit__ = lambda s, *a: None
+                data, raw_path = run_syft(".")
+
+        assert data is None
+
+    def test_syft_timeout(self):
+        import subprocess as sp
+        from unittest.mock import patch, MagicMock
+        from ez_appsec.license_checker import run_syft
+
+        version_result = MagicMock(returncode=0)
+
+        with patch("ez_appsec.license_checker.subprocess.run") as mock_run:
+            mock_run.side_effect = [version_result, sp.TimeoutExpired("syft", 300)]
+            with patch("tempfile.NamedTemporaryFile") as mock_tmp:
+                mock_file = MagicMock()
+                mock_file.name = "/tmp/test.json"
+                mock_tmp.return_value.__enter__ = lambda s: mock_file
+                mock_tmp.return_value.__exit__ = lambda s, *a: None
+                data, raw_path = run_syft(".")
+
+        assert data is None
+        assert raw_path == "/tmp/test.json"
+
+
+# --- Diff parser tests ---
+
+
+class TestUnifiedDiffParser:
+    def test_parse_simple_addition(self):
+        from ez_appsec.pr_commenter import PRDiffParser
+
+        diff = (
+            "diff --git a/foo.py b/foo.py\n"
+            "--- a/foo.py\n"
+            "+++ b/foo.py\n"
+            "@@ -1,3 +1,4 @@\n"
+            " line1\n"
+            "+added_line\n"
+            " line2\n"
+            " line3\n"
+        )
+        result = PRDiffParser._parse_unified_diff(diff)
+        assert "foo.py" in result
+        assert 2 in result["foo.py"]
+
+    def test_parse_deletion_only(self):
+        from ez_appsec.pr_commenter import PRDiffParser
+
+        diff = (
+            "diff --git a/bar.py b/bar.py\n"
+            "--- a/bar.py\n"
+            "+++ b/bar.py\n"
+            "@@ -1,4 +1,3 @@\n"
+            " line1\n"
+            "-removed_line\n"
+            " line2\n"
+            " line3\n"
+        )
+        result = PRDiffParser._parse_unified_diff(diff)
+        assert result.get("bar.py", set()) == set()
+
+    def test_parse_multiple_hunks(self):
+        from ez_appsec.pr_commenter import PRDiffParser
+
+        diff = (
+            "diff --git a/multi.py b/multi.py\n"
+            "--- a/multi.py\n"
+            "+++ b/multi.py\n"
+            "@@ -1,3 +1,4 @@\n"
+            " line1\n"
+            "+new_early\n"
+            " line2\n"
+            " line3\n"
+            "@@ -10,3 +11,4 @@\n"
+            " line10\n"
+            "+new_late\n"
+            " line11\n"
+            " line12\n"
+        )
+        result = PRDiffParser._parse_unified_diff(diff)
+        assert 2 in result["multi.py"]
+        assert 12 in result["multi.py"]
+
+    def test_parse_multiple_files(self):
+        from ez_appsec.pr_commenter import PRDiffParser
+
+        diff = (
+            "diff --git a/a.py b/a.py\n"
+            "--- a/a.py\n"
+            "+++ b/a.py\n"
+            "@@ -1,2 +1,3 @@\n"
+            " x\n"
+            "+y\n"
+            " z\n"
+            "diff --git a/b.py b/b.py\n"
+            "--- a/b.py\n"
+            "+++ b/b.py\n"
+            "@@ -5,2 +5,3 @@\n"
+            " m\n"
+            "+n\n"
+            " o\n"
+        )
+        result = PRDiffParser._parse_unified_diff(diff)
+        assert 2 in result["a.py"]
+        assert 6 in result["b.py"]
+
+    def test_empty_diff(self):
+        from ez_appsec.pr_commenter import PRDiffParser
+
+        result = PRDiffParser._parse_unified_diff("")
+        assert result == {}
