@@ -1,3 +1,19 @@
+## [1.7.15](https://github.com/ez-appsec/ez-appsec/compare/v1.7.14...v1.7.15) (2026-05-08)
+
+
+### Bug Fixes
+
+* address security review findings for license compliance checking ([bf4269f](https://github.com/ez-appsec/ez-appsec/commit/bf4269fc1c3559f8558f6cc9630ea3dbf730cecf))
+* license findings bypass ignore rules, broken diff parser, unchecked syft exit ([6b055cf](https://github.com/ez-appsec/ez-appsec/commit/6b055cfb549693e0315a7a902e628d966fe6a50e))
+* resolve all CI test failures across 8 files ([7d06e08](https://github.com/ez-appsec/ez-appsec/commit/7d06e080a834d3733f8989f0cc9fc973302b772c))
+
+
+### Features
+
+* add Jira issue sync for scan findings (PLAN-08) ([7726fd3](https://github.com/ez-appsec/ez-appsec/commit/7726fd37172fe5f2a6ab59de691126236fc56162))
+* add license compliance checking via syft SBOM analysis (PLAN-11) ([0147227](https://github.com/ez-appsec/ez-appsec/commit/01472270c43f7c082a295f8f82633d0e1bf4a0b2))
+* add policy engine for scan threshold enforcement (PLAN-09) ([8f53a39](https://github.com/ez-appsec/ez-appsec/commit/8f53a396735688c7ad223722226bad24eb24e7a7))
+
 ## [1.7.14](https://github.com/ez-appsec/ez-appsec/compare/v1.7.13...v1.7.14) (2026-04-29)
 
 
