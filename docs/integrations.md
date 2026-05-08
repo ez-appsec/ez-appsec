@@ -60,3 +60,66 @@ Each Jira issue includes:
 ## Slack / Teams Notifications
 
 See the `--slack-webhook` and `--teams-webhook` options on the `scan` command. Set `EZ_APPSEC_SLACK_WEBHOOK` or `EZ_APPSEC_TEAMS_WEBHOOK` environment variables for CI/CD use.
+
+## License Compliance
+
+ez-appsec can check dependency licenses against configurable allowed and denied lists. License data is extracted using [syft](https://github.com/anchore/syft) (bundled with grype).
+
+### Setup
+
+Add a `license_policy` section to your `.ez-appsec.yaml`:
+
+```yaml
+license_policy:
+  allowed_licenses:
+    - MIT
+    - Apache-2.0
+    - BSD-2-Clause
+    - BSD-3-Clause
+    - ISC
+  denied_licenses:
+    - GPL*
+    - AGPL*
+    - SSPL*
+```
+
+### How it works
+
+- **Allowed list**: Licenses that match are permitted. If an allowed list is configured, any license not matching is flagged as "unknown" (medium severity).
+- **Denied list**: Licenses that match are rejected (high severity). Denied takes priority over allowed.
+- **Wildcards**: Both lists support glob patterns (e.g., `GPL*` matches `GPL-2.0`, `GPL-3.0-only`, etc.).
+- **SPDX identifiers**: License values are matched using SPDX identifiers from the syft SBOM output.
+
+### Running a license check
+
+Pass the `--license-check` flag to the `scan` command:
+
+```bash
+ez-appsec scan . --license-check
+```
+
+License violations appear as `category: license_compliance` findings in the scan output alongside other security findings.
+
+### Scan output
+
+When license checking is enabled, the scan result includes:
+
+| Field | Description |
+|---|---|
+| `license_summary.total` | Total packages scanned |
+| `license_summary.allowed` | Packages with allowed licenses |
+| `license_summary.denied` | Packages with denied licenses |
+| `license_summary.unknown` | Packages with unrecognized licenses |
+| `license_packages` | Full package list with license details |
+
+### Prerequisites
+
+- **syft** must be installed: `brew install syft` or `curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh`
+- syft is already included in the ez-appsec Docker images that bundle grype
+
+### CI/CD example
+
+```yaml
+- name: Scan with license compliance
+  run: ez-appsec scan . --license-check --output results.json
+```
