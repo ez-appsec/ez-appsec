@@ -252,6 +252,8 @@ class TestCheckLicenses:
         assert f["scanner"] == "license-checker"
         assert "GPL-3.0" in f["title"]
         assert "evil-lib" in f["title"]
+        assert f["solution"] != ""
+        assert f["all_licenses"] == ["GPL-3.0"]
         assert result["summary"]["denied"] == 1
 
     def test_allowed_license_no_finding(self):
@@ -274,6 +276,7 @@ class TestCheckLicenses:
         f = result["findings"][0]
         assert f["severity"] == "medium"
         assert "unknown" in f["title"].lower() or "Unknown" in f["title"]
+        assert "allowed_licenses" in f["solution"]
         assert result["summary"]["unknown"] == 1
 
     def test_mixed_licenses(self):
@@ -327,10 +330,15 @@ class TestCheckLicenses:
         assert f["category"] == "license_compliance"
         assert f["scanner"] == "license-checker"
         assert f["license"] == "GPL-2.0"
+        assert f["all_licenses"] == ["GPL-2.0"]
         assert f["package"] == "gpl-thing"
         assert f["package_version"] == "1.2.3"
+        assert f["package_type"] == "npm"
         assert f["rule_id"] == "license-denied-GPL-2.0"
         assert f["file"] == "dependency: gpl-thing"
+        assert f["line"] == 0
+        assert f["solution"] != ""
+        assert "Replace" in f["solution"] or "ignore rule" in f["solution"]
 
     def test_dual_licensed_package_one_denied(self):
         policy = LicensePolicy(
@@ -344,7 +352,12 @@ class TestCheckLicenses:
         assert result["summary"]["allowed"] == 1
         assert result["summary"]["denied"] == 1
         assert len(result["findings"]) == 1
-        assert result["findings"][0]["license"] == "GPL-3.0"
+        f = result["findings"][0]
+        assert f["license"] == "GPL-3.0"
+        assert f["all_licenses"] == ["MIT", "GPL-3.0"]
+        assert "also declares" in f["description"]
+        assert "MIT" in f["description"]
+        assert "dual-licensed" in f["description"]
 
     def test_wildcard_sspl(self):
         policy = LicensePolicy(denied_licenses=["SSPL*"])
@@ -361,7 +374,10 @@ class TestCheckLicenses:
         ])
         result = check_licenses(".", policy, syft_json=syft_data)
         assert result["summary"]["unknown"] == 1
-        assert result["findings"][0]["license"] == "UNKNOWN"
+        f = result["findings"][0]
+        assert f["license"] == "UNKNOWN"
+        assert "no license metadata" in f["description"]
+        assert "LICENSE file" in f["solution"]
 
 
 # --- Config integration ---
@@ -487,15 +503,18 @@ class TestLicenseInScanOutput:
                             "type": "license_compliance",
                             "category": "license_compliance",
                             "title": "Denied license: GPL-3.0 in bad-dep@1.0.0",
-                            "description": "denied",
+                            "description": "Package bad-dep@1.0.0 uses license 'GPL-3.0' which is on the denied list.",
+                            "solution": "Option 1: Replace bad-dep with a permissively-licensed alternative.",
                             "file": "dependency: bad-dep",
-                            "line": 1,
+                            "line": 0,
                             "severity": "high",
                             "scanner": "license-checker",
                             "rule_id": "license-denied-GPL-3.0",
                             "license": "GPL-3.0",
+                            "all_licenses": ["GPL-3.0"],
                             "package": "bad-dep",
                             "package_version": "1.0.0",
+                            "package_type": "npm",
                         }
                     ],
                     "packages": [
@@ -511,6 +530,7 @@ class TestLicenseInScanOutput:
         assert len(results["license_packages"]) == 2
         license_findings = [i for i in results["issues"] if i.get("category") == "license_compliance"]
         assert len(license_findings) == 1
+        assert license_findings[0]["solution"] != ""
 
     def test_no_license_check_no_key(self):
         from unittest.mock import patch
@@ -564,15 +584,18 @@ class TestLicenseInScanOutput:
                             "type": "license_compliance",
                             "category": "license_compliance",
                             "title": "Denied license: GPL-3.0 in bad-dep@1.0.0",
-                            "description": "denied",
+                            "description": "Package bad-dep@1.0.0 uses license 'GPL-3.0' which is on the denied list.",
+                            "solution": "Option 1: Replace bad-dep with a permissively-licensed alternative.",
                             "file": "dependency: bad-dep",
-                            "line": 1,
+                            "line": 0,
                             "severity": "high",
                             "scanner": "license-checker",
                             "rule_id": "license-denied-GPL-3.0",
                             "license": "GPL-3.0",
+                            "all_licenses": ["GPL-3.0"],
                             "package": "bad-dep",
                             "package_version": "1.0.0",
+                            "package_type": "npm",
                         }
                     ],
                     "packages": [
@@ -767,3 +790,120 @@ class TestUnifiedDiffParser:
 
         result = PRDiffParser._parse_unified_diff("")
         assert result == {}
+
+
+# --- Usability: actionable findings ---
+
+
+class TestFindingUsability:
+    """Verify that findings contain actionable information for the developer."""
+
+    def test_denied_finding_includes_solution(self):
+        policy = LicensePolicy(denied_licenses=["GPL*"])
+        syft_data = _syft_output([
+            _syft_artifact("bad-lib", "1.0.0", ["GPL-3.0"]),
+        ])
+        result = check_licenses(".", policy, syft_json=syft_data)
+        f = result["findings"][0]
+        assert "solution" in f
+        assert "Replace" in f["solution"]
+        assert "ignore rule" in f["solution"]
+        assert "license-denied-GPL-3.0" in f["solution"]
+
+    def test_unknown_finding_includes_solution(self):
+        policy = LicensePolicy(allowed_licenses=["MIT"])
+        syft_data = _syft_output([
+            _syft_artifact("odd-lib", "2.0.0", ["Artistic-2.0"]),
+        ])
+        result = check_licenses(".", policy, syft_json=syft_data)
+        f = result["findings"][0]
+        assert "solution" in f
+        assert "allowed_licenses" in f["solution"]
+        assert "denied_licenses" in f["solution"]
+        assert ".ez-appsec.yaml" in f["solution"]
+
+    def test_missing_license_gives_specific_guidance(self):
+        policy = LicensePolicy(allowed_licenses=["MIT"])
+        syft_data = _syft_output([
+            _syft_artifact("no-license", "0.1.0", []),
+        ])
+        result = check_licenses(".", policy, syft_json=syft_data)
+        f = result["findings"][0]
+        assert "no license metadata" in f["description"]
+        assert "LICENSE file" in f["solution"]
+
+    def test_dual_licensed_denied_mentions_alternatives(self):
+        policy = LicensePolicy(
+            allowed_licenses=["MIT", "Apache-2.0"],
+            denied_licenses=["GPL*"],
+        )
+        syft_data = _syft_output([
+            _syft_artifact("dual-lib", "3.0.0", ["MIT", "GPL-3.0"]),
+        ])
+        result = check_licenses(".", policy, syft_json=syft_data)
+        f = result["findings"][0]
+        assert f["all_licenses"] == ["MIT", "GPL-3.0"]
+        assert "MIT" in f["description"]
+        assert "dual-licensed" in f["description"].lower()
+
+    def test_single_licensed_denied_no_dual_license_noise(self):
+        policy = LicensePolicy(denied_licenses=["GPL*"])
+        syft_data = _syft_output([
+            _syft_artifact("gpl-only", "1.0.0", ["GPL-3.0"]),
+        ])
+        result = check_licenses(".", policy, syft_json=syft_data)
+        f = result["findings"][0]
+        assert "also declares" not in f["description"]
+        assert "dual-licensed" not in f["description"].lower()
+
+    def test_finding_line_is_zero_not_one(self):
+        """License findings use line=0 since they're not code locations."""
+        policy = LicensePolicy(denied_licenses=["GPL*"])
+        syft_data = _syft_output([
+            _syft_artifact("lib", "1.0.0", ["GPL-3.0"]),
+        ])
+        result = check_licenses(".", policy, syft_json=syft_data)
+        assert result["findings"][0]["line"] == 0
+
+    def test_finding_includes_package_type(self):
+        policy = LicensePolicy(denied_licenses=["GPL*"])
+        syft_data = _syft_output([
+            _syft_artifact("flask", "2.3.0", ["GPL-3.0"], pkg_type="python"),
+        ])
+        result = check_licenses(".", policy, syft_json=syft_data)
+        assert result["findings"][0]["package_type"] == "python"
+
+    def test_pr_comment_omits_line_for_license_findings(self):
+        """PR comments should not show '(line 1)' for license findings."""
+        from ez_appsec.pr_commenter import GitHubPRCommenter
+
+        commenter = GitHubPRCommenter("owner/repo", 1, "fake-token")
+        findings = [{
+            "title": "Denied license: GPL-3.0 in bad@1.0",
+            "description": "denied",
+            "solution": "Replace or suppress",
+            "line": 0,
+            "severity": "high",
+            "scanner": "license-checker",
+            "category": "license_compliance",
+        }]
+        body = commenter._build_comment_body(findings)
+        assert "(line" not in body
+        assert "Fix" in body
+        assert "Replace or suppress" in body
+
+    def test_pr_comment_shows_line_for_code_findings(self):
+        """PR comments should still show line numbers for code findings."""
+        from ez_appsec.pr_commenter import GitHubPRCommenter
+
+        commenter = GitHubPRCommenter("owner/repo", 1, "fake-token")
+        findings = [{
+            "title": "Hardcoded secret",
+            "description": "API key in source",
+            "line": 42,
+            "severity": "high",
+            "scanner": "gitleaks",
+            "category": "secrets",
+        }]
+        body = commenter._build_comment_body(findings)
+        assert "(line 42)" in body

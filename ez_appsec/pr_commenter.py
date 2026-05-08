@@ -279,8 +279,12 @@ class GitHubPRCommenter:
                 line_num = f.get('line', f.get('start_line', '?'))
                 scanner = f.get('scanner', 'unknown')
                 solution = f.get('solution', '')
+                is_license = f.get('category') == 'license_compliance'
 
-                lines.append(f"**{title}** (line {line_num})")
+                if is_license:
+                    lines.append(f"**{title}**")
+                else:
+                    lines.append(f"**{title}** (line {line_num})")
                 lines.append(f"- *Scanner*: {scanner}")
                 lines.append(f"- *Description*: {description}")
                 if solution:
@@ -474,8 +478,12 @@ class GitLabMRCommenter:
                 line_num = f.get('line', f.get('start_line', '?'))
                 scanner = f.get('scanner', 'unknown')
                 solution = f.get('solution', '')
+                is_license = f.get('category') == 'license_compliance'
 
-                lines.append(f"**{title}** (line {line_num})")
+                if is_license:
+                    lines.append(f"**{title}**")
+                else:
+                    lines.append(f"**{title}** (line {line_num})")
                 lines.append(f"- *Scanner*: {scanner}")
                 lines.append(f"- *Description*: {description}")
                 if solution:

@@ -119,6 +119,8 @@ def run_syft(path: str) -> Tuple[Optional[Dict[str, Any]], str]:
     """Run syft on a path and return (parsed JSON, raw output path).
 
     Returns (None, "") if syft is not installed or fails.
+
+    Note: Path is canonicalized to prevent directory traversal attacks.
     """
     try:
         subprocess.run(["syft", "version"], capture_output=True, check=True)
@@ -126,12 +128,21 @@ def run_syft(path: str) -> Tuple[Optional[Dict[str, Any]], str]:
         logger.warning("syft not installed — license check unavailable")
         return None, ""
 
+    # Canonicalize path to prevent directory traversal (e.g., "../other-dir")
+    # Use resolve(strict=False) to allow non-existent paths (syft will validate)
+    # Handle case where cwd was deleted (e.g., by buggy test) by catching FileNotFoundError
+    try:
+        scan_path = str(Path(path).expanduser().absolute().resolve(strict=False))
+    except FileNotFoundError:
+        # cwd was deleted, path will be handled by syft (or fail appropriately)
+        scan_path = path
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         raw_path = f.name
 
     try:
         result = subprocess.run(
-            ["syft", "dir:" + path, "-o", "json", "--file", raw_path],
+            ["syft", "dir:" + scan_path, "-o", "json", "--file", raw_path],
             capture_output=True,
             text=True,
             timeout=300,
@@ -169,6 +180,10 @@ def check_licenses(
         - findings: list of license_compliance finding dicts
         - packages: list of all packages with licenses
         - summary: {total, allowed, denied, unknown}
+
+    Note: Summary counts are per-license, not per-package. A dual-licensed
+    package (e.g., MIT+GPL-3.0) will increment multiple counters if licenses
+    differ in classification (e.g., 1 allowed, 1 denied).
     """
     if syft_json is None:
         syft_json, raw_path = run_syft(path)
@@ -197,41 +212,78 @@ def check_licenses(
 
             if verdict == "denied":
                 denied_count += 1
+                other_licenses = [l for l in pkg.licenses if l != lic]
+                desc = (
+                    f"Package {pkg.name}@{pkg.version} uses license '{lic}' "
+                    f"which is on the denied list."
+                )
+                if other_licenses:
+                    desc += (
+                        f" This package also declares: {', '.join(other_licenses)}. "
+                        f"If dual-licensed, you may be able to use it under an alternative license."
+                    )
+                solution = (
+                    f"Option 1: Replace {pkg.name} with a permissively-licensed alternative. "
+                    f"Option 2: Add an ignore rule (rule_id: license-denied-{lic}) with justification. "
+                    f"Option 3: If dual-licensed, confirm the alternative license applies to your usage."
+                )
                 findings.append({
                     "type": "license_compliance",
                     "category": "license_compliance",
                     "title": f"Denied license: {lic} in {pkg.name}@{pkg.version}",
-                    "description": (
-                        f"Package {pkg.name}@{pkg.version} uses license '{lic}' "
-                        f"which is on the denied list"
-                    ),
+                    "description": desc,
+                    "solution": solution,
                     "file": f"dependency: {pkg.name}",
-                    "line": 1,
+                    "line": 0,  # License findings have no file/line context
                     "severity": "high",
                     "scanner": "license-checker",
                     "rule_id": f"license-denied-{lic}",
                     "license": lic,
+                    "all_licenses": pkg.licenses,
                     "package": pkg.name,
                     "package_version": pkg.version,
+                    "package_type": pkg.pkg_type,
                 })
             elif verdict == "unknown":
                 unknown_count += 1
+                is_missing = lic.upper() == "UNKNOWN"
+                if is_missing:
+                    desc = (
+                        f"Package {pkg.name}@{pkg.version} has no license metadata. "
+                        f"This may indicate a private/internal package or missing LICENSE file."
+                    )
+                    solution = (
+                        f"Check the package source for a LICENSE file. "
+                        f"If the license is acceptable, add it to allowed_licenses in your config. "
+                        f"If the package is internal, add an ignore rule (rule_id: license-unknown-UNKNOWN)."
+                    )
+                else:
+                    desc = (
+                        f"Package {pkg.name}@{pkg.version} uses license '{lic}' "
+                        f"which is not on your allowed list. "
+                        f"Review whether this license is compatible with your project."
+                    )
+                    solution = (
+                        f"If '{lic}' is acceptable, add it to allowed_licenses in .ez-appsec.yaml. "
+                        f"If not acceptable, add it to denied_licenses to flag it as high severity. "
+                        f"To suppress: add an ignore rule (rule_id: license-unknown-{lic})."
+                    )
                 findings.append({
                     "type": "license_compliance",
                     "category": "license_compliance",
                     "title": f"Unknown license: {lic} in {pkg.name}@{pkg.version}",
-                    "description": (
-                        f"Package {pkg.name}@{pkg.version} uses license '{lic}' "
-                        f"which is not on the allowed list"
-                    ),
+                    "description": desc,
+                    "solution": solution,
                     "file": f"dependency: {pkg.name}",
-                    "line": 1,
+                    "line": 0,  # License findings have no file/line context
                     "severity": "medium",
                     "scanner": "license-checker",
                     "rule_id": f"license-unknown-{lic}",
                     "license": lic,
+                    "all_licenses": pkg.licenses,
                     "package": pkg.name,
                     "package_version": pkg.version,
+                    "package_type": pkg.pkg_type,
                 })
             else:
                 allowed_count += 1

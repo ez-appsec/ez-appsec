@@ -146,10 +146,20 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
             ls = results["license_summary"]
             click.echo(f"\n  License check: {ls['total']} package(s) — "
                         f"{ls['allowed']} allowed, {ls['denied']} denied, {ls['unknown']} unknown")
+            license_findings = [i for i in results['issues'] if i.get('category') == 'license_compliance']
             if ls["denied"] > 0:
-                click.echo(f"  ✗ {ls['denied']} denied license(s) found", err=True)
+                click.echo(f"  ✗ {ls['denied']} denied license(s) found:", err=True)
+                for f in license_findings:
+                    if f['severity'] == 'high':
+                        extras = ""
+                        if len(f.get('all_licenses', [])) > 1:
+                            extras = f" (also declares: {', '.join(l for l in f['all_licenses'] if l != f['license'])})"
+                        click.echo(f"    - {f['package']}@{f['package_version']}: {f['license']}{extras}", err=True)
             if ls["unknown"] > 0:
-                click.echo(f"  ⚠ {ls['unknown']} unknown license(s) found")
+                click.echo(f"  ⚠ {ls['unknown']} unknown license(s) — review and add to allowed_licenses or denied_licenses:")
+                for f in license_findings:
+                    if f['severity'] == 'medium':
+                        click.echo(f"    - {f['package']}@{f['package_version']}: {f['license']}")
 
         # Policy evaluation results
         if results.get("policy_violations"):
@@ -256,7 +266,9 @@ ai:
 #     action: warn
 #     max_count: 5
 
-# License compliance — allowed/denied license lists
+# License compliance — SPDX identifiers (see https://spdx.org/licenses/)
+# Supports wildcards: GPL* matches GPL-2.0, GPL-3.0-only, etc.
+# Run with: ez-appsec scan --license-check
 # license_policy:
 #   allowed_licenses:
 #     - MIT
@@ -264,10 +276,13 @@ ai:
 #     - BSD-2-Clause
 #     - BSD-3-Clause
 #     - ISC
+#     - 0BSD
+#     - Unlicense
 #   denied_licenses:
 #     - GPL*
 #     - AGPL*
 #     - SSPL*
+#     - EUPL*
 """
     
     with open(config_path, "w") as f:
