@@ -3,9 +3,7 @@
 import json
 import logging
 import subprocess
-import tempfile
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +18,8 @@ def generate_cyclonedx(
     Args:
         path: Directory to scan for dependencies.
         out_path: Destination file for the CycloneDX JSON output.
-        sbom_version: CycloneDX spec version (default "1.4").
+        sbom_version: CycloneDX spec version used for validation only
+            (grype determines the output version itself).
 
     Returns:
         The resolved output path on success.
@@ -49,6 +48,12 @@ def generate_cyclonedx(
         text=True,
         timeout=300,
     )
+
+    if result.returncode != 0:
+        logger.warning(
+            "grype exited with code %d: %s",
+            result.returncode, (result.stderr or "")[:200],
+        )
 
     if not out.exists():
         stderr_snippet = (result.stderr or "")[:500]
@@ -89,9 +94,11 @@ def _validate_cyclonedx(path: Path, expected_version: str) -> None:
         )
 
     spec_version = data.get("specVersion", "")
-    if not spec_version.startswith(expected_version.split(".")[0]):
+    expected_major = int(expected_version.split(".")[0])
+    actual_major = int(spec_version.split(".")[0]) if spec_version else -1
+    if actual_major != expected_major:
         logger.warning(
-            "SBOM specVersion %s differs from requested %s",
+            "SBOM specVersion %s has different major version than expected %s",
             spec_version, expected_version,
         )
 
