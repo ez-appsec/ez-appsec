@@ -39,7 +39,8 @@ def main():
 @click.option("--jira-project", envvar="EZ_APPSEC_JIRA_PROJECT", default=None, help="Jira project key for new issues")
 @click.option("--sbom/--no-sbom", default=False, help="Generate CycloneDX SBOM alongside scan results")
 @click.option("--sbom-output", type=click.Path(), default="sbom.cdx.json", help="Output path for SBOM file (default: sbom.cdx.json)")
-def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project, sbom, sbom_output):
+@click.option("--license-check", is_flag=True, default=False, help="Run license compliance check (requires syft)")
+def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project, sbom, sbom_output, license_check):
     """Scan a codebase for security vulnerabilities using AI analysis
 
     PATH: Directory or file to scan (default: current directory)
@@ -53,7 +54,7 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
         if output:
             config.output_file = output
 
-        scanner = SecurityScanner(config)
+        scanner = SecurityScanner(config, license_check=license_check)
         results = scanner.scan(path, ai_prompt)
 
         if baseline_path:
@@ -149,6 +150,26 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
                 click.echo(f"\n✓ SBOM generated: {sbom_output}")
             except Exception as sbom_err:
                 click.echo(f"\n⚠ SBOM generation failed: {sbom_err}", err=True)
+
+        # License compliance results
+        if results.get("license_summary"):
+            ls = results["license_summary"]
+            click.echo(f"\n  License check: {ls['total']} package(s) — "
+                        f"{ls['allowed']} allowed, {ls['denied']} denied, {ls['unknown']} unknown")
+            license_findings = [i for i in results['issues'] if i.get('category') == 'license_compliance']
+            if ls["denied"] > 0:
+                click.echo(f"  ✗ {ls['denied']} denied license(s) found:", err=True)
+                for f in license_findings:
+                    if f['severity'] == 'high':
+                        extras = ""
+                        if len(f.get('all_licenses', [])) > 1:
+                            extras = f" (also declares: {', '.join(l for l in f['all_licenses'] if l != f['license'])})"
+                        click.echo(f"    - {f['package']}@{f['package_version']}: {f['license']}{extras}", err=True)
+            if ls["unknown"] > 0:
+                click.echo(f"  ⚠ {ls['unknown']} unknown license(s) — review and add to allowed_licenses or denied_licenses:")
+                for f in license_findings:
+                    if f['severity'] == 'medium':
+                        click.echo(f"    - {f['package']}@{f['package_version']}: {f['license']}")
 
         # Policy evaluation results
         if results.get("policy_violations"):
@@ -254,6 +275,24 @@ ai:
 #   - severity: high
 #     action: warn
 #     max_count: 5
+
+# License compliance — SPDX identifiers (see https://spdx.org/licenses/)
+# Supports wildcards: GPL* matches GPL-2.0, GPL-3.0-only, etc.
+# Run with: ez-appsec scan --license-check
+# license_policy:
+#   allowed_licenses:
+#     - MIT
+#     - Apache-2.0
+#     - BSD-2-Clause
+#     - BSD-3-Clause
+#     - ISC
+#     - 0BSD
+#     - Unlicense
+#   denied_licenses:
+#     - GPL*
+#     - AGPL*
+#     - SSPL*
+#     - EUPL*
 """
     
     with open(config_path, "w") as f:
@@ -363,6 +402,21 @@ def check_config(config_path):
         if "max_count" in item and not isinstance(item["max_count"], int):
             errors.append(f"{prefix}: 'max_count' must be an integer")
 
+    # Validate license_policy if present
+    license_data = raw.get("license_policy")
+    if license_data is not None:
+        if not isinstance(license_data, dict):
+            errors.append(f"'license_policy' must be a mapping, got {type(license_data).__name__}")
+        else:
+            allowed = license_data.get("allowed_licenses", [])
+            denied = license_data.get("denied_licenses", [])
+            if not isinstance(allowed, list):
+                errors.append(f"license_policy.allowed_licenses must be a list, got {type(allowed).__name__}")
+            if not isinstance(denied, list):
+                errors.append(f"license_policy.denied_licenses must be a list, got {type(denied).__name__}")
+            if isinstance(allowed, list) and isinstance(denied, list) and not allowed and not denied:
+                errors.append("license_policy must specify at least one of allowed_licenses or denied_licenses")
+
     if errors:
         click.echo(f"✗ {len(errors)} error(s) in {config_path}:")
         for err in errors:
@@ -383,6 +437,14 @@ def check_config(config_path):
         click.echo(f"  Ignore rules: {rule_count} ({active_count} active)")
     if config.policy_rules:
         click.echo(f"  Policy rules: {len(config.policy_rules)}")
+    if config.license_policy:
+        lp = config.license_policy
+        parts = []
+        if lp.allowed_licenses:
+            parts.append(f"{len(lp.allowed_licenses)} allowed")
+        if lp.denied_licenses:
+            parts.append(f"{len(lp.denied_licenses)} denied")
+        click.echo(f"  License policy: {', '.join(parts)}")
 
 
 @main.command()
@@ -750,6 +812,66 @@ def fix_pr(repo, platform, findings, findings_format, repo_path, gitlab_url, dry
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+
+@main.command()
+@click.option(
+    "--framework",
+    type=click.Choice(["soc2", "pci-dss", "hipaa"]),
+    required=True,
+    help="Compliance framework to map findings against",
+)
+@click.option(
+    "--findings",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to vulnerabilities.json (ez-appsec or GitLab format)",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="Output HTML file (default: <framework>-report.html)",
+)
+def report(framework, findings, output):
+    """Generate a compliance report mapping findings to a control framework
+
+    Maps security scan findings to compliance control IDs (SOC 2, PCI DSS 4.0,
+    or HIPAA §164.312) and renders a self-contained HTML report.
+    """
+    from ez_appsec.compliance_reporter import (
+        ComplianceReporter,
+        load_findings_from_file,
+    )
+
+    try:
+        finding_list = load_findings_from_file(findings)
+    except FileNotFoundError as e:
+        click.echo(f"✗ {e}", err=True)
+        sys.exit(1)
+    except (json.JSONDecodeError, KeyError) as e:
+        click.echo(f"✗ Invalid findings file: {e}", err=True)
+        sys.exit(1)
+
+    output_path = output or f"{framework}-report.html"
+
+    try:
+        reporter = ComplianceReporter(framework)
+        result = reporter.generate(finding_list, output_path)
+    except ValueError as e:
+        click.echo(f"✗ {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"✓ {framework.upper()} compliance report generated")
+    total = result["total"]
+    mapped = result["mapped"]
+    unmapped = result["unmapped"]
+    if unmapped:
+        click.echo(f"  Findings: {total} total, {mapped} mapped to controls, {unmapped} unmapped")
+    else:
+        click.echo(f"  Findings mapped: {total}")
+    click.echo(f"  Controls assessed: {result['controls_total']}")
+    click.echo(f"  Report: {result['path']}")
 
 
 if __name__ == "__main__":

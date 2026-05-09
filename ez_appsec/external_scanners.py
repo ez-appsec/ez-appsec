@@ -320,7 +320,10 @@ class SemgrepScanner(ScannerWrapper):
         """Check if a finding has explicit security metadata"""
         if metadata.get("cwe"):
             return True
-        if "owasp" in metadata.get("category", "").lower():
+        category = metadata.get("category", "").lower()
+        if category == "security" or "owasp" in category:
+            return True
+        if metadata.get("owasp"):
             return True
         if metadata.get("security-severity"):
             return True
@@ -560,6 +563,7 @@ class KicsScanner(ScannerWrapper):
             "readiness probe",
             # User/permissions (context-dependent, often false positive)
             "root user",
+            "runs as root",
             "user in dockerfile",
         ]
 

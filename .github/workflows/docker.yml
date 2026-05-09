@@ -105,7 +105,7 @@ jobs:
         run: |
           pip install --no-cache-dir -r requirements.txt
           pip install --no-cache-dir -e .
-          pip install --no-cache-dir pytest pytest-cov pytest-xdist
+          pip install --no-cache-dir pytest pytest-cov pytest-xdist psutil
 
       - name: Run tests
         run: |

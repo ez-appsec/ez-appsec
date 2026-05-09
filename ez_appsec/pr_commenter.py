@@ -138,42 +138,31 @@ class PRDiffParser:
         """
         files = defaultdict(set)
         current_file = None
-        current_hunk_start = 0
-        current_hunk_lines_added = 0
+        new_line_num = 0
 
         for line in diff_text.split('\n'):
-            # File header
             if line.startswith('diff --git'):
                 parts = line.split()
                 if len(parts) >= 4:
-                    # Get the new file path (b/ prefix)
                     file_path = parts[3][2:] if parts[3].startswith('b/') else parts[3]
                     current_file = file_path
 
-            # Hunk header
             elif line.startswith('@@') and current_file:
-                # Parse: @@ -old_start,old_count +new_start,new_count @@
                 try:
                     hunk_part = line.split('@@')[1].strip()
-                    new_part = hunk_part.split('+')[1].split('@@')[0] if '+' in hunk_part else '1,0'
-                    if ',' in new_part:
-                        current_hunk_start = int(new_part.split(',')[0])
-                        current_hunk_lines_added = int(new_part.split(',')[1])
-                    else:
-                        current_hunk_start = int(new_part)
-                        current_hunk_lines_added = 0
+                    new_part = hunk_part.split('+')[1].split()[0]
+                    new_line_num = int(new_part.split(',')[0])
                 except (IndexError, ValueError):
-                    current_hunk_start = 1
-                    current_hunk_lines_added = 0
+                    new_line_num = 1
 
-            # Added lines
-            elif line.startswith('+') and not line.startswith('++') and current_file:
-                # Calculate which line number this corresponds to
-                # In the new file, line numbers start at hunk_start and increment
-                # We need to count how many '+' lines we've seen in this hunk
-                lines_before = sum(1 for l in line.split('\n')[:line.split('\n').index(line)] if l.startswith('+') and not l.startswith('++')) if '\n' in line else 0
-                line_num = current_hunk_start + len(files[current_file]) % current_hunk_lines_added
-                files[current_file].add(line_num)
+            elif current_file and not line.startswith('\\'):
+                if line.startswith('+') and not line.startswith('+++'):
+                    files[current_file].add(new_line_num)
+                    new_line_num += 1
+                elif line.startswith('-') and not line.startswith('---'):
+                    pass
+                else:
+                    new_line_num += 1
 
         return dict(files)
 
@@ -235,10 +224,13 @@ class GitHubPRCommenter:
                 f for f in file_findings
                 if int(f.get('line', f.get('start_line', 0))) in changed_lines
             ]
+            skipped_in_file = len(file_findings) - len(relevant_findings)
 
             if not relevant_findings:
                 results["skipped"] += len(file_findings)
                 continue
+
+            results["skipped"] += skipped_in_file
 
             # Get the first changed line for the comment position
             first_line = min(int(f.get('line', f.get('start_line', 1))) for f in relevant_findings)
@@ -287,8 +279,12 @@ class GitHubPRCommenter:
                 line_num = f.get('line', f.get('start_line', '?'))
                 scanner = f.get('scanner', 'unknown')
                 solution = f.get('solution', '')
+                is_license = f.get('category') == 'license_compliance'
 
-                lines.append(f"**{title}** (line {line_num})")
+                if is_license:
+                    lines.append(f"**{title}**")
+                else:
+                    lines.append(f"**{title}** (line {line_num})")
                 lines.append(f"- *Scanner*: {scanner}")
                 lines.append(f"- *Description*: {description}")
                 if solution:
@@ -480,8 +476,12 @@ class GitLabMRCommenter:
                 line_num = f.get('line', f.get('start_line', '?'))
                 scanner = f.get('scanner', 'unknown')
                 solution = f.get('solution', '')
+                is_license = f.get('category') == 'license_compliance'
 
-                lines.append(f"**{title}** (line {line_num})")
+                if is_license:
+                    lines.append(f"**{title}**")
+                else:
+                    lines.append(f"**{title}** (line {line_num})")
                 lines.append(f"- *Scanner*: {scanner}")
                 lines.append(f"- *Description*: {description}")
                 if solution:

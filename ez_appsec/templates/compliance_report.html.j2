@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ framework_name }} Compliance Report — ez-appsec</title>
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --card: #fff;
+    --border: #dee2e6;
+    --text: #212529;
+    --muted: #6c757d;
+    --critical: #dc3545;
+    --high: #e67700;
+    --medium: #ffc107;
+    --low: #17a2b8;
+    --pass: #28a745;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.35rem; margin: 2rem 0 1rem; border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+  h3 { font-size: 1.1rem; margin: 1.25rem 0 0.5rem; }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 1.5rem; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    text-align: center;
+  }
+  .stat .number { font-size: 2rem; font-weight: 700; }
+  .stat .label { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat.critical .number { color: var(--critical); }
+  .stat.high .number { color: var(--high); }
+  .stat.medium .number { color: var(--medium); }
+  .stat.low .number { color: var(--low); }
+  .stat.pass .number { color: var(--pass); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; table-layout: fixed; }
+  th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); overflow-wrap: break-word; word-break: break-word; }
+  th { background: var(--bg); font-weight: 600; }
+  th:first-child, td:first-child { width: 7rem; }
+  th:nth-child(3), td:nth-child(3) { width: 10rem; }
+  th:nth-child(4), td:nth-child(4) { width: 30%; }
+  .badge {
+    display: inline-block;
+    padding: 0.15em 0.5em;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .badge-critical { background: var(--critical); color: #fff; }
+  .badge-high { background: var(--high); color: #fff; }
+  .badge-medium { background: var(--medium); color: #000; }
+  .badge-low { background: var(--low); color: #fff; }
+  .control-section { margin-bottom: 2rem; }
+  .control-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+  }
+  .control-id { font-weight: 700; color: var(--muted); font-size: 0.9rem; }
+  .control-count { font-size: 0.85rem; color: var(--muted); }
+  .finding-row td:first-child { width: 8rem; }
+  .no-findings { color: var(--pass); font-style: italic; padding: 0.5rem 0; }
+  .warning-banner {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+  }
+  .warning-banner strong { color: #856404; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.8rem; text-align: center; }
+  @media print {
+    body { padding: 0; max-width: none; background: #fff; }
+    .card { break-inside: avoid; border: 1px solid #ccc; box-shadow: none; }
+    .stats { grid-template-columns: repeat(4, 1fr); }
+    .stat { border: 1px solid #ccc; }
+    .control-section { break-inside: avoid; }
+    .badge { border: 1px solid currentColor; }
+    .warning-banner { border: 1px solid #ccc; background: #fff; }
+    footer { margin-top: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>{{ framework_name }} Compliance Report</h1>
+<p class="subtitle">Generated {{ generated_at }} by ez-appsec</p>
+
+{% if total_findings == 0 %}
+<div class="warning-banner">
+  <strong>⚠ No findings provided.</strong> This report was generated with an empty input file.
+  Verify that the findings file is correct and in a supported format (ez-appsec internal, GitLab, or raw list).
+</div>
+{% elif unmapped_findings %}
+<div class="warning-banner">
+  <strong>⚠ {{ unmapped_findings | length }} finding{{ "s" if unmapped_findings | length != 1 else "" }} not mapped to any control.</strong>
+  {{ mapped_count }} of {{ total_findings }} findings matched a {{ framework_name }} control.
+  Unmapped findings are listed at the end of this report.
+</div>
+{% endif %}
+
+<h2>Executive Summary</h2>
+<div class="stats">
+  <div class="stat">
+    <div class="number">{{ total_findings }}</div>
+    <div class="label">Total Findings</div>
+  </div>
+  <div class="stat critical">
+    <div class="number">{{ severity_counts.critical }}</div>
+    <div class="label">Critical</div>
+  </div>
+  <div class="stat high">
+    <div class="number">{{ severity_counts.high }}</div>
+    <div class="label">High</div>
+  </div>
+  <div class="stat medium">
+    <div class="number">{{ severity_counts.medium }}</div>
+    <div class="label">Medium</div>
+  </div>
+  <div class="stat low">
+    <div class="number">{{ severity_counts.low }}</div>
+    <div class="label">Low</div>
+  </div>
+  <div class="stat">
+    <div class="number">{{ controls_total }}</div>
+    <div class="label">Controls Assessed</div>
+  </div>
+  <div class="stat pass">
+    <div class="number">{{ controls_clean }}</div>
+    <div class="label">Controls — No Findings</div>
+  </div>
+</div>
+
+<h2>Findings by Control</h2>
+
+{% for control in controls %}
+<div class="control-section">
+  <div class="control-header">
+    <h3><span class="control-id">{{ control.control_id }}</span> — {{ control.title }}</h3>
+    <span class="control-count">{{ control.findings | length }} finding{{ "s" if control.findings | length != 1 else "" }}</span>
+  </div>
+  <div class="card">
+    <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem;">{{ control.description }}</p>
+    {% if control.findings %}
+    <table>
+      <thead>
+        <tr><th>Severity</th><th>Title</th><th>Category</th><th>File</th></tr>
+      </thead>
+      <tbody>
+        {% for f in control.findings %}
+        <tr class="finding-row">
+          <td><span class="badge badge-{{ f.severity }}">{{ f.severity }}</span></td>
+          <td>{{ f.title }}</td>
+          <td>{{ f.category }}</td>
+          <td>{{ f.file }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="no-findings">No findings mapped to this control.</p>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+{% if unmapped_findings %}
+<h2>Unmapped Findings</h2>
+<div class="card">
+  <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem;">
+    These findings did not match any {{ framework_name }} control category and require manual review.
+  </p>
+  <table>
+    <thead>
+      <tr><th>Severity</th><th>Title</th><th>Category</th><th>File</th></tr>
+    </thead>
+    <tbody>
+      {% for f in unmapped_findings %}
+      <tr class="finding-row">
+        <td><span class="badge badge-{{ f.severity }}">{{ f.severity }}</span></td>
+        <td>{{ f.title }}</td>
+        <td>{{ f.category|default(f.type|default("unknown")) }}</td>
+        <td>{{ f.file }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<footer>
+  Generated by <strong>ez-appsec</strong> — {{ framework_name }} compliance mapping.
+  This report maps security scan findings to {{ framework_name }} controls for audit purposes.
+  It does not constitute a formal compliance certification.
+</footer>
+
+</body>
+</html>
