@@ -804,5 +804,65 @@ def fix_pr(repo, platform, findings, findings_format, repo_path, gitlab_url, dry
         sys.exit(1)
 
 
+@main.command()
+@click.option(
+    "--framework",
+    type=click.Choice(["soc2", "pci-dss", "hipaa"]),
+    required=True,
+    help="Compliance framework to map findings against",
+)
+@click.option(
+    "--findings",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to vulnerabilities.json (ez-appsec or GitLab format)",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="Output HTML file (default: <framework>-report.html)",
+)
+def report(framework, findings, output):
+    """Generate a compliance report mapping findings to a control framework
+
+    Maps security scan findings to compliance control IDs (SOC 2, PCI DSS 4.0,
+    or HIPAA §164.312) and renders a self-contained HTML report.
+    """
+    from ez_appsec.compliance_reporter import (
+        ComplianceReporter,
+        load_findings_from_file,
+    )
+
+    try:
+        finding_list = load_findings_from_file(findings)
+    except FileNotFoundError as e:
+        click.echo(f"✗ {e}", err=True)
+        sys.exit(1)
+    except (json.JSONDecodeError, KeyError) as e:
+        click.echo(f"✗ Invalid findings file: {e}", err=True)
+        sys.exit(1)
+
+    output_path = output or f"{framework}-report.html"
+
+    try:
+        reporter = ComplianceReporter(framework)
+        result = reporter.generate(finding_list, output_path)
+    except ValueError as e:
+        click.echo(f"✗ {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"✓ {framework.upper()} compliance report generated")
+    total = result["total"]
+    mapped = result["mapped"]
+    unmapped = result["unmapped"]
+    if unmapped:
+        click.echo(f"  Findings: {total} total, {mapped} mapped to controls, {unmapped} unmapped")
+    else:
+        click.echo(f"  Findings mapped: {total}")
+    click.echo(f"  Controls assessed: {result['controls_total']}")
+    click.echo(f"  Report: {result['path']}")
+
+
 if __name__ == "__main__":
     main()
