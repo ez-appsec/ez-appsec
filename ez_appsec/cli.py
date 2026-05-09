@@ -847,15 +847,21 @@ def report(framework, findings, output):
 
     try:
         reporter = ComplianceReporter(framework)
-        result_path = reporter.generate(finding_list, output_path)
+        result = reporter.generate(finding_list, output_path)
     except ValueError as e:
         click.echo(f"✗ {e}", err=True)
         sys.exit(1)
 
     click.echo(f"✓ {framework.upper()} compliance report generated")
-    click.echo(f"  Findings mapped: {len(finding_list)}")
-    click.echo(f"  Controls assessed: {len(reporter.controls)}")
-    click.echo(f"  Report: {result_path}")
+    total = result["total"]
+    mapped = result["mapped"]
+    unmapped = result["unmapped"]
+    if unmapped:
+        click.echo(f"  Findings: {total} total, {mapped} mapped to controls, {unmapped} unmapped")
+    else:
+        click.echo(f"  Findings mapped: {total}")
+    click.echo(f"  Controls assessed: {result['controls_total']}")
+    click.echo(f"  Report: {result['path']}")
 
 
 if __name__ == "__main__":
