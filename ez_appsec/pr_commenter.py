@@ -8,6 +8,8 @@ import json
 import os
 import subprocess
 import logging
+import urllib.request
+import urllib.parse
 from typing import List, Dict, Any, Optional, Set
 from pathlib import Path
 from dataclasses import dataclass
@@ -310,11 +312,6 @@ class GitHubPRCommenter:
             Comment ID if successful, None otherwise
         """
         try:
-            # Use gh CLI to create a review comment
-            # We'll use the API directly for more control
-            import urllib.request
-            import urllib.parse
-
             # Get the PR's latest commit SHA
             cmd = [
                 "gh", "pr", "view", str(self.pr_number),
@@ -508,9 +505,6 @@ class GitLabMRCommenter:
             Note ID if successful, None otherwise
         """
         try:
-            import urllib.request
-            import urllib.parse
-
             # URL-encode the project ID (may contain slashes)
             encoded_project_id = urllib.parse.quote(self.project_id, safe='')
 
