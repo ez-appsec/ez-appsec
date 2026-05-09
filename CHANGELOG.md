@@ -1,3 +1,15 @@
+## [1.7.16](https://github.com/ez-appsec/ez-appsec/compare/v1.7.15...v1.7.16) (2026-05-09)
+
+
+### Bug Fixes
+
+* address code review findings for compliance reporter ([68b2174](https://github.com/ez-appsec/ez-appsec/commit/68b217496964876f68ffa3199ae177c426c973cf))
+
+
+### Features
+
+* add compliance report generation for SOC2, PCI-DSS, HIPAA (PLAN-12) ([9ebbf64](https://github.com/ez-appsec/ez-appsec/commit/9ebbf6450ef6d545caa8039809acc970a0bf952c))
+
 ## [1.7.15](https://github.com/ez-appsec/ez-appsec/compare/v1.7.14...v1.7.15) (2026-05-08)
 
 
