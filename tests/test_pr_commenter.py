@@ -292,7 +292,7 @@ class TestGitLabMRCommenter:
         call_args = mock_urlopen.call_args
         request = call_args[0][0]
         assert '/projects/123/merge_requests/456/discussions' in request.full_url
-        assert request.headers['Private-token'] == 'token'
+        assert request.get_header('Private-token') == 'token'
 
     def test_build_comment_body(self):
         """Test comment body formatting"""

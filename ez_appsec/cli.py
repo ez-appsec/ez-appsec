@@ -828,7 +828,6 @@ def fix_pr(repo, platform, findings, findings_format, repo_path, gitlab_url, dry
         sys.exit(1)
 
 
-<<<<<<< HEAD
 @main.command()
 @click.option(
     "--framework",

@@ -101,7 +101,7 @@ class Config(BaseModel):
     output_file: Optional[str] = None
     ai_model: str = "gpt-4"
     ai_temperature: float = 0.5
-    max_findings: Optional[int] = None
+    max_findings: int = 500
     ignore_rules: List[IgnoreRule] = Field(default_factory=list)
     policy_rules: List[PolicyRule] = Field(default_factory=list)
     license_policy: Optional[LicensePolicyConfig] = None

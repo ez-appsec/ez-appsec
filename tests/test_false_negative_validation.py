@@ -28,6 +28,9 @@ class TestSQLInjectionDetection:
         """Verify MySQL SQL injection patterns are detected"""
         scanner = SemgrepScanner()
 
+        if not scanner.is_installed():
+            pytest.skip("semgrep not installed")
+
         # Create a test file with SQL injection vulnerability
         with tempfile.NamedTemporaryFile(mode='w', suffix='.php', delete=False) as f:
             f.write("""

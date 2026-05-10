@@ -230,6 +230,7 @@ class GitHubPRCommenter:
                 results["skipped"] += len(file_findings)
                 continue
 
+            skipped_in_file = len(file_findings) - len(relevant_findings)
             results["skipped"] += skipped_in_file
 
             # Get the first changed line for the comment position
