@@ -5,7 +5,9 @@ import os
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock, call
+from click.testing import CliRunner
 
+from ez_appsec.cli import main
 from ez_appsec.secret_rotator import (
     DetectedSecret,
     RotationResult,
@@ -25,7 +27,7 @@ from ez_appsec.secret_rotator import (
     GitHubActionsSecretStore,
     GitLabCIVariableStore,
     VaultSecretStore,
-    _build_env_var_name,
+    _build_env_var_names,
 )
 
 
@@ -165,18 +167,35 @@ class TestParseGitleaksFindings:
         assert len(secrets) == 0
 
 
-class TestBuildEnvVarName:
-    def test_aws_key(self):
-        s = _secret(rule_id="aws-access-key-id")
-        assert _build_env_var_name(s) == "AWS_ACCESS_KEY_ID"
+class TestBuildEnvVarNames:
+    def test_unique_rule_ids(self):
+        secrets = [
+            _secret(rule_id="aws-access-key-id"),
+            _secret(rule_id="github-pat", match="ghp_xxx", file="b.py"),
+        ]
+        names = _build_env_var_names(secrets)
+        assert names[0] == "AWS_ACCESS_KEY_ID"
+        assert names[1] == "GITHUB_PAT"
 
-    def test_github_pat(self):
-        s = _secret(rule_id="github-pat")
-        assert _build_env_var_name(s) == "GITHUB_PAT"
+    def test_duplicate_rule_ids_disambiguated(self):
+        secrets = [
+            _secret(rule_id="aws-access-key-id", file="a.py"),
+            _secret(rule_id="aws-access-key-id", file="b.py", match="AKIAOTHER"),
+        ]
+        names = _build_env_var_names(secrets)
+        assert names[0] == "AWS_ACCESS_KEY_ID_1"
+        assert names[1] == "AWS_ACCESS_KEY_ID_2"
 
-    def test_gitlab_pat(self):
-        s = _secret(rule_id="gitlab-pat")
-        assert _build_env_var_name(s) == "GITLAB_PAT"
+    def test_mixed_unique_and_duplicate(self):
+        secrets = [
+            _secret(rule_id="aws-access-key-id", file="a.py"),
+            _secret(rule_id="github-pat", match="ghp_xxx", file="b.py"),
+            _secret(rule_id="aws-access-key-id", file="c.py", match="AKIAOTHER"),
+        ]
+        names = _build_env_var_names(secrets)
+        assert names[0] == "AWS_ACCESS_KEY_ID_1"
+        assert names[1] == "GITHUB_PAT"
+        assert names[2] == "AWS_ACCESS_KEY_ID_2"
 
 
 class TestAWSKeyProvider:
@@ -237,23 +256,19 @@ class TestAWSKeyProvider:
 class TestGitHubPATProvider:
     @patch("ez_appsec.secret_rotator.subprocess.run")
     def test_revokes_token(self, mock_run):
-        mock_run.side_effect = [
-            MagicMock(returncode=0, stdout="ghp_current_token", stderr=""),
-            MagicMock(returncode=0, stdout="", stderr=""),
-        ]
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
         provider = GitHubPATProvider()
         result = provider.rotate("ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "github-pat")
 
         assert result["revoked"] is True
         assert "new PAT manually" in result["details"]
+        args = mock_run.call_args[0][0]
+        assert args[:4] == ["gh", "api", "-X", "DELETE"]
 
     @patch("ez_appsec.secret_rotator.subprocess.run")
     def test_handles_revoke_failure(self, mock_run):
-        mock_run.side_effect = [
-            MagicMock(returncode=0, stdout="", stderr=""),
-            MagicMock(returncode=1, stdout="", stderr="not found"),
-        ]
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="not found")
 
         provider = GitHubPATProvider()
         result = provider.rotate("ghp_xxx", "github-pat")
@@ -274,7 +289,7 @@ class TestGitLabPATProvider:
         mock_self_resp.json.return_value = {"id": 1}
         mock_list_resp = MagicMock(status_code=200)
         mock_list_resp.json.return_value = [
-            {"id": 42, "token": "glpa", "name": "deploy"},
+            {"id": 42, "token": "glpat-xxxxxxxx", "name": "deploy"},
         ]
         mock_revoke_resp = MagicMock(status_code=204)
 
@@ -643,6 +658,8 @@ class TestSecretStores:
         assert "secret" in args
         assert "set" in args
         assert "MY_SECRET" in args
+        assert "value123" not in args  # secret piped via stdin, not in args
+        assert mock_run.call_args[1]["input"] == "value123"
 
     @patch("ez_appsec.secret_rotator.subprocess.run")
     def test_vault_store_write(self, mock_run):
@@ -655,6 +672,8 @@ class TestSecretStores:
         assert "vault" in args
         assert "kv" in args
         assert "put" in args
+        assert "value123" not in " ".join(args)  # secret piped via stdin
+        assert '"value"' in mock_run.call_args[1]["input"]
 
     @patch("ez_appsec.secret_rotator.subprocess.run")
     def test_vault_store_no_addr(self, mock_run):
@@ -704,3 +723,136 @@ class TestEndToEnd:
         content = (repo_dir / "config.py").read_text()
         assert 'os.environ.get("AWS_ACCESS_KEY_ID")' in content
         assert "AKIAIOSFODNN7EXAMPLE" not in content
+
+
+class TestRotateSecretsCLI:
+    """Tests for the rotate-secrets CLI subcommand."""
+
+    def _write_findings(self, tmp_path, findings=None):
+        findings_file = tmp_path / "gitleaks.json"
+        data = findings or [SAMPLE_GITLEAKS_OUTPUT[0]]
+        findings_file.write_text(json.dumps(data))
+        return str(findings_file)
+
+    def test_dry_run_skips_confirmation(self, tmp_path):
+        findings_file = self._write_findings(tmp_path)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "config.py").write_text('KEY = "AKIAIOSFODNN7EXAMPLE"\n')
+
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "rotate-secrets", "--repo", "owner/repo",
+            "--findings", findings_file, "--path", str(repo_dir),
+            "--dry-run",
+        ])
+
+        assert result.exit_code == 0
+        assert "[dry-run]" in result.output
+        assert "Proceed?" not in result.output
+
+    def test_confirmation_prompt_aborts(self, tmp_path):
+        findings_file = self._write_findings(tmp_path)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "config.py").write_text('KEY = "AKIAIOSFODNN7EXAMPLE"\n')
+
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "rotate-secrets", "--repo", "owner/repo",
+            "--findings", findings_file, "--path", str(repo_dir),
+            "--secret-store", "github",
+        ], input="n\n")
+
+        assert result.exit_code != 0
+        assert "Aborted" in result.output or "Aborted" in (result.stderr or "")
+
+    def test_yes_flag_skips_confirmation(self, tmp_path):
+        findings_file = self._write_findings(tmp_path)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "config.py").write_text('KEY = "AKIAIOSFODNN7EXAMPLE"\n')
+
+        runner = CliRunner()
+        with patch("ez_appsec.secret_rotator.subprocess.run") as mock_run, \
+             patch("ez_appsec.fix_pr.subprocess.run") as mock_git:
+            list_resp = MagicMock(returncode=0, stdout=json.dumps({
+                "AccessKeyMetadata": [
+                    {"AccessKeyId": "AKIAIOSFODNN7EXAMPLE", "UserName": "bot", "Status": "Active"},
+                ],
+            }))
+            create_resp = MagicMock(returncode=0, stdout=json.dumps({
+                "AccessKey": {"AccessKeyId": "AKIANEW", "SecretAccessKey": "new", "UserName": "bot"},
+            }))
+            deactivate_resp = MagicMock(returncode=0)
+            store_resp = MagicMock(returncode=0)
+            pr_resp = MagicMock(returncode=0, stdout="https://github.com/owner/repo/pull/1\n", stderr="")
+            mock_run.side_effect = [list_resp, create_resp, deactivate_resp, store_resp, pr_resp]
+            mock_git.return_value = MagicMock(returncode=0, stderr="", stdout="")
+
+            result = runner.invoke(main, [
+                "rotate-secrets", "--repo", "owner/repo",
+                "--findings", findings_file, "--path", str(repo_dir),
+                "--secret-store", "github", "--yes",
+            ])
+
+        assert "Proceed?" not in result.output
+
+    def test_no_secret_store_warning_for_aws(self, tmp_path):
+        findings_file = self._write_findings(tmp_path)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "config.py").write_text('KEY = "AKIAIOSFODNN7EXAMPLE"\n')
+
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "rotate-secrets", "--repo", "owner/repo",
+            "--findings", findings_file, "--path", str(repo_dir),
+        ], input="n\n")
+
+        assert "--secret-store not specified" in result.output
+
+    def test_no_secret_store_warning_for_github_pat(self, tmp_path):
+        findings_file = self._write_findings(tmp_path, [SAMPLE_GITLEAKS_OUTPUT[1]])
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "rotate-secrets", "--repo", "owner/repo",
+            "--findings", findings_file, "--path", str(repo_dir),
+        ], input="n\n")
+
+        assert "--secret-store not specified" not in result.output
+
+    def test_no_findings_exits_clean(self, tmp_path):
+        findings_file = self._write_findings(tmp_path, [
+            {"RuleID": "generic-api-key", "Match": "sk-xxx", "File": "a.py", "StartLine": 1},
+        ])
+
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "rotate-secrets", "--repo", "owner/repo",
+            "--findings", findings_file,
+        ])
+
+        assert result.exit_code == 0
+        assert "No rotatable secrets" in result.output
+
+    def test_confirmation_shows_action_plan(self, tmp_path):
+        findings_file = self._write_findings(tmp_path)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "config.py").write_text('KEY = "AKIAIOSFODNN7EXAMPLE"\n')
+
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            "rotate-secrets", "--repo", "owner/repo",
+            "--findings", findings_file, "--path", str(repo_dir),
+            "--secret-store", "github",
+        ], input="n\n")
+
+        assert "This will:" in result.output
+        assert "Rotate AWS key" in result.output
+        assert "Write new values to github" in result.output
+        assert "Create a PR" in result.output

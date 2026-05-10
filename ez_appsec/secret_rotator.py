@@ -9,12 +9,11 @@ produces PRs replacing hardcoded values with environment variable references.
 import json
 import logging
 import os
-import re
 import subprocess
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -160,15 +159,10 @@ class GitHubPATProvider(SecretProvider):
 
     def rotate(self, secret_value: str, rule_id: str) -> Dict[str, Any]:
         try:
-            revoke_result = subprocess.run(
-                ["gh", "auth", "token", "--secure-storage"],
-                capture_output=True, text=True, timeout=30,
-            )
-
             delete_result = subprocess.run(
-                ["gh", "api", "-X", "DELETE",
-                 "/applications/{client_id}/token",
-                 "-f", f"access_token={secret_value}"],
+                ["gh", "api", "-X", "DELETE", "/user/tokens",
+                 "--input", "-"],
+                input=json.dumps({"access_token": secret_value}),
                 capture_output=True, text=True, timeout=30,
             )
             revoked = delete_result.returncode == 0
@@ -176,9 +170,11 @@ class GitHubPATProvider(SecretProvider):
             return {
                 "new_value": "",
                 "revoked": revoked,
-                "details": "Old token revoked. Generate a new PAT manually at "
+                "details": ("Old token revoked. " if revoked
+                            else "Could not revoke old token (may require admin scope). ")
+                           + "Generate a new PAT manually at "
                            "https://github.com/settings/tokens — automated PAT creation "
-                           "requires an OAuth App client ID.",
+                           "is not supported via the GitHub API.",
             }
 
         except subprocess.TimeoutExpired:
@@ -221,10 +217,19 @@ class GitLabPATProvider(SecretProvider):
             )
             target_token_id = None
             if tokens_resp.status_code == 200:
+                candidates = []
                 for tok in tokens_resp.json():
-                    if tok.get("token") and secret_value.startswith(tok["token"][:4]):
-                        target_token_id = tok["id"]
-                        break
+                    prefix = tok.get("token", "")
+                    if prefix and secret_value.startswith(prefix):
+                        candidates.append(tok)
+                if len(candidates) == 1:
+                    target_token_id = candidates[0]["id"]
+                elif len(candidates) > 1:
+                    logger.warning(
+                        "Multiple GitLab tokens match prefix — skipping revocation "
+                        "to avoid revoking the wrong token (matched IDs: %s)",
+                        [c["id"] for c in candidates],
+                    )
 
             revoked = False
             if target_token_id:
@@ -284,8 +289,8 @@ class GitHubActionsSecretStore(SecretStore):
         if self.token:
             env["GH_TOKEN"] = self.token
         result = subprocess.run(
-            ["gh", "secret", "set", name, "--repo", self.repo, "--body", value],
-            capture_output=True, text=True, env=env, timeout=30,
+            ["gh", "secret", "set", name, "--repo", self.repo],
+            input=value, capture_output=True, text=True, env=env, timeout=30,
         )
         return result.returncode == 0
 
@@ -334,7 +339,8 @@ class VaultSecretStore(SecretStore):
         if not self.vault_addr:
             return False
         result = subprocess.run(
-            ["vault", "kv", "put", f"{self.mount}/{name}", f"value={value}"],
+            ["vault", "kv", "put", f"{self.mount}/{name}", "-"],
+            input=json.dumps({"value": value}),
             capture_output=True, text=True, timeout=30,
             env={**os.environ, "VAULT_ADDR": self.vault_addr},
         )
@@ -393,10 +399,23 @@ def parse_gitleaks_findings(gitleaks_json_path: str) -> List[DetectedSecret]:
     return secrets
 
 
-def _build_env_var_name(secret: DetectedSecret) -> str:
-    """Generate an environment variable name from the secret type and rule ID."""
-    base = secret.rule_id.upper().replace("-", "_")
-    return base
+def _build_env_var_names(secrets: List[DetectedSecret]) -> Dict[int, str]:
+    """Generate unique environment variable names for a list of secrets."""
+    counts: Dict[str, int] = {}
+    names: Dict[int, str] = {}
+    for i, secret in enumerate(secrets):
+        base = secret.rule_id.upper().replace("-", "_")
+        counts[base] = counts.get(base, 0) + 1
+
+    seen: Dict[str, int] = {}
+    for i, secret in enumerate(secrets):
+        base = secret.rule_id.upper().replace("-", "_")
+        if counts[base] > 1:
+            seen[base] = seen.get(base, 0) + 1
+            names[i] = f"{base}_{seen[base]}"
+        else:
+            names[i] = base
+    return names
 
 
 def rotate_secrets(
@@ -412,9 +431,10 @@ def rotate_secrets(
     3. Write new secret to the store (if provided and not dry_run)
     4. Return a RotationResult for PR body generation
     """
+    env_var_names = _build_env_var_names(secrets)
     results = []
-    for secret in secrets:
-        env_var_name = _build_env_var_name(secret)
+    for i, secret in enumerate(secrets):
+        env_var_name = env_var_names[i]
         provider = get_provider(secret.rule_id)
 
         if not provider:
@@ -548,7 +568,7 @@ def build_rotation_pr_body(results: List[RotationResult]) -> str:
         lines.append("")
 
     lines.append("---")
-    lines.append("*Generated by [ez-appsec](https://github.com/ez-appsec/ez-appsec) `fix-pr --rotate-secrets`*")
+    lines.append("*Generated by [ez-appsec](https://github.com/ez-appsec/ez-appsec) `rotate-secrets`*")
     return "\n".join(lines)
 
 

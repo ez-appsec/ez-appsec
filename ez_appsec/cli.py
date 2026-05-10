@@ -854,35 +854,21 @@ def pr_comment(platform, findings, pr, mr, repo, gitlab_url):
 @main.command("fix-pr")
 @click.option("--repo", required=True, help="Repository (GitHub: owner/repo, GitLab: project ID)")
 @click.option("--platform", type=click.Choice(["github", "gitlab"]), default="github", help="Platform")
-@click.option("--findings", type=click.Path(exists=True), required=True, help="Path to grype JSON, vulnerabilities.json, or gitleaks JSON")
-@click.option("--format", "findings_format", type=click.Choice(["grype", "gitlab", "gitleaks"]), default="grype",
-              help="Findings file format (raw grype JSON, GitLab vulnerabilities.json, or gitleaks JSON)")
+@click.option("--findings", type=click.Path(exists=True), required=True, help="Path to grype JSON or vulnerabilities.json")
+@click.option("--format", "findings_format", type=click.Choice(["grype", "gitlab"]), default="grype",
+              help="Findings file format (raw grype JSON or GitLab vulnerabilities.json)")
 @click.option("--path", "repo_path", type=click.Path(exists=True), default=".", help="Local repo checkout path")
 @click.option("--gitlab-url", default="https://gitlab.com", help="GitLab instance URL")
 @click.option("--dry-run", is_flag=True, help="Show what would be changed without creating a PR")
-@click.option("--rotate-secrets", is_flag=True, help="Rotate detected secrets and replace with env var references")
-@click.option("--secret-store", type=click.Choice(["github", "gitlab", "vault"]), default=None,
-              help="Secret store to write rotated secrets to")
-def fix_pr(repo, platform, findings, findings_format, repo_path, gitlab_url, dry_run,
-           rotate_secrets, secret_store):
+def fix_pr(repo, platform, findings, findings_format, repo_path, gitlab_url, dry_run):
     """Open a PR/MR that bumps vulnerable dependencies to fixed versions
 
     Reads grype scan output (or GitLab-format vulnerabilities.json), groups
     fixable CVEs by package ecosystem, bumps versions in manifest files,
     and opens one PR per ecosystem.
 
-    With --rotate-secrets, reads gitleaks JSON output, rotates exposed secrets
-    via provider APIs (AWS IAM, GitHub PATs, GitLab PATs), writes new values
-    to the configured --secret-store, and opens a PR replacing hardcoded
-    values with environment variable references.
-
     Supports: package.json, requirements.txt, go.mod, Gemfile, pom.xml
     """
-    if rotate_secrets:
-        _handle_rotate_secrets(repo, platform, findings, findings_format,
-                               repo_path, gitlab_url, dry_run, secret_store)
-        return
-
     from ez_appsec.fix_pr import (
         parse_grype_findings,
         parse_gitlab_findings,
@@ -1036,15 +1022,37 @@ def agent_cmd(task, model, root_path):
         sys.exit(1)
 
 
-def _handle_rotate_secrets(repo, platform, findings, findings_format,
-                           repo_path, gitlab_url, dry_run, secret_store_type):
-    """Handle the --rotate-secrets flow for fix-pr."""
+@main.command("rotate-secrets")
+@click.option("--repo", required=True, help="Repository (GitHub: owner/repo, GitLab: project ID)")
+@click.option("--platform", type=click.Choice(["github", "gitlab"]), default="github", help="Platform")
+@click.option("--findings", type=click.Path(exists=True), required=True, help="Path to gitleaks JSON output")
+@click.option("--path", "repo_path", type=click.Path(exists=True), default=".", help="Local repo checkout path")
+@click.option("--gitlab-url", default="https://gitlab.com", help="GitLab instance URL")
+@click.option("--dry-run", is_flag=True, help="Show what would be changed without rotating or creating a PR")
+@click.option("--secret-store", type=click.Choice(["github", "gitlab", "vault"]), default=None,
+              help="Secret store to write rotated secrets to")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def rotate_secrets_cmd(repo, platform, findings, repo_path, gitlab_url, dry_run,
+                       secret_store, yes):
+    """Rotate leaked secrets and open a PR replacing them with env var references
+
+    Reads gitleaks JSON output, rotates exposed secrets via provider APIs
+    (AWS IAM, GitHub PATs, GitLab PATs), writes new values to the configured
+    --secret-store, and opens a PR replacing hardcoded values with environment
+    variable references.
+
+    \b
+    Examples:
+      ez-appsec rotate-secrets --repo owner/repo --findings gitleaks.json --dry-run
+      ez-appsec rotate-secrets --repo owner/repo --findings gitleaks.json --secret-store github
+    """
     from ez_appsec.secret_rotator import (
         parse_gitleaks_findings,
         rotate_secrets as do_rotate,
         create_secret_store,
         create_rotation_pr,
         build_rotation_pr_body,
+        classify_secret,
     )
 
     try:
@@ -1053,12 +1061,25 @@ def _handle_rotate_secrets(repo, platform, findings, findings_format,
             click.echo("No rotatable secrets found in findings.")
             return
 
-        click.echo(f"Found {len(secrets)} rotatable secret(s).")
+        click.echo(f"Found {len(secrets)} rotatable secret(s):")
         for s in secrets:
             click.echo(f"  {s.rule_id} in {s.file}:{s.line}")
 
+        has_auto_generated = any(
+            classify_secret(s.rule_id) == "aws" for s in secrets
+        )
+        if has_auto_generated and not secret_store and not dry_run:
+            click.echo(
+                "\n⚠ Warning: --secret-store not specified. AWS rotation generates new "
+                "credentials that will only exist in memory — they will be lost after "
+                "this command exits. Use --secret-store to persist them.",
+                err=True,
+            )
+            if not yes:
+                click.confirm("Continue without a secret store?", abort=True)
+
         store = None
-        if secret_store_type:
+        if secret_store:
             token = None
             project_id = None
             if platform == "github":
@@ -1068,9 +1089,29 @@ def _handle_rotate_secrets(repo, platform, findings, findings_format,
                 project_id = repo
 
             store = create_secret_store(
-                secret_store_type, repo=repo, project_id=project_id,
+                secret_store, repo=repo, project_id=project_id,
                 gitlab_url=gitlab_url, token=token,
             )
+
+        if not dry_run and not yes:
+            actions = []
+            for s in secrets:
+                stype = classify_secret(s.rule_id)
+                if stype == "aws":
+                    actions.append(f"  • Rotate AWS key in {s.file}:{s.line} (create new, deactivate old)")
+                elif stype == "github_pat":
+                    actions.append(f"  • Revoke GitHub PAT in {s.file}:{s.line}")
+                elif stype == "gitlab_pat":
+                    actions.append(f"  • Revoke GitLab token in {s.file}:{s.line}")
+            if store:
+                actions.append(f"  • Write new values to {secret_store} secret store")
+            actions.append(f"  • Create a {'PR' if platform == 'github' else 'MR'} on {repo}")
+
+            click.echo(f"\nThis will:")
+            for action in actions:
+                click.echo(action)
+            click.echo()
+            click.confirm("Proceed?", abort=True)
 
         results = do_rotate(secrets, store=store, dry_run=dry_run)
 
@@ -1100,6 +1141,20 @@ def _handle_rotate_secrets(repo, platform, findings, findings_format,
             click.echo(f"  Branch: {result['branch']}")
             click.echo(f"  Files: {', '.join(result['files_modified'])}")
 
+        needs_manual_pat = [r for r in results if r.rotated and r.secret.secret_type in ("github_pat", "gitlab_pat")]
+        if needs_manual_pat:
+            click.echo("\n📋 Next steps:")
+            for r in needs_manual_pat:
+                if r.secret.secret_type == "github_pat":
+                    click.echo(f"  1. Generate a new GitHub PAT at https://github.com/settings/tokens")
+                else:
+                    gitlab = gitlab_url.rstrip("/")
+                    click.echo(f"  1. Generate a new GitLab token at {gitlab}/-/user_settings/personal_access_tokens")
+                click.echo(f"  2. Set {r.env_var_name} in your {'secret store' if store else 'CI/CD environment'}")
+
+    except click.Abort:
+        click.echo("\nAborted.", err=True)
+        sys.exit(1)
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
         import traceback
