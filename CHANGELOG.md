@@ -1,3 +1,10 @@
+## [1.7.17](https://github.com/ez-appsec/ez-appsec/compare/v1.7.16...v1.7.17) (2026-05-10)
+
+
+### Features
+
+* SBOM generation via grype CycloneDX (PLAN-10) ([#31](https://github.com/ez-appsec/ez-appsec/issues/31)) ([4b8c8b6](https://github.com/ez-appsec/ez-appsec/commit/4b8c8b6c409bbeb8018b06db773bdf9a473a0bd8))
+
 ## [1.7.16](https://github.com/ez-appsec/ez-appsec/compare/v1.7.15...v1.7.16) (2026-05-09)
 
 
