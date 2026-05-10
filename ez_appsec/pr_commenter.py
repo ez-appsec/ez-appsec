@@ -308,8 +308,6 @@ class GitHubPRCommenter:
             Comment ID if successful, None otherwise
         """
         try:
-            # Use gh CLI to create a review comment
-            # We'll use the API directly for more control
             # Get the PR's latest commit SHA
             cmd = [
                 "gh", "pr", "view", str(self.pr_number),

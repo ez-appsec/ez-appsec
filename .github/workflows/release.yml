@@ -340,12 +340,25 @@ jobs:
           category: release-scan
         continue-on-error: true
 
+      - name: Generate SBOM
+        run: |
+          VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
+          docker run --rm \
+            -v "$(pwd):/scan" \
+            -w /scan \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${VERSION} \
+            scan . --sbom --sbom-output scan-results/sbom.cdx.json --severity medium --output /dev/null
+        continue-on-error: true
+
       - name: Upload scan artifacts to GitHub Release
         run: |
           VERSION="${{ needs.semantic-release.outputs.new_release_version }}"
           gh release upload "v${VERSION}" scan-results/ez-appsec.sarif --clobber
           if [ -f scan-results/vulnerabilities.json ]; then
             gh release upload "v${VERSION}" scan-results/vulnerabilities.json --clobber
+          fi
+          if [ -f scan-results/sbom.cdx.json ]; then
+            gh release upload "v${VERSION}" scan-results/sbom.cdx.json --clobber
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
