@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-# ez-appsec v0.1.19
-=======
 # ez-appsec
->>>>>>> 5aa96925a10103948669132448082f7a080b9274
 
 **AI-powered application security scanning** — free, open-source, works with GitHub and GitLab.
 
