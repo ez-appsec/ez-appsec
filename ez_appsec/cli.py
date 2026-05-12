@@ -874,5 +874,47 @@ def report(framework, findings, output):
     click.echo(f"  Report: {result['path']}")
 
 
+@main.command("agent")
+@click.argument("task")
+@click.option("--model", default="claude-sonnet-4-20250514", help="Anthropic model to use")
+@click.option("--path", "root_path", type=click.Path(exists=True), default=".", help="Project root for path validation")
+def agent_cmd(task, model, root_path):
+    """Run the AI security agent with a natural language task
+
+    TASK: What the agent should do, e.g. "scan /path and summarize critical findings"
+
+    Requires ANTHROPIC_API_KEY environment variable.
+    """
+    from ez_appsec.agent import SecurityAgent
+
+    try:
+        agent = SecurityAgent(model=model, allowed_root=root_path)
+        result = agent.run(task)
+
+        if result.actions_taken:
+            errors = [a for a in result.actions_taken if a.startswith("error:")]
+            actions = [a for a in result.actions_taken if not a.startswith("error:")]
+            if actions:
+                click.echo("\nActions taken:")
+                for action in actions:
+                    click.echo(f"  - {action}")
+            if errors:
+                for error in errors:
+                    click.echo(f"✗ {error}", err=True)
+
+        if result.findings:
+            from collections import Counter
+            severity_counts = Counter(f.get("severity", "unknown") for f in result.findings)
+            parts = [f"{count} {sev}" for sev, count in severity_counts.most_common()]
+            click.echo(f"\nFindings: {len(result.findings)} ({', '.join(parts)})")
+
+        if result.summary:
+            click.echo(f"\n{result.summary}")
+
+    except Exception as e:
+        click.echo(f"✗ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()
