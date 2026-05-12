@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 MAX_TASK_LENGTH = 4096
 MAX_TOOL_ITERATIONS = 25
+MAX_RUN_SECONDS = 300
 
 SYSTEM_PROMPT = """\
 You are a security expert agent powered by ez-appsec. Your job is to help \
@@ -104,7 +106,7 @@ def _validate_path(path: str, allowed_root: Optional[str] = None) -> str:
     resolved = Path(path).resolve()
     if allowed_root:
         root = Path(allowed_root).resolve()
-        if not str(resolved).startswith(str(root)):
+        if not resolved.is_relative_to(root):
             raise ValueError(
                 f"Path traversal detected: {path} resolves outside {allowed_root}"
             )
@@ -128,6 +130,7 @@ class SecurityAgent:
     ):
         self.model = model
         self.allowed_root = allowed_root or os.getcwd()
+        self._last_findings: List[Dict[str, Any]] = []
         self.registry = ToolRegistry()
         self._register_builtin_tools()
 
@@ -205,8 +208,10 @@ class SecurityAgent:
         scanner = SecurityScanner(config)
         results = scanner.scan(validated)
         self._last_findings = results.get("issues", [])
+        truncated = len(self._last_findings) > 20
         return {
             "total": len(self._last_findings),
+            "truncated": truncated,
             "findings": self._last_findings[:20],
         }
 
@@ -216,12 +221,13 @@ class SecurityAgent:
             data = json.load(f)
         findings = data.get("vulnerabilities", data.get("issues", []))
         self._last_findings = findings
-        return {"total": len(findings), "findings": findings[:20]}
+        truncated = len(findings) > 20
+        return {"total": len(findings), "truncated": truncated, "findings": findings[:20]}
 
     def _tool_search_findings(
         self, query: str = "", severity: str = "", category: str = ""
     ) -> Dict[str, Any]:
-        findings = getattr(self, "_last_findings", [])
+        findings = self._last_findings
         results = findings
         if severity:
             results = [f for f in results if f.get("severity", "").lower() == severity.lower()]
@@ -236,7 +242,8 @@ class SecurityAgent:
                 f for f in results
                 if q in (f.get("title", "") + f.get("description", "")).lower()
             ]
-        return {"total": len(results), "findings": results[:20]}
+        truncated = len(results) > 20
+        return {"total": len(results), "truncated": truncated, "findings": results[:20]}
 
     def _tool_explain_finding(
         self, title: str, description: str = "", severity: str = ""
@@ -304,13 +311,17 @@ class SecurityAgent:
 
         system_text = SYSTEM_PROMPT
         if context:
-            system_text += f"\n\nAdditional context: {json.dumps(context)}"
+            system_text += f"\n\n<context>{json.dumps(context)}</context>"
 
         messages = [{"role": "user", "content": task}]
         result = AgentResult()
         result.raw_messages = list(messages)
+        start_time = time.monotonic()
 
         for iteration in range(MAX_TOOL_ITERATIONS):
+            if time.monotonic() - start_time > MAX_RUN_SECONDS:
+                result.summary = f"Agent timed out after {MAX_RUN_SECONDS}s."
+                break
             response = client.messages.create(
                 model=self.model,
                 max_tokens=4096,
@@ -341,8 +352,9 @@ class SecurityAgent:
                             result.actions_taken.append(f"{block.name}({json.dumps(block.input)[:100]})")
                             output_str = redact_secrets(json.dumps(tool_output))
                         except Exception as exc:
-                            output_str = json.dumps({"error": str(exc)})
-                            result.actions_taken.append(f"{block.name} failed: {exc}")
+                            error_msg = redact_secrets(str(exc))
+                            output_str = json.dumps({"error": error_msg})
+                            result.actions_taken.append(f"{block.name} failed: {error_msg}")
                     else:
                         output_str = json.dumps({"error": f"Unknown tool: {block.name}"})
 
@@ -364,7 +376,7 @@ class SecurityAgent:
         if not result.summary and result.actions_taken:
             result.summary = f"Completed {len(result.actions_taken)} action(s)."
 
-        if hasattr(self, "_last_findings"):
+        if self._last_findings:
             result.findings = self._last_findings
 
         return result
