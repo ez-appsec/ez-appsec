@@ -1,3 +1,17 @@
+## [1.7.18](https://github.com/ez-appsec/ez-appsec/compare/v1.7.17...v1.7.18) (2026-05-12)
+
+
+### Bug Fixes
+
+* resolve merge conflict in README.md heading ([e6e613b](https://github.com/ez-appsec/ez-appsec/commit/e6e613bc5b274c1b4803c76f8c88323f5d647035))
+* security and usability improvements from 3-pass PR review ([583b9e4](https://github.com/ez-appsec/ez-appsec/commit/583b9e4cdd1b37d673a6f0ee436477ef5115ea2a))
+
+
+### Features
+
+* add Claude-powered security agent with tool-use loop (PLAN-21) ([668892f](https://github.com/ez-appsec/ez-appsec/commit/668892f8aebdea15c323c8f2bbaebee5d5e9e567))
+* add GitHub Projects V2 plan management scripts ([1f09745](https://github.com/ez-appsec/ez-appsec/commit/1f09745c748864b51f83d9933aed2385b4f98076))
+
 ## [1.7.17](https://github.com/ez-appsec/ez-appsec/compare/v1.7.16...v1.7.17) (2026-05-10)
 
 
