@@ -1,3 +1,17 @@
+## [1.7.19](https://github.com/ez-appsec/ez-appsec/compare/v1.7.18...v1.7.19) (2026-05-12)
+
+
+### Bug Fixes
+
+* Merged PLAN-18 branch, resolved merge conflict, and fixed 6 test f… ([3d649f1](https://github.com/ez-appsec/ez-appsec/commit/3d649f1276f3e8f6b6971cba3c4e7ffd43a91ce8))
+
+
+### Features
+
+* add Claude-powered security agent with tool-use loop (PLAN-21) ([1d0bda6](https://github.com/ez-appsec/ez-appsec/commit/1d0bda656dc2963bf057cab1564ac849b3fdc983))
+* add multi-tenant org management with config inheritance (PLAN-18) ([b986fec](https://github.com/ez-appsec/ez-appsec/commit/b986fec2c90e7c03ef486711c149bdfc46fc644b))
+* add secret rotation for leaked credentials (PLAN-17) ([0270e8b](https://github.com/ez-appsec/ez-appsec/commit/0270e8b313674b12d7f339a9db9d810c6551050e))
+
 ## [1.7.18](https://github.com/ez-appsec/ez-appsec/compare/v1.7.17...v1.7.18) (2026-05-12)
 
 
