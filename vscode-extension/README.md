@@ -30,10 +30,11 @@ Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for:
 
 ## Settings
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `ez-appsec.scanOnSave` | `false` | Automatically scan when any file is saved |
-| `ez-appsec.dockerImage` | `ghcr.io/ez-appsec/ez-appsec:latest` | Docker image to use for scanning |
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `ez-appsec.scanOnSave` | boolean | `false` | Automatically scan the saved file when a file is saved |
+| `ez-appsec.scanOnSaveDelay` | number | `2000` | Debounce delay (ms) before triggering scan after save — prevents rapid repeated scans |
+| `ez-appsec.dockerImage` | string | `ghcr.io/ez-appsec/ez-appsec:latest` | Docker image to use for scanning |
 
 ## How It Works
 
@@ -45,6 +46,12 @@ Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for:
    - **Low/Info** → Blue squiggles (Information)
 4. Hover over a squiggle to see severity, rule name, fix suggestion, and AI remediation hint (when available).
 
+### Scan on Save
+
+When `scanOnSave` is enabled, saving a file triggers a **single-file scan** — only the saved file is scanned, not the entire workspace. This keeps the editor responsive on large projects.
+
+Rapid saves are debounced: only the last save within the `scanOnSaveDelay` window triggers a scan. Diagnostics for other files are preserved.
+
 ## Docker Not Available
 
 If Docker is not running, the extension shows a clear error message:
@@ -52,6 +59,10 @@ If Docker is not running, the extension shows a clear error message:
 > "Docker is not available. Please ensure Docker is installed and running."
 
 Start Docker Desktop (or the Docker daemon) and retry the scan.
+
+## Documentation
+
+See [docs/vscode.md](../docs/vscode.md) for the full feature guide including architecture, scan-on-save design, and troubleshooting.
 
 ## Development
 
