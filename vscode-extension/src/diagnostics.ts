@@ -33,6 +33,20 @@ export class DiagnosticsManager implements vscode.Disposable {
     }
   }
 
+  updateFileFindings(filePath: string, findings: Finding[], workspacePath: string): void {
+    const uri = vscode.Uri.file(filePath);
+    const diagnostics = findings
+      .filter((f) => {
+        const fPath = path.isAbsolute(f.location.file)
+          ? f.location.file
+          : path.join(workspacePath, f.location.file);
+        return fPath === filePath;
+      })
+      .map((f) => this.toDiagnostic(f));
+
+    this.collection.set(uri, diagnostics);
+  }
+
   clear(): void {
     this.collection.clear();
   }

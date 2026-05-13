@@ -78,13 +78,31 @@ function setupScanOnSave(context: vscode.ExtensionContext): void {
       .getConfiguration("ez-appsec")
       .get<number>("scanOnSaveDelay", 2000);
 
-    onSaveDisposable = vscode.workspace.onDidSaveTextDocument(() => {
+    onSaveDisposable = vscode.workspace.onDidSaveTextDocument((document) => {
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
-      debounceTimer = setTimeout(() => {
+      debounceTimer = setTimeout(async () => {
         debounceTimer = undefined;
-        vscode.commands.executeCommand("ez-appsec.scanWorkspace");
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+        if (!workspaceFolder) {
+          return;
+        }
+        try {
+          const findings = await scanner.scanFile(
+            document.uri.fsPath,
+            workspaceFolder.uri.fsPath
+          );
+          diagnosticsManager.updateFileFindings(
+            document.uri.fsPath,
+            findings,
+            workspaceFolder.uri.fsPath
+          );
+        } catch (err) {
+          if (err instanceof Error) {
+            vscode.window.showErrorMessage(`ez-appsec: ${err.message}`);
+          }
+        }
       }, debounceMs);
     });
     context.subscriptions.push(onSaveDisposable);

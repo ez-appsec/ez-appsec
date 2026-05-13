@@ -250,4 +250,72 @@ describe("DiagnosticsManager", () => {
     manager.dispose();
     expect(mockDiagnosticCollection.dispose).toHaveBeenCalled();
   });
+
+  it("updateFileFindings sets diagnostics for a single file", () => {
+    const findings: Finding[] = [
+      {
+        id: "1",
+        category: "sast",
+        name: "SQL Injection",
+        message: "Unsanitized input",
+        description: "desc",
+        severity: "critical",
+        confidence: "high",
+        solution: "Use parameterized queries",
+        scanner: { id: "semgrep", name: "Semgrep" },
+        location: { file: "app.py", start_line: 10, end_line: 10 },
+      },
+    ];
+
+    manager.updateFileFindings("/workspace/app.py", findings, "/workspace");
+
+    expect(mockDiagnosticCollection.set).toHaveBeenCalledTimes(1);
+    const [uri, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
+    expect(uri.fsPath).toBe("/workspace/app.py");
+    expect(diagnostics).toHaveLength(1);
+  });
+
+  it("updateFileFindings filters out findings for other files", () => {
+    const findings: Finding[] = [
+      {
+        id: "1",
+        category: "sast",
+        name: "Bug A",
+        message: "msg",
+        description: "desc",
+        severity: "high",
+        confidence: "high",
+        solution: "fix",
+        scanner: { id: "semgrep", name: "Semgrep" },
+        location: { file: "app.py", start_line: 10, end_line: 10 },
+      },
+      {
+        id: "2",
+        category: "sast",
+        name: "Bug B",
+        message: "msg",
+        description: "desc",
+        severity: "high",
+        confidence: "high",
+        solution: "fix",
+        scanner: { id: "semgrep", name: "Semgrep" },
+        location: { file: "other.py", start_line: 5, end_line: 5 },
+      },
+    ];
+
+    manager.updateFileFindings("/workspace/app.py", findings, "/workspace");
+
+    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].code).toBe("Bug A");
+  });
+
+  it("updateFileFindings clears diagnostics when no findings match", () => {
+    manager.updateFileFindings("/workspace/clean.py", [], "/workspace");
+
+    expect(mockDiagnosticCollection.set).toHaveBeenCalledTimes(1);
+    const [uri, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
+    expect(uri.fsPath).toBe("/workspace/clean.py");
+    expect(diagnostics).toHaveLength(0);
+  });
 });

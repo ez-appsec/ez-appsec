@@ -63,6 +63,45 @@ export class Scanner {
     }
   }
 
+  async scanFile(filePath: string, workspacePath: string): Promise<Finding[]> {
+    await this.checkDockerAvailable();
+
+    const config = vscode.workspace.getConfiguration("ez-appsec");
+    const image = config.get<string>(
+      "dockerImage",
+      "ghcr.io/ez-appsec/ez-appsec:latest"
+    );
+
+    const relativePath = path.relative(workspacePath, filePath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      return [];
+    }
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ez-appsec-"));
+    const outputFile = path.join(tmpDir, "vulnerabilities.json");
+
+    try {
+      const containerTarget = `/src/${relativePath.split(path.sep).join("/")}`;
+      await execFileAsync("docker", [
+        "run",
+        "--rm",
+        "-v",
+        `${workspacePath}:/src:ro`,
+        "-v",
+        `${tmpDir}:/output`,
+        image,
+        "scan",
+        containerTarget,
+        "--output",
+        "/output/vulnerabilities.json",
+      ]);
+
+      return this.parseResults(outputFile);
+    } finally {
+      this.cleanup(tmpDir);
+    }
+  }
+
   async checkDockerAvailable(): Promise<void> {
     try {
       await execFileAsync("docker", ["info"], { timeout: 10000 });
