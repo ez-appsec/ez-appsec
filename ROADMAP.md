@@ -23,6 +23,8 @@ Work is tracked in the [ez-appsec GitHub Project](https://github.com/orgs/ez-app
 | Claude Code skills (`/ez-appsec`) | ✅ Shipped |
 | AI remediation guidance | ✅ Shipped |
 | Docker images (standard / slim / micro) | ✅ Shipped |
+| License compliance checking (PLAN-11) | ✅ Shipped |
+| Compliance report generation (PLAN-12) | ✅ Shipped |
 
 ---
 

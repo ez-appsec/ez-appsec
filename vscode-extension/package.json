@@ -1,0 +1,61 @@
+{
+  "name": "ez-appsec",
+  "displayName": "ez-appsec",
+  "description": "Inline security vulnerability diagnostics powered by ez-appsec",
+  "version": "0.1.0",
+  "publisher": "ez-appsec",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Linters", "Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ez-appsec.scanWorkspace",
+        "title": "ez-appsec: Scan Workspace"
+      },
+      {
+        "command": "ez-appsec.clearFindings",
+        "title": "ez-appsec: Clear Findings"
+      }
+    ],
+    "configuration": {
+      "title": "ez-appsec",
+      "properties": {
+        "ez-appsec.scanOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run ez-appsec scan automatically when a file is saved"
+        },
+        "ez-appsec.scanOnSaveDelay": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 500,
+          "description": "Debounce delay in milliseconds before triggering scan after save (prevents rapid repeated scans)"
+        },
+        "ez-appsec.dockerImage": {
+          "type": "string",
+          "default": "ghcr.io/ez-appsec/ez-appsec:latest",
+          "description": "Docker image to use for scanning"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "vitest run",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
+  }
+}
