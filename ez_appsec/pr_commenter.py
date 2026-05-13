@@ -225,13 +225,10 @@ class GitHubPRCommenter:
                 if int(f.get('line', f.get('start_line', 0))) in changed_lines
             ]
             skipped_in_file = len(file_findings) - len(relevant_findings)
+            results["skipped"] += skipped_in_file
 
             if not relevant_findings:
-                results["skipped"] += len(file_findings)
                 continue
-
-            skipped_in_file = len(file_findings) - len(relevant_findings)
-            results["skipped"] += skipped_in_file
 
             # Get the first changed line for the comment position
             first_line = min(int(f.get('line', f.get('start_line', 1))) for f in relevant_findings)
@@ -426,8 +423,10 @@ class GitLabMRCommenter:
                 if int(f.get('line', f.get('start_line', 0))) in changed_lines
             ]
 
+            skipped_count = len(file_findings) - len(relevant_findings)
+            results["skipped"] += skipped_count
+
             if not relevant_findings:
-                results["skipped"] += len(file_findings)
                 continue
 
             # Get the first changed line for the comment position

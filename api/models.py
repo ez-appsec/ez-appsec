@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ScannerInfo(BaseModel):
@@ -41,6 +41,8 @@ class Identifier(BaseModel):
 
 
 class Vulnerability(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     id: str
     category: str = "sast"
     name: str = ""
@@ -50,7 +52,7 @@ class Vulnerability(BaseModel):
     severity: str = "medium"
     confidence: str = "medium"
     solution: str = ""
-    scanner: ScannerInfo | None = None
+    scanner: ScannerInfo | str | None = None
     location: VulnerabilityLocation | None = None
     identifiers: list[Identifier] = []
     links: list[Any] = []

@@ -1,9 +1,13 @@
 """Tests for the ez-appsec REST API (PLAN-14)."""
 
+import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+fastapi = pytest.importorskip("fastapi", reason="fastapi not installed")
 from fastapi.testclient import TestClient
 
 
@@ -66,6 +70,109 @@ class TestScanStatus:
         resp = client.get(f"/scan/{job_id}", headers=AUTH)
         assert resp.status_code == 200
         assert resp.json()["job_id"] == job_id
+
+
+class TestScannerClient:
+    def test_run_loads_vulnerabilities_json_from_output_dir(self, monkeypatch):
+        from api import scanner_client
+
+        calls = []
+
+        def fake_run(cmd, capture_output, text, timeout):
+            calls.append(cmd)
+            output_dir = cmd[cmd.index("--output") + 1]
+            os.makedirs(output_dir, exist_ok=True)
+            with open(os.path.join(output_dir, "vulnerabilities.json"), "w", encoding="utf-8") as fh:
+                fh.write('{"vulnerabilities": [{"id": "finding-1"}], "summary": {"total": 1}}')
+
+            class Proc:
+                returncode = 0
+                stdout = "human readable summary"
+                stderr = ""
+
+            return Proc()
+
+        monkeypatch.setattr(scanner_client.subprocess, "run", fake_run)
+        job = scanner_client._Job(job_id="job-1", path="/tmp/repo", severity="high")
+
+        scanner_client._run(job)
+
+        assert job.status == "complete"
+        assert job.result == {"vulnerabilities": [{"id": "finding-1"}], "summary": {"total": 1}}
+        assert calls[0][:4] == ["ez-appsec", "scan", "/tmp/repo", "--output"]
+        assert calls[0][-2:] == ["--severity", "high"]
+
+    def test_run_fails_when_results_file_missing(self, monkeypatch):
+        from api import scanner_client
+
+        def fake_run(cmd, capture_output, text, timeout):
+            class Proc:
+                returncode = 0
+                stdout = "human readable summary"
+                stderr = ""
+
+            return Proc()
+
+        monkeypatch.setattr(scanner_client.subprocess, "run", fake_run)
+        job = scanner_client._Job(job_id="job-1", path="/tmp/repo")
+
+        scanner_client._run(job)
+
+        assert job.status == "failed"
+        assert "results could not be read" in job.error
+
+
+    def test_run_clones_git_url_before_scanning(self, monkeypatch):
+        from api import scanner_client
+
+        calls = []
+
+        def fake_run(cmd, capture_output, text, timeout):
+            calls.append(cmd)
+            if cmd[0] == "git":
+                os.makedirs(cmd[-1], exist_ok=True)
+            else:
+                output_dir = cmd[cmd.index("--output") + 1]
+                os.makedirs(output_dir, exist_ok=True)
+                with open(os.path.join(output_dir, "vulnerabilities.json"), "w", encoding="utf-8") as fh:
+                    fh.write('{"vulnerabilities": []}')
+
+            class Proc:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            return Proc()
+
+        monkeypatch.setattr(scanner_client.subprocess, "run", fake_run)
+        job = scanner_client._Job(job_id="job-1", path="https://github.com/example/repo.git")
+
+        scanner_client._run(job)
+
+        assert job.status == "complete"
+        assert calls[0][:4] == ["git", "clone", "--depth", "1"]
+        assert calls[0][4] == "https://github.com/example/repo.git"
+        assert calls[1][0:2] == ["ez-appsec", "scan"]
+        assert calls[1][2].endswith("/repo")
+
+    def test_run_reports_git_clone_failure(self, monkeypatch):
+        from api import scanner_client
+
+        def fake_run(cmd, capture_output, text, timeout):
+            class Proc:
+                returncode = 1
+                stdout = ""
+                stderr = "repository not found"
+
+            return Proc()
+
+        monkeypatch.setattr(scanner_client.subprocess, "run", fake_run)
+        job = scanner_client._Job(job_id="job-1", path="https://github.com/example/missing.git")
+
+        scanner_client._run(job)
+
+        assert job.status == "failed"
+        assert "repository not found" in job.error
 
 
 class TestGetProjects:
@@ -132,6 +239,46 @@ class TestGetFindings:
         with patch("api.main.get_vulnerabilities", side_effect=Exception("not found")):
             resp = client.get("/projects/bad/findings", headers=AUTH)
             assert resp.status_code == 502
+
+
+    def test_findings_accept_dashboard_fixture_shape(self, client):
+        fixture = json.loads(Path("web/data/vulnerabilities.json").read_text())
+        with patch("api.main.get_vulnerabilities", return_value=fixture):
+            resp = client.get("/projects/juice-shop/findings", headers=AUTH)
+
+        assert resp.status_code == 200
+        findings = resp.json()
+        assert findings
+        assert findings[0]["scanner"] == "gitleaks"
+        assert findings[0]["file_name"] == "config/awsConfig.js"
+
+    def test_findings_filter_by_severity_category_scanner_and_file(self, client):
+        mock_data = {
+            "vulnerabilities": [
+                {
+                    "id": "1",
+                    "severity": "critical",
+                    "category": "secrets",
+                    "scanner": "gitleaks",
+                    "file_name": "config/awsConfig.js",
+                },
+                {
+                    "id": "2",
+                    "severity": "high",
+                    "category": "sast",
+                    "scanner": {"id": "semgrep", "name": "semgrep"},
+                    "file_name": "src/app.py",
+                },
+            ]
+        }
+        with patch("api.main.get_vulnerabilities", return_value=mock_data):
+            resp = client.get(
+                "/projects/myapp/findings?severity=critical&category=secrets&scanner=gitleaks&file=aws",
+                headers=AUTH,
+            )
+
+        assert resp.status_code == 200
+        assert [finding["id"] for finding in resp.json()] == ["1"]
 
 
 class TestGetHistory:
