@@ -30,7 +30,10 @@ export interface ScanResults {
 }
 
 export class Scanner {
-  async scan(workspacePath: string): Promise<Finding[]> {
+  async scan(
+    workspacePath: string,
+    token?: vscode.CancellationToken
+  ): Promise<Finding[]> {
     await this.checkDockerAvailable();
 
     const config = vscode.workspace.getConfiguration("ez-appsec");
@@ -43,7 +46,7 @@ export class Scanner {
     const outputFile = path.join(tmpDir, "vulnerabilities.json");
 
     try {
-      await execFileAsync("docker", [
+      const dockerArgs = [
         "run",
         "--rm",
         "-v",
@@ -55,7 +58,24 @@ export class Scanner {
         "/src",
         "--output",
         "/output/vulnerabilities.json",
-      ]);
+      ];
+
+      await new Promise<void>((resolve, reject) => {
+        const child = require("child_process").execFile(
+          "docker",
+          dockerArgs,
+          (err: Error | null) => {
+            if (err) reject(err);
+            else resolve();
+          }
+        );
+        if (token) {
+          token.onCancellationRequested(() => {
+            child.kill();
+            reject(new Error("Scan cancelled"));
+          });
+        }
+      });
 
       return this.parseResults(outputFile);
     } finally {

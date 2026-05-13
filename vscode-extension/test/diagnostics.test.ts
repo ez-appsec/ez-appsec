@@ -1,9 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const storedDiagnostics = new Map<string, any[]>();
 const mockDiagnosticCollection = {
-  set: vi.fn(),
-  clear: vi.fn(),
+  set: vi.fn((uri: any, diags: any[]) => {
+    const key = typeof uri === "string" ? uri : uri.toString?.() ?? String(uri);
+    storedDiagnostics.set(key, diags);
+  }),
+  clear: vi.fn(() => storedDiagnostics.clear()),
   dispose: vi.fn(),
+  forEach: vi.fn((cb: (uri: any, diags: any[]) => void) => {
+    for (const [uri, diags] of storedDiagnostics) {
+      cb(uri, diags);
+    }
+  }),
 };
 
 vi.mock("vscode", () => ({
@@ -22,10 +31,27 @@ vi.mock("vscode", () => ({
     severity: number;
     source?: string;
     code?: string;
+    relatedInformation?: any[];
     constructor(range: any, message: string, severity: number) {
       this.range = range;
       this.message = message;
       this.severity = severity;
+    }
+  },
+  DiagnosticRelatedInformation: class MockRelatedInfo {
+    location: any;
+    message: string;
+    constructor(location: any, message: string) {
+      this.location = location;
+      this.message = message;
+    }
+  },
+  Location: class MockLocation {
+    uri: any;
+    range: any;
+    constructor(uri: any, range: any) {
+      this.uri = uri;
+      this.range = range;
     }
   },
   Range: class MockRange {
@@ -55,6 +81,7 @@ describe("DiagnosticsManager", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    storedDiagnostics.clear();
     manager = new DiagnosticsManager();
   });
 
@@ -215,7 +242,7 @@ describe("DiagnosticsManager", () => {
     expect(mockDiagnosticCollection.set).toHaveBeenCalledTimes(2);
   });
 
-  it("includes ai_remediation in tooltip when present", () => {
+  it("includes ai_remediation in relatedInformation when present", () => {
     const findings: Finding[] = [
       {
         id: "1",
@@ -235,8 +262,10 @@ describe("DiagnosticsManager", () => {
     manager.setFindings(findings, "/workspace");
 
     const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
-    expect(diagnostics[0].message).toContain("AI Hint:");
-    expect(diagnostics[0].message).toContain(
+    expect(diagnostics[0].message).toBe("[CRITICAL] Unsanitized input");
+    expect(diagnostics[0].relatedInformation).toBeDefined();
+    expect(diagnostics[0].relatedInformation[0].message).toContain("AI Hint:");
+    expect(diagnostics[0].relatedInformation[0].message).toContain(
       "Replace string concatenation with query parameters"
     );
   });
@@ -307,7 +336,7 @@ describe("DiagnosticsManager", () => {
 
     const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
     expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0].code).toBe("Bug A");
+    expect(diagnostics[0].code).toBe("Bug A:app.py:10");
   });
 
   it("updateFileFindings clears diagnostics when no findings match", () => {
@@ -317,5 +346,66 @@ describe("DiagnosticsManager", () => {
     const [uri, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
     expect(uri.fsPath).toBe("/workspace/clean.py");
     expect(diagnostics).toHaveLength(0);
+  });
+
+  it("totalFindings returns sum of all diagnostics across files", () => {
+    const findings: Finding[] = [
+      {
+        id: "1",
+        category: "sast",
+        name: "Bug A",
+        message: "Issue A",
+        description: "desc",
+        severity: "high",
+        confidence: "high",
+        solution: "Fix A",
+        scanner: { id: "semgrep", name: "Semgrep" },
+        location: { file: "app.py", start_line: 10, end_line: 10 },
+      },
+      {
+        id: "2",
+        category: "sast",
+        name: "Bug B",
+        message: "Issue B",
+        description: "desc",
+        severity: "medium",
+        confidence: "medium",
+        solution: "Fix B",
+        scanner: { id: "semgrep", name: "Semgrep" },
+        location: { file: "other.py", start_line: 5, end_line: 5 },
+      },
+    ];
+
+    manager.setFindings(findings, "/workspace");
+    expect(manager.totalFindings()).toBe(2);
+  });
+
+  it("totalFindings returns 0 when no diagnostics exist", () => {
+    expect(manager.totalFindings()).toBe(0);
+  });
+
+  it("diagnostic message is short severity + message format", () => {
+    const findings: Finding[] = [
+      {
+        id: "1",
+        category: "sast",
+        name: "SQL Injection",
+        message: "Unsanitized input",
+        description: "desc",
+        severity: "critical",
+        confidence: "high",
+        solution: "Use parameterized queries",
+        scanner: { id: "semgrep", name: "Semgrep" },
+        location: { file: "app.py", start_line: 10, end_line: 10 },
+      },
+    ];
+
+    manager.setFindings(findings, "/workspace");
+
+    const [, diagnostics] = mockDiagnosticCollection.set.mock.calls[0];
+    expect(diagnostics[0].message).toBe("[CRITICAL] Unsanitized input");
+    expect(diagnostics[0].relatedInformation).toBeDefined();
+    expect(diagnostics[0].relatedInformation[0].message).toContain("Rule: SQL Injection");
+    expect(diagnostics[0].relatedInformation[0].message).toContain("Fix: Use parameterized queries");
   });
 });

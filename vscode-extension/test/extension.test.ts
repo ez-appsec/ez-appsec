@@ -25,12 +25,22 @@ vi.mock("vscode", () => ({
     showInformationMessage: vi.fn(),
     showErrorMessage: vi.fn(),
     withProgress: vi.fn(async (_opts: any, task: () => Promise<void>) => task()),
+    createStatusBarItem: vi.fn(() => ({
+      text: "",
+      tooltip: "",
+      command: "",
+      show: vi.fn(),
+      hide: vi.fn(),
+      dispose: vi.fn(),
+    })),
   },
+  StatusBarAlignment: { Left: 1, Right: 2 },
   languages: {
     createDiagnosticCollection: vi.fn(() => ({
       set: vi.fn(),
       clear: vi.fn(),
       dispose: vi.fn(),
+      forEach: vi.fn(),
     })),
   },
   ProgressLocation: { Notification: 15 },
@@ -41,10 +51,27 @@ vi.mock("vscode", () => ({
     severity: number;
     source?: string;
     code?: string;
+    relatedInformation?: any[];
     constructor(range: any, message: string, severity: number) {
       this.range = range;
       this.message = message;
       this.severity = severity;
+    }
+  },
+  DiagnosticRelatedInformation: class {
+    location: any;
+    message: string;
+    constructor(location: any, message: string) {
+      this.location = location;
+      this.message = message;
+    }
+  },
+  Location: class {
+    uri: any;
+    range: any;
+    constructor(uri: any, range: any) {
+      this.uri = uri;
+      this.range = range;
     }
   },
   Range: class {

@@ -47,6 +47,14 @@ export class DiagnosticsManager implements vscode.Disposable {
     this.collection.set(uri, diagnostics);
   }
 
+  totalFindings(): number {
+    let count = 0;
+    this.collection.forEach((_, diagnostics) => {
+      count += diagnostics.length;
+    });
+    return count;
+  }
+
   clear(): void {
     this.collection.clear();
   }
@@ -61,11 +69,33 @@ export class DiagnosticsManager implements vscode.Disposable {
 
     const range = new vscode.Range(startLine, 0, endLine, Number.MAX_SAFE_INTEGER);
     const severity = this.mapSeverity(finding.severity);
-    const tooltip = this.buildTooltip(finding);
 
-    const diagnostic = new vscode.Diagnostic(range, tooltip, severity);
+    const diagnostic = new vscode.Diagnostic(
+      range,
+      `[${finding.severity.toUpperCase()}] ${finding.message}`,
+      severity
+    );
     diagnostic.source = "ez-appsec";
-    diagnostic.code = finding.name;
+    diagnostic.code = `${finding.name}:${finding.location.file}:${finding.location.start_line}`;
+
+    const details: string[] = [`Rule: ${finding.name}`];
+    if (finding.solution) {
+      details.push(`Fix: ${finding.solution}`);
+    }
+    if (finding.ai_remediation) {
+      details.push(`AI Hint: ${finding.ai_remediation}`);
+    }
+    if (details.length > 0) {
+      diagnostic.relatedInformation = [
+        new vscode.DiagnosticRelatedInformation(
+          new vscode.Location(
+            vscode.Uri.file(finding.location.file),
+            range
+          ),
+          details.join(" | ")
+        ),
+      ];
+    }
 
     return diagnostic;
   }
@@ -85,20 +115,4 @@ export class DiagnosticsManager implements vscode.Disposable {
     }
   }
 
-  private buildTooltip(finding: Finding): string {
-    const parts = [
-      `[${finding.severity.toUpperCase()}] ${finding.message}`,
-      `Rule: ${finding.name}`,
-    ];
-
-    if (finding.solution) {
-      parts.push(`Fix: ${finding.solution}`);
-    }
-
-    if (finding.ai_remediation) {
-      parts.push(`AI Hint: ${finding.ai_remediation}`);
-    }
-
-    return parts.join("\n");
-  }
 }
