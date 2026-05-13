@@ -1,3 +1,10 @@
+## [1.7.20](https://github.com/ez-appsec/ez-appsec/compare/v1.7.19...v1.7.20) (2026-05-13)
+
+
+### Features
+
+* add VS Code extension with inline security diagnostics (PLAN-13) ([#26](https://github.com/ez-appsec/ez-appsec/issues/26)) ([d2fa6f7](https://github.com/ez-appsec/ez-appsec/commit/d2fa6f7c53b2f369b19f62e548c74d63381a2049))
+
 ## [1.7.19](https://github.com/ez-appsec/ez-appsec/compare/v1.7.18...v1.7.19) (2026-05-12)
 
 
