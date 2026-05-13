@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Template for an ez-appsec task plan. Each plan file is a JSON array of task objects that push-plans.py reads to create GitHub issues and project items.",
+  "type": "object",
+  "required": ["plan_name", "project", "repository", "tasks"],
+  "properties": {
+    "plan_name": {
+      "type": "string",
+      "description": "Human-readable name for this plan (e.g. 'Data Architecture v2')"
+    },
+    "project": {
+      "type": "string",
+      "description": "GitHub org/project-number (e.g. 'ez-appsec/2')"
+    },
+    "repository": {
+      "type": "string",
+      "description": "Target repository for branches and PRs (e.g. 'ez-appsec/ez-appsec')"
+    },
+    "tasks": {
+      "type": "array",
+      "description": "Ordered list of tasks. Execution order matches array order. Dependencies reference earlier tasks by their 0-based index.",
+      "items": {
+        "type": "object",
+        "required": ["title", "description"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short task title — becomes the GitHub issue title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Full task body in Markdown — becomes the GitHub issue body"
+          },
+          "labels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "description": "GitHub labels to apply (must exist on the repo)"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "default": [],
+            "description": "0-based indices of tasks in this plan that must complete first"
+          }
+        }
+      }
+    }
+  },
+  "_example": {
+    "plan_name": "Widget Refactor",
+    "project": "ez-appsec/2",
+    "repository": "ez-appsec/ez-appsec",
+    "tasks": [
+      {
+        "title": "Extract widget interface",
+        "description": "## Goal\nDefine the widget interface.\n\n## Done criteria\n- [ ] Interface defined in `widget.py`\n- [ ] Existing tests pass",
+        "labels": ["enhancement"],
+        "depends_on": []
+      },
+      {
+        "title": "Implement concrete widget",
+        "description": "## Goal\nBuild the concrete implementation.\n\n## Done criteria\n- [ ] Implementation in `concrete_widget.py`\n- [ ] Unit tests added",
+        "labels": ["enhancement"],
+        "depends_on": [0]
+      }
+    ]
+  }
+}

@@ -37,7 +37,10 @@ def main():
 @click.option("--jira-email", envvar="EZ_APPSEC_JIRA_EMAIL", default=None, help="Jira user email for API auth")
 @click.option("--jira-token", envvar="EZ_APPSEC_JIRA_TOKEN", default=None, help="Jira API token")
 @click.option("--jira-project", envvar="EZ_APPSEC_JIRA_PROJECT", default=None, help="Jira project key for new issues")
-def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project):
+@click.option("--sbom/--no-sbom", default=False, help="Generate CycloneDX SBOM alongside scan results")
+@click.option("--sbom-output", type=click.Path(), default="sbom.cdx.json", help="Output path for SBOM file (default: sbom.cdx.json)")
+@click.option("--license-check", is_flag=True, default=False, help="Run license compliance check (requires syft)")
+def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project, sbom, sbom_output, license_check):
     """Scan a codebase for security vulnerabilities using AI analysis
 
     PATH: Directory or file to scan (default: current directory)
@@ -51,7 +54,7 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
         if output:
             config.output_file = output
 
-        scanner = SecurityScanner(config)
+        scanner = SecurityScanner(config, license_check=license_check)
         results = scanner.scan(path, ai_prompt)
 
         if baseline_path:
@@ -139,6 +142,34 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
                 click.echo(f"\n✓ Jira sync: {', '.join(parts)}")
             if errors:
                 click.echo(f"  ⚠ {len(errors)} Jira error(s)", err=True)
+
+        if sbom:
+            from ez_appsec.sbom import generate_cyclonedx
+            try:
+                generate_cyclonedx(path, sbom_output)
+                click.echo(f"\n✓ SBOM generated: {sbom_output}")
+            except Exception as sbom_err:
+                click.echo(f"\n⚠ SBOM generation failed: {sbom_err}", err=True)
+
+        # License compliance results
+        if results.get("license_summary"):
+            ls = results["license_summary"]
+            click.echo(f"\n  License check: {ls['total']} package(s) — "
+                        f"{ls['allowed']} allowed, {ls['denied']} denied, {ls['unknown']} unknown")
+            license_findings = [i for i in results['issues'] if i.get('category') == 'license_compliance']
+            if ls["denied"] > 0:
+                click.echo(f"  ✗ {ls['denied']} denied license(s) found:", err=True)
+                for f in license_findings:
+                    if f['severity'] == 'high':
+                        extras = ""
+                        if len(f.get('all_licenses', [])) > 1:
+                            extras = f" (also declares: {', '.join(l for l in f['all_licenses'] if l != f['license'])})"
+                        click.echo(f"    - {f['package']}@{f['package_version']}: {f['license']}{extras}", err=True)
+            if ls["unknown"] > 0:
+                click.echo(f"  ⚠ {ls['unknown']} unknown license(s) — review and add to allowed_licenses or denied_licenses:")
+                for f in license_findings:
+                    if f['severity'] == 'medium':
+                        click.echo(f"    - {f['package']}@{f['package_version']}: {f['license']}")
 
         # Policy evaluation results
         if results.get("policy_violations"):
@@ -244,6 +275,24 @@ ai:
 #   - severity: high
 #     action: warn
 #     max_count: 5
+
+# License compliance — SPDX identifiers (see https://spdx.org/licenses/)
+# Supports wildcards: GPL* matches GPL-2.0, GPL-3.0-only, etc.
+# Run with: ez-appsec scan --license-check
+# license_policy:
+#   allowed_licenses:
+#     - MIT
+#     - Apache-2.0
+#     - BSD-2-Clause
+#     - BSD-3-Clause
+#     - ISC
+#     - 0BSD
+#     - Unlicense
+#   denied_licenses:
+#     - GPL*
+#     - AGPL*
+#     - SSPL*
+#     - EUPL*
 """
     
     with open(config_path, "w") as f:
@@ -353,6 +402,21 @@ def check_config(config_path):
         if "max_count" in item and not isinstance(item["max_count"], int):
             errors.append(f"{prefix}: 'max_count' must be an integer")
 
+    # Validate license_policy if present
+    license_data = raw.get("license_policy")
+    if license_data is not None:
+        if not isinstance(license_data, dict):
+            errors.append(f"'license_policy' must be a mapping, got {type(license_data).__name__}")
+        else:
+            allowed = license_data.get("allowed_licenses", [])
+            denied = license_data.get("denied_licenses", [])
+            if not isinstance(allowed, list):
+                errors.append(f"license_policy.allowed_licenses must be a list, got {type(allowed).__name__}")
+            if not isinstance(denied, list):
+                errors.append(f"license_policy.denied_licenses must be a list, got {type(denied).__name__}")
+            if isinstance(allowed, list) and isinstance(denied, list) and not allowed and not denied:
+                errors.append("license_policy must specify at least one of allowed_licenses or denied_licenses")
+
     if errors:
         click.echo(f"✗ {len(errors)} error(s) in {config_path}:")
         for err in errors:
@@ -373,6 +437,14 @@ def check_config(config_path):
         click.echo(f"  Ignore rules: {rule_count} ({active_count} active)")
     if config.policy_rules:
         click.echo(f"  Policy rules: {len(config.policy_rules)}")
+    if config.license_policy:
+        lp = config.license_policy
+        parts = []
+        if lp.allowed_licenses:
+            parts.append(f"{len(lp.allowed_licenses)} allowed")
+        if lp.denied_licenses:
+            parts.append(f"{len(lp.denied_licenses)} denied")
+        click.echo(f"  License policy: {', '.join(parts)}")
 
 
 @main.command()
@@ -667,21 +739,35 @@ def pr_comment(platform, findings, pr, mr, repo, gitlab_url):
 @main.command("fix-pr")
 @click.option("--repo", required=True, help="Repository (GitHub: owner/repo, GitLab: project ID)")
 @click.option("--platform", type=click.Choice(["github", "gitlab"]), default="github", help="Platform")
-@click.option("--findings", type=click.Path(exists=True), required=True, help="Path to grype JSON or vulnerabilities.json")
-@click.option("--format", "findings_format", type=click.Choice(["grype", "gitlab"]), default="grype",
-              help="Findings file format (raw grype JSON or GitLab vulnerabilities.json)")
+@click.option("--findings", type=click.Path(exists=True), required=True, help="Path to grype JSON, vulnerabilities.json, or gitleaks JSON")
+@click.option("--format", "findings_format", type=click.Choice(["grype", "gitlab", "gitleaks"]), default="grype",
+              help="Findings file format (raw grype JSON, GitLab vulnerabilities.json, or gitleaks JSON)")
 @click.option("--path", "repo_path", type=click.Path(exists=True), default=".", help="Local repo checkout path")
 @click.option("--gitlab-url", default="https://gitlab.com", help="GitLab instance URL")
 @click.option("--dry-run", is_flag=True, help="Show what would be changed without creating a PR")
-def fix_pr(repo, platform, findings, findings_format, repo_path, gitlab_url, dry_run):
+@click.option("--rotate-secrets", is_flag=True, help="Rotate detected secrets and replace with env var references")
+@click.option("--secret-store", type=click.Choice(["github", "gitlab", "vault"]), default=None,
+              help="Secret store to write rotated secrets to")
+def fix_pr(repo, platform, findings, findings_format, repo_path, gitlab_url, dry_run,
+           rotate_secrets, secret_store):
     """Open a PR/MR that bumps vulnerable dependencies to fixed versions
 
     Reads grype scan output (or GitLab-format vulnerabilities.json), groups
     fixable CVEs by package ecosystem, bumps versions in manifest files,
     and opens one PR per ecosystem.
 
+    With --rotate-secrets, reads gitleaks JSON output, rotates exposed secrets
+    via provider APIs (AWS IAM, GitHub PATs, GitLab PATs), writes new values
+    to the configured --secret-store, and opens a PR replacing hardcoded
+    values with environment variable references.
+
     Supports: package.json, requirements.txt, go.mod, Gemfile, pom.xml
     """
+    if rotate_secrets:
+        _handle_rotate_secrets(repo, platform, findings, findings_format,
+                               repo_path, gitlab_url, dry_run, secret_store)
+        return
+
     from ez_appsec.fix_pr import (
         parse_grype_findings,
         parse_gitlab_findings,
@@ -742,5 +828,218 @@ def fix_pr(repo, platform, findings, findings_format, repo_path, gitlab_url, dry
         sys.exit(1)
 
 
+@main.command()
+@click.option(
+    "--framework",
+    type=click.Choice(["soc2", "pci-dss", "hipaa"]),
+    required=True,
+    help="Compliance framework to map findings against",
+)
+@click.option(
+    "--findings",
+    type=click.Path(exists=True),
+    required=True,
+    help="Path to vulnerabilities.json (ez-appsec or GitLab format)",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="Output HTML file (default: <framework>-report.html)",
+)
+def report(framework, findings, output):
+    """Generate a compliance report mapping findings to a control framework
+
+    Maps security scan findings to compliance control IDs (SOC 2, PCI DSS 4.0,
+    or HIPAA §164.312) and renders a self-contained HTML report.
+    """
+    from ez_appsec.compliance_reporter import (
+        ComplianceReporter,
+        load_findings_from_file,
+    )
+
+    try:
+        finding_list = load_findings_from_file(findings)
+    except FileNotFoundError as e:
+        click.echo(f"✗ {e}", err=True)
+        sys.exit(1)
+    except (json.JSONDecodeError, KeyError) as e:
+        click.echo(f"✗ Invalid findings file: {e}", err=True)
+        sys.exit(1)
+
+    output_path = output or f"{framework}-report.html"
+
+    try:
+        reporter = ComplianceReporter(framework)
+        result = reporter.generate(finding_list, output_path)
+    except ValueError as e:
+        click.echo(f"✗ {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"✓ {framework.upper()} compliance report generated")
+    total = result["total"]
+    mapped = result["mapped"]
+    unmapped = result["unmapped"]
+    if unmapped:
+        click.echo(f"  Findings: {total} total, {mapped} mapped to controls, {unmapped} unmapped")
+    else:
+        click.echo(f"  Findings mapped: {total}")
+    click.echo(f"  Controls assessed: {result['controls_total']}")
+    click.echo(f"  Report: {result['path']}")
+
+
+@main.command("agent")
+@click.argument("task")
+@click.option("--model", default="claude-sonnet-4-20250514", help="Anthropic model to use")
+@click.option("--path", "root_path", type=click.Path(exists=True), default=".", help="Project root for path validation")
+def agent_cmd(task, model, root_path):
+    """Run the AI security agent with a natural language task
+
+    TASK: What the agent should do, e.g. "scan /path and summarize critical findings"
+
+    Requires ANTHROPIC_API_KEY environment variable.
+    """
+    from ez_appsec.agent import SecurityAgent
+
+    try:
+        agent = SecurityAgent(model=model, allowed_root=root_path)
+        result = agent.run(task)
+
+        if result.actions_taken:
+            click.echo(f"\nActions taken:")
+            for action in result.actions_taken:
+                click.echo(f"  - {action}")
+
+        if result.findings:
+            click.echo(f"\nFindings: {len(result.findings)}")
+
+        if result.summary:
+            click.echo(f"\n{result.summary}")
+
+    except Exception as e:
+        click.echo(f"✗ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
+def _handle_rotate_secrets(repo, platform, findings, findings_format,
+                           repo_path, gitlab_url, dry_run, secret_store_type):
+    """Handle the --rotate-secrets flow for fix-pr."""
+    from ez_appsec.secret_rotator import (
+        parse_gitleaks_findings,
+        rotate_secrets as do_rotate,
+        create_secret_store,
+        create_rotation_pr,
+        build_rotation_pr_body,
+    )
+
+    try:
+        secrets = parse_gitleaks_findings(findings)
+        if not secrets:
+            click.echo("No rotatable secrets found in findings.")
+            return
+
+        click.echo(f"Found {len(secrets)} rotatable secret(s).")
+        for s in secrets:
+            click.echo(f"  {s.rule_id} in {s.file}:{s.line}")
+
+        store = None
+        if secret_store_type:
+            token = None
+            project_id = None
+            if platform == "github":
+                token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+            else:
+                token = os.environ.get("GITLAB_ACCESS_TOKEN") or os.environ.get("GITLAB_TOKEN")
+                project_id = repo
+
+            store = create_secret_store(
+                secret_store_type, repo=repo, project_id=project_id,
+                gitlab_url=gitlab_url, token=token,
+            )
+
+        results = do_rotate(secrets, store=store, dry_run=dry_run)
+
+        rotated_count = sum(1 for r in results if r.rotated)
+        click.echo(f"\nRotated {rotated_count}/{len(results)} secret(s).")
+
+        result = create_rotation_pr(
+            repo, repo_path, results, platform=platform,
+            token=(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+                   if platform == "github"
+                   else os.environ.get("GITLAB_ACCESS_TOKEN") or os.environ.get("GITLAB_TOKEN")),
+            gitlab_url=gitlab_url, dry_run=dry_run,
+        )
+
+        if result.get("error"):
+            click.echo(f"\n✗ {result['error']}", err=True)
+            sys.exit(1)
+
+        if dry_run:
+            click.echo(f"\n[dry-run] Branch: {result['branch']}")
+            click.echo(f"[dry-run] Files modified: {', '.join(result['files_modified'])}")
+            click.echo(f"\n[dry-run] PR body preview:\n")
+            click.echo(build_rotation_pr_body(results))
+        else:
+            url_key = "pr_url" if platform == "github" else "mr_url"
+            click.echo(f"\n✓ {'PR' if platform == 'github' else 'MR'} created: {result[url_key]}")
+            click.echo(f"  Branch: {result['branch']}")
+            click.echo(f"  Files: {', '.join(result['files_modified'])}")
+
+    except Exception as e:
+        click.echo(f"✗ Error: {str(e)}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@main.command("org-sync")
+@click.option("--org", required=True, help="GitHub organization name")
+@click.option("--config-repo", default=None, help="Config repo (default: <org>/.ez-appsec-config)")
+@click.option("--dry-run", is_flag=True, help="Show what would be changed without making changes")
+def org_sync(org, config_repo, dry_run):
+    """Sync ez-appsec across all repositories in a GitHub organization
+
+    Discovers all repos in the org, merges org-level and repo-level configs,
+    and installs/updates the ez-appsec scan workflow in each repository.
+
+    Requires GITHUB_TOKEN with org:read and repo:write permissions.
+    """
+    from ez_appsec.org_manager import OrgManager
+
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        click.echo("✗ GITHUB_TOKEN environment variable is required", err=True)
+        sys.exit(1)
+
+    try:
+        manager = OrgManager(org, token, config_repo=config_repo)
+
+        click.echo(f"Discovering repos in {org}...")
+        results = manager.sync_all(dry_run=dry_run)
+
+        if not results:
+            click.echo(f"No repositories found in {org}.")
+            return
+
+        prefix = "[dry-run] " if dry_run else ""
+        success = 0
+        errors = 0
+
+        for r in results:
+            if r.get("error"):
+                click.echo(f"  ✗ {r['repo']}: {r['error']}", err=True)
+                errors += 1
+            else:
+                for action in r["actions"]:
+                    click.echo(f"  {prefix}{r['repo']}: {action}")
+                success += 1
+
+        click.echo(f"\n{prefix}✓ {success} repo(s) synced")
+        if errors:
+            click.echo(f"  ⚠ {errors} repo(s) failed", err=True)
+
+    except Exception as e:
+        click.echo(f"✗ Error: {str(e)}", err=True)
+        sys.exit(1)
 if __name__ == "__main__":
     main()

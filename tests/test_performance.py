@@ -243,6 +243,9 @@ class TestScalingCharacteristics:
         # Check that doubling size approximately doubles time (within reasonable bounds)
         # Allow up to 3x for larger sizes (may have overhead)
         for i in range(1, len(sizes)):
+            # Skip ratio check when durations are too small to measure reliably
+            if durations[i-1] < 0.01:
+                continue
             ratio = durations[i] / durations[i-1]
             size_ratio = sizes[i] / sizes[i-1]
             # Time ratio should be between 0.5x and 3x of size ratio

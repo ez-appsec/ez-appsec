@@ -1,0 +1,86 @@
+[
+  {
+    "control_id": "2.2.1",
+    "title": "System Configuration Standards",
+    "description": "Configuration standards are developed, implemented, and maintained for system components consistent with industry-accepted hardening standards.",
+    "categories": ["iac"]
+  },
+  {
+    "control_id": "6.2.1",
+    "title": "Bespoke and Custom Software Security",
+    "description": "Bespoke and custom software are developed securely, with software development processes and techniques defined and understood.",
+    "categories": ["sast"]
+  },
+  {
+    "control_id": "6.2.2",
+    "title": "Security Vulnerabilities in Bespoke Software",
+    "description": "Software development personnel working on bespoke and custom software are trained at least once every 12 months on software security.",
+    "categories": ["sast"]
+  },
+  {
+    "control_id": "6.2.3",
+    "title": "Code Review Before Release",
+    "description": "Bespoke and custom software is reviewed prior to being released into production to identify and correct potential coding vulnerabilities.",
+    "categories": ["sast", "secrets"]
+  },
+  {
+    "control_id": "6.2.4",
+    "title": "Prevention of Common Software Attacks",
+    "description": "Software engineering techniques or other methods are defined and in use to prevent or mitigate common software attacks and related vulnerabilities.",
+    "categories": ["sast"]
+  },
+  {
+    "control_id": "6.3.1",
+    "title": "Security Vulnerability Identification",
+    "description": "Security vulnerabilities are identified and managed through an established process that includes using reputable outside sources for vulnerability information.",
+    "categories": ["cve", "dependency_scanning"]
+  },
+  {
+    "control_id": "6.3.2",
+    "title": "Inventory of Bespoke and Custom Software",
+    "description": "An inventory of bespoke and custom software, and third-party software components incorporated into bespoke and custom software is maintained.",
+    "categories": ["dependency_scanning", "license_compliance"]
+  },
+  {
+    "control_id": "6.3.3",
+    "title": "Patching of Identified Vulnerabilities",
+    "description": "All system components are protected from known vulnerabilities by installing applicable security patches/updates.",
+    "categories": ["cve", "dependency_scanning"]
+  },
+  {
+    "control_id": "6.5.1",
+    "title": "Change Control Processes",
+    "description": "Changes to all system components in the production environment are made according to established procedures.",
+    "categories": ["iac", "sast"]
+  },
+  {
+    "control_id": "6.5.2",
+    "title": "Significant Changes Documentation",
+    "description": "Upon completion of a significant change, all relevant PCI DSS requirements are confirmed to be in place on all new or changed systems and networks.",
+    "categories": ["iac"]
+  },
+  {
+    "control_id": "8.3.1",
+    "title": "User Authentication for System Access",
+    "description": "All user access to system components for users and administrators is authenticated via at least one authentication factor.",
+    "categories": ["secrets"]
+  },
+  {
+    "control_id": "8.6.1",
+    "title": "Interactive Use of System and Application Accounts",
+    "description": "If accounts used by systems or applications can be used for interactive login, they are managed by exception.",
+    "categories": ["secrets"]
+  },
+  {
+    "control_id": "11.3.1",
+    "title": "Internal Vulnerability Scans",
+    "description": "Internal vulnerability scans are performed at least once every three months and after any significant change.",
+    "categories": ["cve", "dependency_scanning", "sast"]
+  },
+  {
+    "control_id": "11.3.2",
+    "title": "External Vulnerability Scans",
+    "description": "External vulnerability scans are performed at least once every three months and after any significant change.",
+    "categories": ["cve", "dependency_scanning"]
+  }
+]

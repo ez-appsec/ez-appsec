@@ -20,13 +20,23 @@
 
 set -euo pipefail
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+# ── Load .env if present ─────────────────────────────────────────────────────
 
-REPO="ez-appsec/ez-appsec"
-PROJECT_NUMBER=2
-PROJECT_OWNER="ez-appsec"
-IN_PROGRESS_OPTION_ID="47fc9ee4"
-STATUS_FIELD_ID="PVTSSF_lADOEEhvmM4BUnlNzhBuhsY"
+ENV_FILE="${HOME}/git/.env"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+fi
+
+# ── Constants (env vars override defaults) ───────────────────────────────────
+
+REPO="${GH_REPO:-ez-appsec/ez-appsec}"
+PROJECT_OWNER="${GH_PROJECT_OWNER:-ez-appsec}"
+PROJECT_NUMBER="${GH_PROJECT_NUMBER:-2}"
+STATUS_FIELD_ID="${GH_STATUS_FIELD_ID:-PVTSSF_lADOEEhvmM4BUnlNzhBuhsY}"
+IN_PROGRESS_OPTION_ID="${GH_IN_PROGRESS_OPTION_ID:-47fc9ee4}"
 CONTEXT_FILE=".plan-context.md"
 
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'

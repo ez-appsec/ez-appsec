@@ -27,11 +27,18 @@ setup(
     python_requires=">=3.9",
     install_requires=[
         "click>=8.0",
+        "jinja2>=3.1",
         "openai>=1.0",
         "pydantic>=2.0",
         "pyyaml>=6.0",
         "requests>=2.28",
     ],
+    package_data={
+        "ez_appsec": [
+            "data/frameworks/*.json",
+            "templates/*.j2",
+        ],
+    },
     extras_require={
         "dev": [
             "pytest>=7.0",

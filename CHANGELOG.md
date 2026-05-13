@@ -1,3 +1,60 @@
+## [1.7.18](https://github.com/ez-appsec/ez-appsec/compare/v1.7.17...v1.7.18) (2026-05-12)
+
+
+### Bug Fixes
+
+* resolve merge conflict in README.md heading ([e6e613b](https://github.com/ez-appsec/ez-appsec/commit/e6e613bc5b274c1b4803c76f8c88323f5d647035))
+* security and usability improvements from 3-pass PR review ([583b9e4](https://github.com/ez-appsec/ez-appsec/commit/583b9e4cdd1b37d673a6f0ee436477ef5115ea2a))
+
+
+### Features
+
+* add Claude-powered security agent with tool-use loop (PLAN-21) ([668892f](https://github.com/ez-appsec/ez-appsec/commit/668892f8aebdea15c323c8f2bbaebee5d5e9e567))
+* add GitHub Projects V2 plan management scripts ([1f09745](https://github.com/ez-appsec/ez-appsec/commit/1f09745c748864b51f83d9933aed2385b4f98076))
+
+## [1.7.17](https://github.com/ez-appsec/ez-appsec/compare/v1.7.16...v1.7.17) (2026-05-10)
+
+
+### Features
+
+* SBOM generation via grype CycloneDX (PLAN-10) ([#31](https://github.com/ez-appsec/ez-appsec/issues/31)) ([4b8c8b6](https://github.com/ez-appsec/ez-appsec/commit/4b8c8b6c409bbeb8018b06db773bdf9a473a0bd8))
+
+## [1.7.16](https://github.com/ez-appsec/ez-appsec/compare/v1.7.15...v1.7.16) (2026-05-09)
+
+
+### Bug Fixes
+
+* address code review findings for compliance reporter ([68b2174](https://github.com/ez-appsec/ez-appsec/commit/68b217496964876f68ffa3199ae177c426c973cf))
+
+
+### Features
+
+* add compliance report generation for SOC2, PCI-DSS, HIPAA (PLAN-12) ([9ebbf64](https://github.com/ez-appsec/ez-appsec/commit/9ebbf6450ef6d545caa8039809acc970a0bf952c))
+
+## [1.7.15](https://github.com/ez-appsec/ez-appsec/compare/v1.7.14...v1.7.15) (2026-05-08)
+
+
+### Bug Fixes
+
+* address security review findings for license compliance checking ([bf4269f](https://github.com/ez-appsec/ez-appsec/commit/bf4269fc1c3559f8558f6cc9630ea3dbf730cecf))
+* license findings bypass ignore rules, broken diff parser, unchecked syft exit ([6b055cf](https://github.com/ez-appsec/ez-appsec/commit/6b055cfb549693e0315a7a902e628d966fe6a50e))
+* resolve all CI test failures across 8 files ([7d06e08](https://github.com/ez-appsec/ez-appsec/commit/7d06e080a834d3733f8989f0cc9fc973302b772c))
+
+
+### Features
+
+* add Jira issue sync for scan findings (PLAN-08) ([7726fd3](https://github.com/ez-appsec/ez-appsec/commit/7726fd37172fe5f2a6ab59de691126236fc56162))
+* add license compliance checking via syft SBOM analysis (PLAN-11) ([0147227](https://github.com/ez-appsec/ez-appsec/commit/01472270c43f7c082a295f8f82633d0e1bf4a0b2))
+* add policy engine for scan threshold enforcement (PLAN-09) ([8f53a39](https://github.com/ez-appsec/ez-appsec/commit/8f53a396735688c7ad223722226bad24eb24e7a7))
+
+## [1.7.14](https://github.com/ez-appsec/ez-appsec/compare/v1.7.13...v1.7.14) (2026-04-29)
+
+
+### Features
+
+* add Jira issue sync for scan findings (PLAN-08) ([024b92a](https://github.com/ez-appsec/ez-appsec/commit/024b92aa5741d06cf4f19659b826554a957dc3d1))
+* add policy engine for scan threshold enforcement (PLAN-09) ([6321514](https://github.com/ez-appsec/ez-appsec/commit/6321514461e5afa06f0dfa22976c050323672572))
+
 ## [1.7.13](https://github.com/ez-appsec/ez-appsec/compare/v1.7.12...v1.7.13) (2026-04-28)
 
 

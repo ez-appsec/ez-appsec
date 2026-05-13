@@ -282,22 +282,22 @@ class TestInitCommand:
         result = runner.invoke(main, ['init', '--help'])
         assert result.exit_code == 0
 
-    def test_init_creates_config(self, temp_dir):
+    def test_init_creates_config(self, temp_dir, monkeypatch):
         """Test that init creates configuration file"""
         runner = CliRunner()
-        os.chdir(temp_dir)
+        monkeypatch.chdir(temp_dir)
         result = runner.invoke(main, ['init'])
         assert result.exit_code == 0
         assert os.path.exists('.ez-appsec.yaml')
 
-    def test_init_with_existing_config(self, temp_dir):
+    def test_init_with_existing_config(self, temp_dir, monkeypatch):
         """Test init with existing configuration file"""
         # Create existing config
         config_path = Path(temp_dir) / '.ez-appsec.yaml'
         config_path.write_text("# Existing config")
 
         runner = CliRunner()
-        os.chdir(temp_dir)
+        monkeypatch.chdir(temp_dir)
         result = runner.invoke(main, ['init'])
         assert result.exit_code == 0
         assert 'already exists' in result.output
