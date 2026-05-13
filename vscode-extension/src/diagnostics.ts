@@ -47,13 +47,11 @@ export class DiagnosticsManager implements vscode.Disposable {
 
     const range = new vscode.Range(startLine, 0, endLine, Number.MAX_SAFE_INTEGER);
     const severity = this.mapSeverity(finding.severity);
+    const tooltip = this.buildTooltip(finding);
 
-    const diagnostic = new vscode.Diagnostic(range, finding.message, severity);
+    const diagnostic = new vscode.Diagnostic(range, tooltip, severity);
     diagnostic.source = "ez-appsec";
     diagnostic.code = finding.name;
-
-    const tooltip = this.buildTooltip(finding);
-    diagnostic.message = tooltip;
 
     return diagnostic;
   }

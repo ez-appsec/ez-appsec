@@ -29,6 +29,12 @@
           "default": false,
           "description": "Run ez-appsec scan automatically when a file is saved"
         },
+        "ez-appsec.scanOnSaveDelay": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 500,
+          "description": "Debounce delay in milliseconds before triggering scan after save (prevents rapid repeated scans)"
+        },
         "ez-appsec.dockerImage": {
           "type": "string",
           "default": "ghcr.io/ez-appsec/ez-appsec:latest",

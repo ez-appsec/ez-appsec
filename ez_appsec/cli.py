@@ -118,6 +118,10 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
             )
         elif not jira_url and not jira_email and not jira_token and not jira_project:
             jira_cfg = JiraConfig.from_env()
+        else:
+            provided = [name for name, val in [("--jira-url", jira_url), ("--jira-email", jira_email), ("--jira-token", jira_token), ("--jira-project", jira_project)] if val]
+            missing = [name for name, val in [("--jira-url", jira_url), ("--jira-email", jira_email), ("--jira-token", jira_token), ("--jira-project", jira_project)] if not val]
+            click.echo(f"⚠ Partial Jira config: got {', '.join(provided)} but missing {', '.join(missing)}. Skipping Jira sync.", err=True)
 
         if jira_cfg and results["issues"] and jira_should_sync(results["issues"]):
             proj = project_name or os.path.basename(os.path.abspath(path))
