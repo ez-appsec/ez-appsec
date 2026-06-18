@@ -1,6 +1,9 @@
 """Core security scanning engine"""
 
+import json
 import os
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from ez_appsec.config import Config
@@ -9,6 +12,7 @@ from ez_appsec.external_scanners import ExternalScannerManager
 from ez_appsec.converters import VulnerabilityConverters, GitLabVulnerabilityFormat
 from ez_appsec.policy import PolicyEngine
 from ez_appsec.license_checker import check_licenses
+from ez_appsec.schema import ScanRecord, compute_finding_id, generate_scan_id
 
 
 class SecurityScanner:
@@ -27,11 +31,132 @@ class SecurityScanner:
 
         # Track suppressed findings for reporting
         self.suppressed_count = 0
-    
+
+    def _results_path(self, base_path: Path) -> Path:
+        """Return the JSON results path used for previous-scan lookup."""
+        configured_output = getattr(self.config, "output_file", None)
+        if configured_output:
+            return Path(configured_output)
+        if base_path.is_dir():
+            return base_path / "vulnerabilities.json"
+        return base_path.parent / "vulnerabilities.json"
+
+    def _load_previous_findings(self, results_path: Path) -> List[Dict[str, Any]]:
+        """Load prior findings from a previous vulnerabilities.json result if present."""
+        if not results_path.exists():
+            return []
+
+        try:
+            with results_path.open() as f:
+                payload = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return []
+
+        if isinstance(payload, dict):
+            findings = payload.get("issues", [])
+        elif isinstance(payload, list):
+            findings = payload
+        else:
+            findings = []
+
+        return [finding for finding in findings if isinstance(finding, dict)]
+
+    @staticmethod
+    def _coerce_line(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            normalized = value.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+    def _ensure_finding_id(self, issue: Dict[str, Any]) -> str:
+        existing = issue.get("finding_id")
+        if existing:
+            return str(existing)
+
+        rule_id = issue.get("rule_id") or issue.get("id") or issue.get("check_id") or ""
+        file_path = issue.get("file") or issue.get("path") or issue.get("filename") or ""
+        line = self._coerce_line(issue.get("line") or issue.get("start_line"))
+        finding_id = compute_finding_id(str(rule_id), str(file_path), line)
+        issue["finding_id"] = finding_id
+        return finding_id
+
+    def _apply_scan_tracking(
+        self,
+        issues: List[Dict[str, Any]],
+        previous_findings: List[Dict[str, Any]],
+        scan_id: str,
+        scan_timestamp: datetime,
+    ) -> Dict[str, int]:
+        """Populate v2 temporal tracking fields on current findings."""
+        scan_ts = scan_timestamp.isoformat()
+        previous_by_id = {
+            self._ensure_finding_id(previous): previous
+            for previous in previous_findings
+            if isinstance(previous, dict)
+        }
+
+        current_ids = set()
+        new_count = 0
+
+        for issue in issues:
+            finding_id = self._ensure_finding_id(issue)
+            current_ids.add(finding_id)
+            previous = previous_by_id.get(finding_id)
+
+            if previous:
+                first_seen_dt = self._parse_timestamp(previous.get("first_seen")) or scan_timestamp
+                trend = "unchanged"
+            else:
+                first_seen_dt = scan_timestamp
+                trend = "new"
+                new_count += 1
+
+            age_days = max((scan_timestamp.date() - first_seen_dt.date()).days, 0)
+
+            issue["scan_id"] = scan_id
+            issue["scan_timestamp"] = scan_ts
+            issue["first_seen"] = first_seen_dt.isoformat()
+            issue["last_seen"] = scan_ts
+            issue["age_days"] = age_days
+            issue["trend"] = trend
+            issue["schema_version"] = "2"
+
+        resolved_count = len(set(previous_by_id) - current_ids)
+        return {"new_count": new_count, "resolved_count": resolved_count}
+
+    def _write_scan_record(self, results_path: Path, record: ScanRecord) -> Optional[Path]:
+        """Write scan_record.json next to vulnerabilities.json when output is configured."""
+        configured_output = getattr(self.config, "output_file", None)
+        if not configured_output:
+            return None
+
+        record_path = results_path.with_name("scan_record.json")
+        record_path.parent.mkdir(parents=True, exist_ok=True)
+        record_path.write_text(record.model_dump_json(indent=2) + "\n")
+        return record_path
+
     def scan(self, path: str, custom_prompt: str = None) -> Dict[str, Any]:
         """Execute full security scan using external scanners only"""
 
+        started_at = time.monotonic()
+        scan_id = generate_scan_id()
+        scan_timestamp = datetime.now(timezone.utc)
         base_path = Path(path)
+        results_path = self._results_path(base_path)
+        previous_findings = self._load_previous_findings(results_path)
         issues = []
         scanner_results = {}
 
@@ -66,11 +191,27 @@ class SecurityScanner:
         if self.config.severity != "all":
             issues = self._filter_by_severity(issues, self.config.severity)
 
+        tracking_counts = self._apply_scan_tracking(
+            issues, previous_findings, scan_id, scan_timestamp
+        )
+
         # Sort by severity
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         issues.sort(
             key=lambda x: severity_order.get(x.get("severity", "low"), 4)
         )
+
+        scan_record = ScanRecord(
+            scan_id=scan_id,
+            scan_timestamp=scan_timestamp,
+            project=str(base_path),
+            scanner_versions={},
+            finding_count=len(issues),
+            new_count=tracking_counts["new_count"],
+            resolved_count=tracking_counts["resolved_count"],
+            duration_seconds=time.monotonic() - started_at,
+        )
+        scan_record_path = self._write_scan_record(results_path, scan_record)
 
         result = {
             "issues": issues,
@@ -78,7 +219,10 @@ class SecurityScanner:
             "suppressed": self.suppressed_count,
             "path": str(base_path),
             "scanner_results": scanner_results,
+            "scan_record": scan_record.model_dump(mode="json"),
         }
+        if scan_record_path is not None:
+            result["scan_record_path"] = str(scan_record_path)
 
         if policy_result is not None:
             result["policy_violations"] = policy_result["violations"]
