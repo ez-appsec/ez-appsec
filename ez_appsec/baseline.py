@@ -5,25 +5,43 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
+from ez_appsec.schema import compute_finding_id
 
 
 def _fingerprint(finding: Dict[str, Any]) -> str:
+    """
+    Compute finding fingerprint using the new schema.compute_finding_id().
+    This replaces the old _fingerprint implementation for consistency.
+    """
     rule_id = finding.get("rule_id", finding.get("ruleId", finding.get("id", "")))
-    file_path = _normalize_path(finding.get("file", finding.get("location", {}).get("file", "")))
-    start_line = str(finding.get("line", finding.get("location", {}).get("start_line", "")))
-    raw = f"{rule_id}:{file_path}:{start_line}"
-    return hashlib.sha256(raw.encode()).hexdigest()
+    file_path = finding.get("file", finding.get("location", {}).get("file", ""))
+    start_line = finding.get("line", finding.get("location", {}).get("start_line", 1))
+
+    # Handle line as int
+    if isinstance(start_line, str):
+        try:
+            start_line = int(start_line)
+        except (ValueError, TypeError):
+            start_line = 1
+    elif not isinstance(start_line, int):
+        start_line = 1
+
+    return compute_finding_id(rule_id, file_path, start_line)
 
 
 def _fingerprint_no_line(finding: Dict[str, Any]) -> str:
+    """
+    Compute line-independent fingerprint using rule_id and file_path only.
+    Useful for fuzzy matching (line-independent comparison).
+    """
     rule_id = finding.get("rule_id", finding.get("ruleId", finding.get("id", "")))
-    file_path = _normalize_path(finding.get("file", finding.get("location", {}).get("file", "")))
-    raw = f"{rule_id}:{file_path}"
+    file_path = finding.get("file", finding.get("location", {}).get("file", ""))
+
+    # Normalize path using Path
+    normalized_path = str(Path(file_path)).replace("\\", "/") if file_path else ""
+
+    raw = f"{rule_id}+{normalized_path}"
     return hashlib.sha256(raw.encode()).hexdigest()
-
-
-def _normalize_path(p: str) -> str:
-    return str(Path(p)) if p else ""
 
 
 @dataclass

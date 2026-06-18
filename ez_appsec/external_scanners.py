@@ -9,36 +9,52 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from abc import ABC, abstractmethod
+from ez_appsec.schema import compute_finding_id
 
 logger = logging.getLogger(__name__)
 
 
 class ScannerWrapper(ABC):
     """Base class for external scanner wrappers"""
-    
+
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
         self.name = self.__class__.__name__
-    
+
     @abstractmethod
     def is_installed(self) -> bool:
         """Check if scanner is installed"""
         pass
-    
+
     @abstractmethod
     def scan(self, path: str) -> List[Dict[str, Any]]:
         """Run scan and return normalized results"""
         pass
-    
+
     @abstractmethod
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run scan and return both normalized results and raw output file path"""
         pass
-    
+
     @abstractmethod
     def install_command(self) -> str:
         """Return installation command"""
         pass
+
+    def _add_v2_fields(self, finding: Dict[str, Any], category: str) -> Dict[str, Any]:
+        """
+        Inject v2 fields into a finding dict.
+        Computes finding_id from rule_id, file, and line.
+        Adds category (scanner-specific) and schema_version.
+        """
+        rule_id = finding.get("rule_id") or finding.get("title") or "unknown"
+        file_path = finding.get("file", "unknown")
+        line = finding.get("line", 1)
+
+        finding["finding_id"] = compute_finding_id(rule_id, file_path, line)
+        finding["category"] = category
+        finding["schema_version"] = "2"
+        return finding
 
 
 class GitleaksScanner(ScannerWrapper):
@@ -87,16 +103,19 @@ class GitleaksScanner(ScannerWrapper):
             
             issues = []
             for match in data:
-                issues.append({
+                finding = {
                     "type": "Secrets",
+                    "rule_id": match.get("RuleID", "exposed-secret"),
                     "title": f"Exposed {match.get('RuleID', 'Secret')}",
                     "description": f"Potential secret found: {match.get('Match', '')[:50]}...",
                     "file": match.get("File", "unknown"),
                     "line": match.get("StartLine", 1),
                     "severity": "critical",
                     "scanner": "gitleaks",
-                })
-            
+                }
+                finding = self._add_v2_fields(finding, "hardcoded-secret")
+                issues.append(finding)
+
             return issues, raw_output_path
         except subprocess.TimeoutExpired:
             logger.error("gitleaks scan timed out")
@@ -252,15 +271,18 @@ class SemgrepScanner(ScannerWrapper):
                         filtered_count += 1
                         continue
 
-                issues.append({
+                finding = {
                     "type": "SAST",
+                    "rule_id": check_id,
                     "title": check_id,
                     "description": message,
                     "file": result_item.get("path", "unknown"),
                     "line": result_item.get("start", {}).get("line", 1),
                     "severity": self._map_severity(severity, metadata),
                     "scanner": "semgrep",
-                })
+                }
+                finding = self._add_v2_fields(finding, "sast")
+                issues.append(finding)
 
             if filtered_count > 0:
                 logger.info(f"Semgrep: Filtered out {filtered_count} code quality/low-severity findings")
@@ -487,15 +509,18 @@ class KicsScanner(ScannerWrapper):
                     continue
 
                 for result_item in query.get("results", []):
-                    issues.append({
+                    finding = {
                         "type": "Infrastructure as Code",
+                        "rule_id": query_name,
                         "title": query_name,
                         "description": description,
                         "file": result_item.get("file", "unknown"),
                         "line": result_item.get("line", 1),
                         "severity": self._map_severity(severity),
                         "scanner": "kics",
-                    })
+                    }
+                    finding = self._add_v2_fields(finding, "iac")
+                    issues.append(finding)
 
             if filtered_count > 0:
                 logger.info(f"KICS: Filtered out {filtered_count} code quality/low-severity findings")
@@ -658,15 +683,21 @@ class GrypeScanner(ScannerWrapper):
             issues = []
             for match in data.get("matches", []):
                 vulnerability = match.get("vulnerability", {})
-                issues.append({
+                cve_id = vulnerability.get("id")
+                artifact_name = match.get("artifact", {}).get("name", "unknown")
+                finding = {
                     "type": "Dependency",
-                    "title": f"{match.get('artifact', {}).get('name')} - {vulnerability.get('id')}",
+                    "rule_id": cve_id or artifact_name,
+                    "title": f"{artifact_name} - {cve_id}",
                     "description": vulnerability.get("description", "Known vulnerability in dependency"),
-                    "file": "dependency: " + match.get('artifact', {}).get('name', 'unknown'),
+                    "file": "dependency: " + artifact_name,
+                    "line": 1,
                     "severity": vulnerability.get("severity", "medium").lower(),
                     "scanner": "grype",
-                    "cve": vulnerability.get("id"),
-                })
+                    "cve_id": cve_id,
+                }
+                finding = self._add_v2_fields(finding, "dependency")
+                issues.append(finding)
 
             return issues, raw_output_path
         except subprocess.TimeoutExpired:
