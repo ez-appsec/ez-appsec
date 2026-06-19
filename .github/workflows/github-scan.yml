@@ -82,14 +82,14 @@ jobs:
       - name: Count findings
         id: summary
         run: |
-          if [ -f "${EZ_APPSEC_SARIF}" ]; then
-            COUNT=$(python3 -c "import json; print(len(json.load(open('${EZ_APPSEC_SARIF}'))['runs'][0]['results']))")
-            echo "findings-count=$COUNT" >> $GITHUB_OUTPUT
-            echo "Found $COUNT security findings"
-          else
-            echo "findings-count=0" >> $GITHUB_OUTPUT
+          if [ ! -f "${EZ_APPSEC_SARIF}" ]; then
+            echo "findings-count=0" >> "$GITHUB_OUTPUT"
             echo "No findings found"
+            exit 0
           fi
+          COUNT=$(python3 -c "import json; print(len(json.load(open('${EZ_APPSEC_SARIF}'))['runs'][0]['results']))")
+          echo "findings-count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT security findings"
 
       - name: Upload SARIF to GitHub Security
         if: always()
@@ -154,9 +154,23 @@ jobs:
               bucket = sev if sev in by_sev else "INFO"
               by_sev[bucket].append(item)
 
+          # v2 trend: count new / resolved since the previous scan
+          trends = {"new": 0, "unchanged": 0, "resolved": 0}
+          for item in findings:
+              t = (item.get("trend") or "unchanged").lower()
+              if t in trends:
+                  trends[t] += 1
+
           total = sum(len(v) for v in by_sev.values())
           lines = []
           lines.append(f"### Security Findings: {total} total")
+          if trends["new"] or trends["resolved"]:
+              trend_parts = []
+              if trends["new"]:
+                  trend_parts.append(f"**{trends['new']} new**")
+              if trends["resolved"]:
+                  trend_parts.append(f"**{trends['resolved']} resolved**")
+              lines.append(f"_{' · '.join(trend_parts)} since last scan_")
           lines.append("")
           lines.append("| Severity | Count |")
           lines.append("|----------|-------|")

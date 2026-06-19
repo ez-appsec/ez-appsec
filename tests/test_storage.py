@@ -49,6 +49,33 @@ def make_scan_record(**overrides):
 
 
 class TestJsonFileBackend:
+    def test_write_drops_empty_optional_noise_fields(self, tmp_path):
+        """UX-3: a minimal finding must not be padded with 16 null v2 keys."""
+        from ez_appsec.schema import FindingV2, Category, Trend
+        backend = JsonFileBackend()
+        minimal = FindingV2(
+            rule_id="r1", file="a.py", line=3, severity="high", message="m",
+            finding_id="f1", scan_id="s1", trend=Trend.new, category=Category.sast,
+        )
+        output_path = backend.write_findings([minimal], make_scan_record(), tmp_path)
+        written = json.loads(output_path.read_text())["vulnerabilities"][0]
+        noise = {"affected_symbol", "ai_context", "effort_mins", "fix_complexity",
+                 "fix_type", "otel_attributes", "sla_deadline"}
+        assert not (noise & set(written.keys()))  # none of the noise keys present
+        # but identity + temporal defaults survive
+        for must_keep in ("schema_version", "trend", "category", "finding_id", "scan_id"):
+            assert must_keep in written
+
+    def test_write_keeps_populated_optional_fields(self, tmp_path):
+        """UX-3: populated AI/remediation fields must survive the slim pass."""
+        backend = JsonFileBackend()
+        finding = make_finding(fix_type="pin", effort_mins=15, ai_context={"k": "v"})
+        output_path = backend.write_findings([finding], make_scan_record(), tmp_path)
+        written = json.loads(output_path.read_text())["vulnerabilities"][0]
+        assert written["fix_type"] == "pin"
+        assert written["effort_mins"] == 15
+        assert written["ai_context"] == {"k": "v"}
+
     def test_write_findings_uses_legacy_vulnerabilities_json_shape(self, tmp_path):
         backend = JsonFileBackend()
         finding = make_finding()

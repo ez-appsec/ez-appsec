@@ -14,6 +14,32 @@ from ez_appsec.schema import FindingV2, ScanRecord, finding_from_dict, normalize
 SCHEMA_VERSION = "2"
 DEFAULT_STORAGE_BACKEND = "json"
 
+# Optional FindingV2 fields that are noise when unset. Stripped from the JSON
+# payload when empty so a basic scan doesn't pad every finding with 16 null
+# keys. Identity and temporal fields (finding_id, scan_id, scan_timestamp,
+# first_seen, last_seen, age_days, trend, category, schema_version, severity,
+# message, rule_id, file, line) are always emitted — they're either meaningful
+# defaults or required for cross-scan dedup and SLA tracking.
+_OPTIONAL_NOISE_FIELDS = frozenset({
+    "affected_symbol",
+    "ai_context",
+    "effort_mins",
+    "fix_complexity",
+    "fix_type",
+    "otel_attributes",
+    "sla_deadline",
+})
+
+
+def _slim_finding_payload(finding: FindingV2) -> Dict[str, Any]:
+    """Serialize a finding, dropping empty optional fields to reduce JSON noise."""
+    data = finding.model_dump(mode="json", exclude_none=True)
+    for key in _OPTIONAL_NOISE_FIELDS:
+        value = data.get(key)
+        if value in (None, "", 0, [], {}):
+            data.pop(key, None)
+    return data
+
 
 class ConfigurationError(ValueError):
     """Raised when storage configuration is invalid or incomplete."""
@@ -62,7 +88,7 @@ class JsonFileBackend(StorageBackend):
             "version": "15.0.0",
             "schema_version": SCHEMA_VERSION,
             "vulnerabilities": [
-                finding.model_dump(mode="json") for finding in findings
+                _slim_finding_payload(finding) for finding in findings
             ],
             "remediations": [],
             "scan_record": scan_record.model_dump(mode="json"),
@@ -217,6 +243,16 @@ class SqlBackend(StorageBackend):
     filename = "sql-storage"
 
     def __init__(self, storage_url: str, *, create_tables: bool = True) -> None:
+        """Create a SQL backend.
+
+        Security: ``storage_url`` is **trusted configuration only**. It is passed
+        directly to ``sqlalchemy.create_engine`` and may name an internal database
+        or a ``file://``/remote DSN. Never accept this value from untrusted user
+        input (e.g. CLI args from an HTTP request) — an attacker could redirect
+        persistence to an internal resource (SSRF) or exfiltrate findings to an
+        attacker-controlled DSN. Source it from a deployment-controlled
+        environment variable (``EZ_APPSEC_STORAGE_URL``) via :meth:`from_env`.
+        """
         if not storage_url:
             raise ConfigurationError("SQL storage requires EZ_APPSEC_STORAGE_URL to be set.")
 

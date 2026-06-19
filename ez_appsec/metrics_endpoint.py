@@ -160,7 +160,15 @@ def serve_metrics(
     backend: Optional[StorageBackend] = None,
     project: Optional[str] = None,
 ) -> ThreadingHTTPServer:
-    """Start a blocking HTTP server exposing GET /metrics."""
+    """Start a blocking HTTP server exposing GET /metrics.
+
+    Security: the endpoint is **unauthenticated** and exposes finding counts
+    (severity, category, project) to anyone who can reach it. The default
+    ``host=127.0.0.1`` binds to loopback only. Binding to ``0.0.0.0`` or any
+    non-loopback interface requires an auth layer (reverse proxy, network ACL,
+    or service mesh) in front — callers that pass such a host assume
+    responsibility for that boundary.
+    """
     handler = make_metrics_handler(storage_path, backend=backend, project=project)
     server = ThreadingHTTPServer((host, port), handler)
     server.serve_forever()
