@@ -14,7 +14,7 @@ from ez_appsec.external_scanners import ExternalScannerManager
 from ez_appsec.converters import VulnerabilityConverters, GitLabVulnerabilityFormat
 from ez_appsec.policy import PolicyEngine
 from ez_appsec.license_checker import check_licenses
-from ez_appsec.schema import ScanRecord, compute_finding_id, finding_from_dict, generate_scan_id
+from ez_appsec.schema import ScanRecord, compute_finding_id, finding_from_issue, generate_scan_id
 from ez_appsec.storage import get_storage_backend
 
 
@@ -295,7 +295,7 @@ class SecurityScanner:
         configured_output = getattr(self.config, "output_file", None)
         output_path = None
         if configured_output:
-            stored_findings = [finding_from_dict(issue) for issue in issues]
+            stored_findings = [finding_from_issue(issue) for issue in issues]
             output_path = self.storage_backend.write_findings(stored_findings, scan_record, results_path)
 
         result = {

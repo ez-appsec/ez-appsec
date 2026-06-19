@@ -24,6 +24,38 @@ class Category(str, Enum):
     unknown = "unknown"
 
 
+# Scanner-native category strings that don't match a Category member verbatim.
+# Scanners and converters emit these (e.g. gitleaks tags findings "hardcoded-secret"),
+# so the persistence boundary must map them onto the canonical enum.
+_CATEGORY_ALIASES = {
+    "hardcoded-secret": Category.secrets,
+    "secret": Category.secrets,
+    "secret_detection": Category.secrets,
+    "secret-detection": Category.secrets,
+    "dependency_scanning": Category.dependency,
+    "container_scanning": Category.dependency,
+}
+
+
+def normalize_category(value: Any) -> Category:
+    """Map a scanner-native category string onto the canonical Category enum.
+
+    Returns Category.unknown for empty or unrecognized values so that a finding
+    with an off-enum category never breaks model validation at persistence time.
+    """
+    if isinstance(value, Category):
+        return value
+    if value is None:
+        return Category.unknown
+    key = str(value).strip().lower()
+    if not key:
+        return Category.unknown
+    try:
+        return Category(key)
+    except ValueError:
+        return _CATEGORY_ALIASES.get(key, Category.unknown)
+
+
 def normalize_path(p: str) -> str:
     """Normalize a file path: forward slashes, strip leading ./ and /src/."""
     if not p:
@@ -119,3 +151,18 @@ def finding_from_dict(d: Dict[str, Any]) -> FindingV2:
         finding_id=compute_finding_id(rule_id, file_path, start_line),
     )
     return finding
+
+
+def finding_from_issue(issue: Dict[str, Any]) -> FindingV2:
+    """Validate a scanner issue dict into a FindingV2 without losing v2 fields.
+
+    Unlike finding_from_dict (which copies only the five v1 fields), this preserves
+    every field the scanner and scan-tracking populated — first_seen, trend, scan_id,
+    age_days, otel_attributes, AI remediation, etc. — and tolerates extras via the
+    model's extra="allow" config. The category is normalized onto the Category enum
+    first, since scanners emit off-enum strings like "hardcoded-secret".
+    """
+    data = dict(issue)
+    if "category" in data:
+        data["category"] = normalize_category(data["category"]).value
+    return FindingV2.model_validate(data)

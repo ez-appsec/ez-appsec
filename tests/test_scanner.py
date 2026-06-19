@@ -185,3 +185,72 @@ class TestScanTracking:
         assert result["scan_record"]["new_count"] == 0
         assert result["scan_record"]["resolved_count"] == 0
 
+    def test_persisted_findings_retain_v2_fields_on_disk(self, tmp_path):
+        """Regression: the on-disk vulnerabilities.json must keep v2 tracking fields.
+
+        Previously the scanner persisted via finding_from_dict, which copied only the
+        five v1 fields and dropped first_seen/trend/scan_id/category, so the written
+        file always showed first_seen=null/trend=new regardless of the scan tracking.
+        """
+        issue = {
+            "rule_id": "gitleaks.aws-key",
+            "title": "AWS key",
+            "description": "Hardcoded AWS access key",
+            "file": "config.py",
+            "line": 7,
+            "severity": "critical",
+            # Scanner-native category that is NOT a Category enum member; the
+            # persistence boundary must normalize it rather than crash.
+            "category": "hardcoded-secret",
+        }
+        scanner = self._scanner_with_issues(tmp_path, [issue])
+
+        result = scanner.scan(str(tmp_path))
+
+        persisted = json.loads(Path(scanner.config.output_file).read_text())
+        written = persisted["vulnerabilities"][0]
+        assert written["schema_version"] == "2"
+        assert written["finding_id"] == result["issues"][0]["finding_id"]
+        assert written["scan_id"] == result["scan_record"]["scan_id"]
+        assert written["trend"] == "new"
+        assert written["category"] == "secrets"  # alias normalized onto the enum
+        # first_seen must survive to disk (the dropped-field bug left it null).
+        # Pydantic JSON mode serializes the tz as 'Z' while the in-memory result
+        # uses '+00:00', so compare the parsed instant rather than the raw string.
+        assert written["first_seen"] is not None
+        persisted_first_seen = datetime.fromisoformat(
+            written["first_seen"].replace("Z", "+00:00")
+        )
+        result_first_seen = datetime.fromisoformat(result["issues"][0]["first_seen"])
+        assert persisted_first_seen == result_first_seen
+
+    def test_two_scan_sequence_round_trips_through_backend(self, tmp_path):
+        """Second scan reads its OWN persisted file (not a hand-written payload).
+
+        This exercises the real write -> read -> track path end to end: first_seen
+        must be inherited from the persisted record and the finding marked unchanged.
+        """
+        issue = {
+            "rule_id": "python.sql-injection",
+            "title": "SQL injection",
+            "description": "Unsafe query",
+            "file": "app.py",
+            "line": 12,
+            "severity": "high",
+        }
+        scanner = self._scanner_with_issues(tmp_path, [issue])
+
+        first_result = scanner.scan(str(tmp_path))
+        first_seen = first_result["issues"][0]["first_seen"]
+        assert first_seen is not None
+
+        # Second scan loads previous findings from the file the first scan wrote.
+        second_result = scanner.scan(str(tmp_path))
+
+        finding = second_result["issues"][0]
+        assert finding["finding_id"] == first_result["issues"][0]["finding_id"]
+        assert finding["first_seen"] == first_seen
+        assert finding["trend"] == "unchanged"
+        assert second_result["scan_record"]["new_count"] == 0
+        assert second_result["scan_record"]["resolved_count"] == 0
+

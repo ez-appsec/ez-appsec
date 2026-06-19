@@ -9,6 +9,8 @@ from ez_appsec.schema import (
     Trend,
     compute_finding_id,
     finding_from_dict,
+    finding_from_issue,
+    normalize_category,
     normalize_path,
 )
 
@@ -175,6 +177,90 @@ class TestFindingFromDict:
         d = {"rule_id": "r1", "file": "a.py", "line": "not-a-number"}
         f = finding_from_dict(d)
         assert f.line == 0
+
+
+class TestNormalizeCategory:
+    def test_enum_member_passes_through(self):
+        assert normalize_category(Category.sast) is Category.sast
+
+    def test_canonical_string_matches(self):
+        assert normalize_category("sast") is Category.sast
+        assert normalize_category("dependency") is Category.dependency
+
+    def test_scanner_aliases_map_to_secrets(self):
+        assert normalize_category("hardcoded-secret") is Category.secrets
+        assert normalize_category("secret_detection") is Category.secrets
+
+    def test_dependency_scanning_alias(self):
+        assert normalize_category("dependency_scanning") is Category.dependency
+
+    def test_case_insensitive(self):
+        assert normalize_category("SAST") is Category.sast
+        assert normalize_category("Hardcoded-Secret") is Category.secrets
+
+    def test_unknown_or_empty_defaults_to_unknown(self):
+        assert normalize_category("totally-made-up") is Category.unknown
+        assert normalize_category("") is Category.unknown
+        assert normalize_category(None) is Category.unknown
+
+
+class TestFindingFromIssue:
+    """finding_from_issue must preserve v2 fields and normalize off-enum categories."""
+
+    def test_preserves_v2_tracking_fields(self):
+        issue = {
+            "rule_id": "python.sql-injection",
+            "file": "app.py",
+            "line": 12,
+            "severity": "high",
+            "message": "Unsafe query",
+            "finding_id": "fid-123",
+            "scan_id": "scan-xyz",
+            "first_seen": "2026-01-01T00:00:00+00:00",
+            "last_seen": "2026-06-19T00:00:00+00:00",
+            "age_days": 169,
+            "trend": "unchanged",
+            "category": "sast",
+            "schema_version": "2",
+        }
+        f = finding_from_issue(issue)
+        assert f.finding_id == "fid-123"
+        assert f.scan_id == "scan-xyz"
+        assert f.trend is Trend.unchanged
+        assert f.age_days == 169
+        assert f.category is Category.sast
+        assert f.first_seen is not None
+
+    def test_off_enum_category_is_normalized_not_raised(self):
+        issue = {
+            "rule_id": "gitleaks.aws-key",
+            "file": "config.py",
+            "line": 7,
+            "severity": "critical",
+            "category": "hardcoded-secret",
+            "trend": "new",
+            "schema_version": "2",
+        }
+        f = finding_from_issue(issue)
+        assert f.category is Category.secrets
+
+    def test_extra_scanner_fields_retained(self):
+        issue = {
+            "rule_id": "r",
+            "file": "a.py",
+            "line": 1,
+            "severity": "low",
+            "category": "sast",
+            "title": "scanner-native extra field",
+        }
+        f = finding_from_issue(issue)
+        # extra="allow" keeps fields the model does not declare
+        assert f.model_dump()["title"] == "scanner-native extra field"
+
+    def test_string_line_is_coerced(self):
+        issue = {"rule_id": "r", "file": "a.py", "line": "3", "category": "sast"}
+        f = finding_from_issue(issue)
+        assert f.line == 3
 
 
 class TestFindingV2AIRemediation:
