@@ -126,9 +126,23 @@ jobs:
       # -----------------------------------------------------------------------
       # Push to dashboard (main branch only)
       # -----------------------------------------------------------------------
+      - name: Check dashboard app credentials
+        id: dashboard-creds
+        if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request' && vars.EZ_APPSEC_DASHBOARD_REPO != ''
+        env:
+          EZ_APPSEC_APP_ID: ${{ secrets.EZ_APPSEC_APP_ID }}
+          EZ_APPSEC_PRIVATE_KEY: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
+        run: |
+          if [ -n "${EZ_APPSEC_APP_ID}" ] && [ -n "${EZ_APPSEC_PRIVATE_KEY}" ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "Dashboard app credentials are not configured — skipping dashboard token mint."
+          fi
+
       - name: Mint App token for dashboard push
         id: dash-token
-        if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request' && vars.EZ_APPSEC_DASHBOARD_REPO != '' && secrets.EZ_APPSEC_APP_ID != ''
+        if: steps.dashboard-creds.outputs.enabled == 'true'
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.EZ_APPSEC_APP_ID }}
