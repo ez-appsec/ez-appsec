@@ -91,6 +91,59 @@ jobs:
           echo "findings-count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "Found $COUNT security findings"
 
+      - name: Validate SARIF for GitHub upload
+        if: always()
+        run: |
+          if [ ! -f "${EZ_APPSEC_SARIF}" ]; then
+            echo "No SARIF file found; skipping validation"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+          import os
+
+          sarif_path = os.environ["EZ_APPSEC_SARIF"]
+
+          def coerce_uri(value):
+              if isinstance(value, dict):
+                  for key in ("uri", "file", "path", "name"):
+                      nested = value.get(key)
+                      if nested:
+                          return coerce_uri(nested)
+                  return "unknown"
+              if isinstance(value, (list, tuple)):
+                  for item in value:
+                      if item:
+                          return coerce_uri(item)
+                  return "unknown"
+              if value is None:
+                  return "unknown"
+              text = str(value).strip()
+              return text.replace("\\\\", "/") if text else "unknown"
+
+          with open(sarif_path, encoding="utf-8") as fh:
+              sarif = json.load(fh)
+
+          fixes = 0
+          for run in sarif.get("runs", []):
+              for result in run.get("results", []):
+                  for location in result.get("locations", []):
+                      artifact = location.get("physicalLocation", {}).get("artifactLocation")
+                      if not isinstance(artifact, dict):
+                          continue
+                      uri = artifact.get("uri")
+                      coerced = coerce_uri(uri)
+                      if uri != coerced or not isinstance(uri, str):
+                          artifact["uri"] = coerced
+                          fixes += 1
+
+          with open(sarif_path, "w", encoding="utf-8") as fh:
+              json.dump(sarif, fh, indent=2)
+              fh.write("\n")
+
+          print(f"SARIF validation complete; normalized {fixes} artifact URI value(s)")
+          PY
+
       - name: Upload SARIF to GitHub Security
         if: always()
         uses: github/codeql-action/upload-sarif@v4
