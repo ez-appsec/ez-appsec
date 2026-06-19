@@ -1,5 +1,6 @@
 """Core security scanning engine"""
 
+import importlib.util
 import json
 import logging
 import os
@@ -20,10 +21,97 @@ from ez_appsec.storage import get_storage_backend
 logger = logging.getLogger(__name__)
 
 
+_JSON_LOG_RESERVED = {
+    "args",
+    "asctime",
+    "created",
+    "exc_info",
+    "exc_text",
+    "filename",
+    "funcName",
+    "levelname",
+    "levelno",
+    "lineno",
+    "module",
+    "msecs",
+    "message",
+    "msg",
+    "name",
+    "pathname",
+    "process",
+    "processName",
+    "relativeCreated",
+    "stack_info",
+    "thread",
+    "threadName",
+}
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Format log records as single-line JSON for machine ingestion."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
+            "level": record.levelname,
+            "message": record.getMessage(),
+        }
+
+        for key, value in record.__dict__.items():
+            if key in _JSON_LOG_RESERVED or key.startswith("_"):
+                continue
+            payload[key] = value
+
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(payload, default=str, separators=(",", ":"))
+
+
+def configure_logging_from_env() -> bool:
+    """Enable structured JSON logging when EZ_APPSEC_LOG_FORMAT=json is set."""
+    if os.getenv("EZ_APPSEC_LOG_FORMAT", "").lower() != "json":
+        return False
+
+    formatter = JsonLogFormatter()
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+    else:
+        for handler in root_logger.handlers:
+            handler.setFormatter(formatter)
+    return True
+
+
+def _opentelemetry_sdk_available() -> bool:
+    """Return True when the optional OpenTelemetry SDK extra is installed."""
+    try:
+        return importlib.util.find_spec("opentelemetry.sdk") is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+def _build_otel_attributes(issue: Dict[str, Any], scan_id: str) -> Dict[str, Any]:
+    """Build stable OpenTelemetry span attributes for a finding."""
+    attrs: Dict[str, Any] = {
+        "ez_appsec.scan_id": scan_id,
+        "ez_appsec.finding_id": issue.get("finding_id", ""),
+        "ez_appsec.rule_id": issue.get("rule_id", ""),
+        "ez_appsec.severity": issue.get("severity", ""),
+        "ez_appsec.category": issue.get("category", "unknown"),
+        "code.filepath": issue.get("file", ""),
+        "code.lineno": issue.get("line", 0),
+    }
+    return {key: value for key, value in attrs.items() if value not in (None, "")}
+
+
 class SecurityScanner:
     """Main security scanner orchestrating all detection mechanisms"""
 
     def __init__(self, config: Config, use_external_scanners: bool = True, license_check: bool = False):
+        configure_logging_from_env()
         self.config = config
         self.use_external = use_external_scanners
         self.license_check = license_check
@@ -110,6 +198,7 @@ class SecurityScanner:
 
         current_ids = set()
         new_count = 0
+        otel_enabled = _opentelemetry_sdk_available()
 
         for issue in issues:
             finding_id = self._ensure_finding_id(issue)
@@ -133,6 +222,8 @@ class SecurityScanner:
             issue["age_days"] = age_days
             issue["trend"] = trend
             issue["schema_version"] = "2"
+            if otel_enabled:
+                issue["otel_attributes"] = _build_otel_attributes(issue, scan_id)
 
         resolved_count = len(set(previous_by_id) - current_ids)
         return {"new_count": new_count, "resolved_count": resolved_count}
@@ -227,6 +318,18 @@ class SecurityScanner:
         if license_result is not None:
             result["license_summary"] = license_result["summary"]
             result["license_packages"] = license_result["packages"]
+
+        logger.info(
+            "Security scan completed",
+            extra={
+                "scan_id": scan_id,
+                "finding_count": len(issues),
+                "new_count": tracking_counts["new_count"],
+                "resolved_count": tracking_counts["resolved_count"],
+                "suppressed_count": self.suppressed_count,
+                "storage_backend": self.storage_backend.__class__.__name__,
+            },
+        )
 
         return result
 

@@ -70,6 +70,9 @@ class FindingV2(BaseModel):
     category: Category = Category.unknown
     schema_version: str = "2"
 
+    # OpenTelemetry attributes: optional, populated when opentelemetry-sdk is installed.
+    otel_attributes: Optional[Dict[str, Any]] = None
+
     # AI remediation attributes: optional, populated where scanner has signal.
     fix_type: Optional[str] = None
     fix_complexity: Optional[str] = None

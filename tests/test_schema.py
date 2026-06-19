@@ -214,3 +214,14 @@ class TestFindingV2AIRemediation:
         # Optional fields are present but None, so consumers can filter them.
         assert dumped["fix_type"] is None
         assert dumped["ai_context"] is None
+
+
+def test_finding_v2_has_optional_otel_attributes():
+    f = FindingV2(otel_attributes={"ez_appsec.scan_id": "scan-123", "code.filepath": "app.py"})
+
+    assert f.otel_attributes == {"ez_appsec.scan_id": "scan-123", "code.filepath": "app.py"}
+    assert f.model_dump()["otel_attributes"] == {"ez_appsec.scan_id": "scan-123", "code.filepath": "app.py"}
+
+
+def test_finding_v2_otel_attributes_default_to_none():
+    assert FindingV2().otel_attributes is None

@@ -51,6 +51,12 @@ setup(
         "sql": [
             "sqlalchemy>=2.0",
         ],
+        "metrics": [
+            "prometheus_client>=0.20",
+        ],
+        "otel": [
+            "opentelemetry-sdk>=1.25",
+        ],
     },
     entry_points={
         "console_scripts": [
