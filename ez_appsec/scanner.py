@@ -1,6 +1,7 @@
 """Core security scanning engine"""
 
 import json
+import logging
 import os
 import time
 from datetime import datetime, timezone
@@ -12,7 +13,11 @@ from ez_appsec.external_scanners import ExternalScannerManager
 from ez_appsec.converters import VulnerabilityConverters, GitLabVulnerabilityFormat
 from ez_appsec.policy import PolicyEngine
 from ez_appsec.license_checker import check_licenses
-from ez_appsec.schema import ScanRecord, compute_finding_id, generate_scan_id
+from ez_appsec.schema import ScanRecord, compute_finding_id, finding_from_dict, generate_scan_id
+from ez_appsec.storage import get_storage_backend
+
+
+logger = logging.getLogger(__name__)
 
 
 class SecurityScanner:
@@ -32,6 +37,9 @@ class SecurityScanner:
         # Track suppressed findings for reporting
         self.suppressed_count = 0
 
+        # Storage backend for finding persistence and previous-scan lookup
+        self.storage_backend = get_storage_backend()
+
     def _results_path(self, base_path: Path) -> Path:
         """Return the JSON results path used for previous-scan lookup."""
         configured_output = getattr(self.config, "output_file", None)
@@ -42,24 +50,16 @@ class SecurityScanner:
         return base_path.parent / "vulnerabilities.json"
 
     def _load_previous_findings(self, results_path: Path) -> List[Dict[str, Any]]:
-        """Load prior findings from a previous vulnerabilities.json result if present."""
+        """Load prior findings through the configured storage backend if present."""
         if not results_path.exists():
             return []
 
         try:
-            with results_path.open() as f:
-                payload = json.load(f)
-        except (OSError, json.JSONDecodeError):
+            findings = self.storage_backend.read_findings(results_path)
+        except (OSError, ValueError, json.JSONDecodeError):
             return []
 
-        if isinstance(payload, dict):
-            findings = payload.get("issues", [])
-        elif isinstance(payload, list):
-            findings = payload
-        else:
-            findings = []
-
-        return [finding for finding in findings if isinstance(finding, dict)]
+        return [finding.model_dump(mode="json") for finding in findings]
 
     @staticmethod
     def _coerce_line(value: Any) -> int:
@@ -137,17 +137,6 @@ class SecurityScanner:
         resolved_count = len(set(previous_by_id) - current_ids)
         return {"new_count": new_count, "resolved_count": resolved_count}
 
-    def _write_scan_record(self, results_path: Path, record: ScanRecord) -> Optional[Path]:
-        """Write scan_record.json next to vulnerabilities.json when output is configured."""
-        configured_output = getattr(self.config, "output_file", None)
-        if not configured_output:
-            return None
-
-        record_path = results_path.with_name("scan_record.json")
-        record_path.parent.mkdir(parents=True, exist_ok=True)
-        record_path.write_text(record.model_dump_json(indent=2) + "\n")
-        return record_path
-
     def scan(self, path: str, custom_prompt: str = None) -> Dict[str, Any]:
         """Execute full security scan using external scanners only"""
 
@@ -156,6 +145,7 @@ class SecurityScanner:
         scan_timestamp = datetime.now(timezone.utc)
         base_path = Path(path)
         results_path = self._results_path(base_path)
+        logger.info("Using storage backend: %s", self.storage_backend.__class__.__name__)
         previous_findings = self._load_previous_findings(results_path)
         issues = []
         scanner_results = {}
@@ -211,7 +201,11 @@ class SecurityScanner:
             resolved_count=tracking_counts["resolved_count"],
             duration_seconds=time.monotonic() - started_at,
         )
-        scan_record_path = self._write_scan_record(results_path, scan_record)
+        configured_output = getattr(self.config, "output_file", None)
+        output_path = None
+        if configured_output:
+            stored_findings = [finding_from_dict(issue) for issue in issues]
+            output_path = self.storage_backend.write_findings(stored_findings, scan_record, results_path)
 
         result = {
             "issues": issues,
@@ -221,8 +215,9 @@ class SecurityScanner:
             "scanner_results": scanner_results,
             "scan_record": scan_record.model_dump(mode="json"),
         }
-        if scan_record_path is not None:
-            result["scan_record_path"] = str(scan_record_path)
+        if output_path is not None:
+            result["output_path"] = str(output_path)
+            result["scan_record_path"] = str(output_path.with_name("scan_record.json"))
 
         if policy_result is not None:
             result["policy_violations"] = policy_result["violations"]

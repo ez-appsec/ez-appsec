@@ -80,13 +80,16 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
                 click.echo(f"    {issue['description']}")
 
         if output:
-            try:
-                with open(output, 'w') as f:
-                    json.dump(results, f, indent=2)
-                click.echo(f"\n✓ Results saved to: {output}")
-            except Exception as e:
-                click.echo(f"\n✗ Error writing results to file: {str(e)}", err=True)
-                sys.exit(1)
+            if results.get("output_path"):
+                click.echo(f"\n✓ Results saved to: {results['output_path']}")
+            else:
+                try:
+                    with open(output, 'w') as f:
+                        json.dump(results, f, indent=2)
+                    click.echo(f"\n✓ Results saved to: {output}")
+                except Exception as e:
+                    click.echo(f"\n✗ Error writing results to file: {str(e)}", err=True)
+                    sys.exit(1)
 
         if slack_webhook or teams_webhook:
             proj = project_name or os.path.basename(os.path.abspath(path))

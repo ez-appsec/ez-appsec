@@ -69,6 +69,8 @@ class JsonFileBackend(StorageBackend):
         }
 
         output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        scan_record_path = output_path.with_name("scan_record.json")
+        scan_record_path.write_text(scan_record.model_dump_json(indent=2) + "\n", encoding="utf-8")
         return output_path
 
     def read_findings(self, path: str | Path) -> List[FindingV2]:
@@ -109,7 +111,9 @@ class JsonFileBackend(StorageBackend):
         if isinstance(payload, list):
             return [item for item in payload if isinstance(item, Mapping)]
         if isinstance(payload, Mapping):
-            vulnerabilities = payload.get("vulnerabilities", [])
+            vulnerabilities = payload.get("vulnerabilities")
+            if vulnerabilities is None:
+                vulnerabilities = payload.get("issues", [])
             if isinstance(vulnerabilities, list):
                 return [item for item in vulnerabilities if isinstance(item, Mapping)]
         return []
