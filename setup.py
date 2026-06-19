@@ -48,6 +48,9 @@ setup(
             "mypy>=1.0",
             "psutil>=5.9",
         ],
+        "sql": [
+            "sqlalchemy>=2.0",
+        ],
     },
     entry_points={
         "console_scripts": [

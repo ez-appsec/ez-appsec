@@ -70,6 +70,13 @@ class FindingV2(BaseModel):
     category: Category = Category.unknown
     schema_version: str = "2"
 
+    # AI remediation attributes: optional, populated where scanner has signal.
+    fix_type: Optional[str] = None
+    fix_complexity: Optional[str] = None
+    effort_mins: Optional[int] = None
+    affected_symbol: Optional[str] = None
+    ai_context: Optional[Dict[str, Any]] = None
+
     def compute_id(self) -> str:
         """Compute and set finding_id from this finding's fields."""
         self.finding_id = compute_finding_id(self.rule_id, self.file, self.line)

@@ -212,3 +212,131 @@ class TestV2FieldsWithMissingFields:
         result = scanner._add_v2_fields(finding, "iac")
         assert "finding_id" in result
         assert len(result["finding_id"]) == 64
+
+
+class TestGitleaksAIRemediation:
+    def test_gitleaks_populates_remediation_fields(self):
+        scanner = GitleaksScanner()
+        finding = {"rule_id": "aws-access-key", "file": "config.py", "line": 10}
+        source = {"RuleID": "aws-access-key", "Match": "AKIA..."}
+        result = scanner._add_ai_remediation_fields(finding, source)
+
+        assert result["fix_type"] == "code_change"
+        assert result["fix_complexity"] == "moderate"
+        assert isinstance(result["effort_mins"], int)
+        assert result["affected_symbol"] == "aws-access-key"
+        assert "secret_kind" in result["ai_context"]
+        assert any("rotate" in step for step in result["ai_context"]["remediation_steps"])
+
+    def test_gitleaks_falls_back_when_no_source(self):
+        scanner = GitleaksScanner()
+        finding = {"rule_id": "leak", "file": "a.py", "line": 1}
+        result = scanner._add_ai_remediation_fields(finding, None)
+        assert result["fix_type"] == "code_change"
+        assert result["affected_symbol"] == "leak"
+
+
+class TestSemgrepAIRemediation:
+    def test_semgrep_autofix_is_trivial(self):
+        scanner = SemgrepScanner()
+        finding = {"rule_id": "py.injection", "file": "a.py", "line": 5}
+        source = {
+            "check_id": "python.flask.xss.flask-xss",
+            "extra": {
+                "fix": "use markupsafe.escape(...)",
+                "metadata": {"cwe": "CWE-79", "owasp": "A03:2021"},
+            },
+        }
+        result = scanner._add_ai_remediation_fields(finding, source)
+        assert result["fix_type"] == "code_change"
+        assert result["fix_complexity"] == "trivial"
+        assert result["affected_symbol"] == "flask-xss"
+        assert result["ai_context"]["cwe"] == "CWE-79"
+        assert result["ai_context"]["owasp"] == "A03:2021"
+        assert result["ai_context"]["autofix"] == "use markupsafe.escape(...)"
+
+    def test_semgrep_without_autofix_is_moderate(self):
+        scanner = SemgrepScanner()
+        finding = {"rule_id": "r", "file": "a.py", "line": 1}
+        source = {"check_id": "python.foo.bar", "extra": {"metadata": {}}}
+        result = scanner._add_ai_remediation_fields(finding, source)
+        assert result["fix_type"] == "code_change"
+        assert result["fix_complexity"] == "moderate"
+
+
+class TestKicsAIRemediation:
+    def test_kics_emits_config_fix(self):
+        scanner = KicsScanner()
+        finding = {"rule_id": "Exposed Port", "file": "docker-compose.yml", "line": 5}
+        source = {
+            "query": {
+                "queryName": "Exposed Port",
+                "category": "Networking and Firewall",
+                "platform": "DockerCompose",
+            },
+            "result": {"expected_value": "internal", "actual_value": "0.0.0.0:80"},
+        }
+        result = scanner._add_ai_remediation_fields(finding, source)
+        assert result["fix_type"] == "config"
+        assert result["fix_complexity"] == "trivial"
+        assert result["affected_symbol"] == "Exposed Port"
+        assert result["ai_context"]["expected_value"] == "internal"
+        assert result["ai_context"]["actual_value"] == "0.0.0.0:80"
+        assert result["ai_context"]["platform"] == "DockerCompose"
+
+
+class TestGrypeAIRemediation:
+    def test_grype_with_fix_version_is_upgrade_trivial(self):
+        scanner = GrypeScanner()
+        finding = {"rule_id": "CVE-2024-1", "file": "dep:requests", "line": 1}
+        source = {
+            "artifact": {"name": "requests", "version": "2.20.0"},
+            "vulnerability": {
+                "id": "CVE-2024-1",
+                "severity": "High",
+                "fix": {"versions": ["2.32.0"], "state": "fixed"},
+            },
+        }
+        result = scanner._add_ai_remediation_fields(finding, source)
+        assert result["fix_type"] == "upgrade"
+        assert result["fix_complexity"] == "trivial"
+        assert result["affected_symbol"] == "requests"
+        assert result["ai_context"]["package"] == "requests"
+        assert result["ai_context"]["current_version"] == "2.20.0"
+        assert result["ai_context"]["fix_versions"] == ["2.32.0"]
+        assert result["ai_context"]["fix_state"] == "fixed"
+
+    def test_grype_wont_fix_becomes_suppress(self):
+        scanner = GrypeScanner()
+        finding = {"rule_id": "CVE-X", "file": "dep:foo", "line": 1}
+        source = {
+            "artifact": {"name": "foo", "version": "1.0.0"},
+            "vulnerability": {"id": "CVE-X", "fix": {"state": "wont-fix", "versions": []}},
+        }
+        result = scanner._add_ai_remediation_fields(finding, source)
+        assert result["fix_type"] == "suppress"
+
+    def test_grype_no_fix_versions_is_complex_upgrade(self):
+        scanner = GrypeScanner()
+        finding = {"rule_id": "CVE-Y", "file": "dep:bar", "line": 1}
+        source = {
+            "artifact": {"name": "bar", "version": "2.0.0"},
+            "vulnerability": {"id": "CVE-Y", "fix": {"state": "unknown", "versions": []}},
+        }
+        result = scanner._add_ai_remediation_fields(finding, source)
+        assert result["fix_type"] == "upgrade"
+        assert result["fix_complexity"] == "complex"
+
+
+class TestBaseAIRemediationNoOp:
+    def test_default_hook_is_noop(self):
+        """Base class default returns finding unchanged."""
+        from ez_appsec.external_scanners import ScannerWrapper
+
+        # Use a concrete subclass to instantiate
+        scanner = GitleaksScanner()
+        # Call base implementation directly
+        finding = {"rule_id": "r", "file": "a.py", "line": 1}
+        result = ScannerWrapper._add_ai_remediation_fields(scanner, finding, None)
+        assert result is finding
+        assert "fix_type" not in finding

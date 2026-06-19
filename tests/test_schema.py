@@ -175,3 +175,42 @@ class TestFindingFromDict:
         d = {"rule_id": "r1", "file": "a.py", "line": "not-a-number"}
         f = finding_from_dict(d)
         assert f.line == 0
+
+
+class TestFindingV2AIRemediation:
+    """AI remediation fields default to None and accept structured values."""
+
+    def test_ai_remediation_defaults_none(self):
+        f = FindingV2()
+        assert f.fix_type is None
+        assert f.fix_complexity is None
+        assert f.effort_mins is None
+        assert f.affected_symbol is None
+        assert f.ai_context is None
+
+    def test_ai_remediation_accepts_values(self):
+        f = FindingV2(
+            rule_id="CVE-2024-1",
+            file="dep:requests",
+            line=1,
+            fix_type="upgrade",
+            fix_complexity="trivial",
+            effort_mins=5,
+            affected_symbol="requests",
+            ai_context={"fix_versions": ["2.32.0"], "current_version": "2.20.0"},
+        )
+        assert f.fix_type == "upgrade"
+        assert f.fix_complexity == "trivial"
+        assert f.effort_mins == 5
+        assert f.affected_symbol == "requests"
+        assert f.ai_context == {
+            "fix_versions": ["2.32.0"],
+            "current_version": "2.20.0",
+        }
+
+    def test_ai_remediation_optional_in_dict(self):
+        f = FindingV2(rule_id="r", file="a.py", line=1)
+        dumped = f.model_dump()
+        # Optional fields are present but None, so consumers can filter them.
+        assert dumped["fix_type"] is None
+        assert dumped["ai_context"] is None

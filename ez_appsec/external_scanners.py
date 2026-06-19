@@ -56,10 +56,44 @@ class ScannerWrapper(ABC):
         finding["schema_version"] = "2"
         return finding
 
+    def _add_ai_remediation_fields(
+        self,
+        finding: Dict[str, Any],
+        source: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Default AI remediation enrichment: no-op. Scanners override this when
+        their raw output exposes fix/remediation signal (e.g. grype fix versions,
+        semgrep autofix, kics remediation).
+        """
+        return finding
+
 
 class GitleaksScanner(ScannerWrapper):
     """Wrapper for gitleaks secrets detection"""
-    
+
+    def _add_ai_remediation_fields(
+        self,
+        finding: Dict[str, Any],
+        source: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Secrets always need rotation + scrubbing; populate fix metadata."""
+        src = source or {}
+        rule_id = src.get("RuleID") or finding.get("rule_id") or "secret"
+        finding["fix_type"] = "code_change"
+        finding["fix_complexity"] = "moderate"
+        finding["effort_mins"] = 30
+        finding["affected_symbol"] = rule_id
+        finding["ai_context"] = {
+            "secret_kind": rule_id,
+            "remediation_steps": [
+                "rotate the exposed secret immediately",
+                "remove the secret from the working tree and rewrite history",
+                "store the new secret in a secrets manager",
+            ],
+        }
+        return finding
+
     def is_installed(self) -> bool:
         """Check if gitleaks is installed"""
         try:
@@ -114,6 +148,7 @@ class GitleaksScanner(ScannerWrapper):
                     "scanner": "gitleaks",
                 }
                 finding = self._add_v2_fields(finding, "hardcoded-secret")
+                finding = self._add_ai_remediation_fields(finding, match)
                 issues.append(finding)
 
             return issues, raw_output_path
@@ -127,6 +162,46 @@ class GitleaksScanner(ScannerWrapper):
 
 class SemgrepScanner(ScannerWrapper):
     """Wrapper for semgrep SAST analysis"""
+
+    def _add_ai_remediation_fields(
+        self,
+        finding: Dict[str, Any],
+        source: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Use semgrep's autofix and metadata to populate remediation hints."""
+        src = source or {}
+        extra = src.get("extra", {}) if isinstance(src, dict) else {}
+        metadata = extra.get("metadata", {}) if isinstance(extra, dict) else {}
+        autofix = extra.get("fix") if isinstance(extra, dict) else None
+
+        if autofix:
+            finding["fix_type"] = "code_change"
+            finding["fix_complexity"] = "trivial"
+            finding["effort_mins"] = 5
+        else:
+            finding["fix_type"] = "code_change"
+            finding["fix_complexity"] = "moderate"
+            finding["effort_mins"] = 30
+
+        check_id = src.get("check_id") if isinstance(src, dict) else None
+        if check_id:
+            finding["affected_symbol"] = str(check_id).rsplit(".", 1)[-1]
+
+        cwe = metadata.get("cwe") if isinstance(metadata, dict) else None
+        owasp = metadata.get("owasp") if isinstance(metadata, dict) else None
+        references = metadata.get("references") if isinstance(metadata, dict) else None
+        ai_ctx: Dict[str, Any] = {}
+        if cwe:
+            ai_ctx["cwe"] = cwe
+        if owasp:
+            ai_ctx["owasp"] = owasp
+        if references:
+            ai_ctx["references"] = references
+        if autofix:
+            ai_ctx["autofix"] = autofix
+        if ai_ctx:
+            finding["ai_context"] = ai_ctx
+        return finding
 
     # Semgrep check IDs that are code quality, not security - exclude to reduce false positives
     CODE_QUALITY_CHECK_IDS = {
@@ -282,6 +357,7 @@ class SemgrepScanner(ScannerWrapper):
                     "scanner": "semgrep",
                 }
                 finding = self._add_v2_fields(finding, "sast")
+                finding = self._add_ai_remediation_fields(finding, result_item)
                 issues.append(finding)
 
             if filtered_count > 0:
@@ -376,6 +452,41 @@ class SemgrepScanner(ScannerWrapper):
 
 class KicsScanner(ScannerWrapper):
     """Wrapper for KICS infrastructure as code scanning"""
+
+    def _add_ai_remediation_fields(
+        self,
+        finding: Dict[str, Any],
+        source: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """KICS findings are config misconfigurations; populate config-fix metadata."""
+        src = source or {}
+        query = src.get("query", {}) if isinstance(src, dict) else {}
+        result_item = src.get("result", {}) if isinstance(src, dict) else {}
+
+        finding["fix_type"] = "config"
+        finding["fix_complexity"] = "trivial"
+        finding["effort_mins"] = 10
+
+        query_name = query.get("queryName") if isinstance(query, dict) else None
+        if query_name:
+            finding["affected_symbol"] = query_name
+
+        ai_ctx: Dict[str, Any] = {}
+        expected = result_item.get("expected_value") if isinstance(result_item, dict) else None
+        actual = result_item.get("actual_value") if isinstance(result_item, dict) else None
+        category = query.get("category") if isinstance(query, dict) else None
+        platform = query.get("platform") if isinstance(query, dict) else None
+        if expected is not None:
+            ai_ctx["expected_value"] = expected
+        if actual is not None:
+            ai_ctx["actual_value"] = actual
+        if category:
+            ai_ctx["category"] = category
+        if platform:
+            ai_ctx["platform"] = platform
+        if ai_ctx:
+            finding["ai_context"] = ai_ctx
+        return finding
 
     # KICS queries that are code quality, not security - exclude these to reduce false positives
     CODE_QUALITY_QUERIES = {
@@ -520,6 +631,9 @@ class KicsScanner(ScannerWrapper):
                         "scanner": "kics",
                     }
                     finding = self._add_v2_fields(finding, "iac")
+                    finding = self._add_ai_remediation_fields(
+                        finding, {"query": query, "result": result_item}
+                    )
                     issues.append(finding)
 
             if filtered_count > 0:
@@ -611,6 +725,53 @@ class KicsScanner(ScannerWrapper):
 class GrypeScanner(ScannerWrapper):
     """Wrapper for grype vulnerability scanning"""
 
+    def _add_ai_remediation_fields(
+        self,
+        finding: Dict[str, Any],
+        source: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Grype findings are dependency CVEs; fix is usually a version upgrade."""
+        src = source or {}
+        vulnerability = src.get("vulnerability", {}) if isinstance(src, dict) else {}
+        artifact = src.get("artifact", {}) if isinstance(src, dict) else {}
+        fix = vulnerability.get("fix", {}) if isinstance(vulnerability, dict) else {}
+        fix_state = fix.get("state") if isinstance(fix, dict) else None
+        fix_versions = fix.get("versions") if isinstance(fix, dict) else None
+
+        if fix_state == "fixed" and fix_versions:
+            finding["fix_type"] = "upgrade"
+            finding["fix_complexity"] = "trivial"
+            finding["effort_mins"] = 5
+        elif fix_state == "wont-fix":
+            finding["fix_type"] = "suppress"
+            finding["fix_complexity"] = "moderate"
+            finding["effort_mins"] = 15
+        else:
+            finding["fix_type"] = "upgrade"
+            finding["fix_complexity"] = "complex"
+            finding["effort_mins"] = 60
+
+        artifact_name = artifact.get("name") if isinstance(artifact, dict) else None
+        if artifact_name:
+            finding["affected_symbol"] = artifact_name
+
+        ai_ctx: Dict[str, Any] = {}
+        artifact_version = artifact.get("version") if isinstance(artifact, dict) else None
+        if artifact_name:
+            ai_ctx["package"] = artifact_name
+        if artifact_version:
+            ai_ctx["current_version"] = artifact_version
+        if fix_versions:
+            ai_ctx["fix_versions"] = fix_versions
+        if fix_state:
+            ai_ctx["fix_state"] = fix_state
+        cvss = vulnerability.get("cvss") if isinstance(vulnerability, dict) else None
+        if cvss:
+            ai_ctx["cvss"] = cvss
+        if ai_ctx:
+            finding["ai_context"] = ai_ctx
+        return finding
+
     def is_installed(self) -> bool:
         """Check if grype is installed"""
         try:
@@ -697,6 +858,7 @@ class GrypeScanner(ScannerWrapper):
                     "cve_id": cve_id,
                 }
                 finding = self._add_v2_fields(finding, "dependency")
+                finding = self._add_ai_remediation_fields(finding, match)
                 issues.append(finding)
 
             return issues, raw_output_path
