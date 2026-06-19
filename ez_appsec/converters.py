@@ -1,5 +1,6 @@
 """Converters for external scanner outputs to GitLab vulnerability format and GitHub SARIF format"""
 
+import hashlib
 import json
 import uuid
 from datetime import datetime
@@ -19,6 +20,24 @@ def _coerce_line(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _redact_secret(match: Any) -> str:
+    """Render a gitleaks secret match as a non-recoverable masked+hashed form.
+
+    The raw secret substring must never be echoed into reports, artifacts, PR
+    comments, or logs — those surfaces are designed to be public/shared, so
+    republishing the cleartext defeats the purpose of a secret scanner. We keep
+    a short prefix for triage context and a sha256 suffix for stable dedup,
+    neither of which is reversible to the original secret.
+    """
+    if not match:
+        return ""
+    text = str(match)
+    digest = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()[:8]
+    if len(text) <= 8:
+        return f"***{digest}"
+    return f"{text[:4]}…***{digest}"
 
 
 def _coerce_sarif_uri(value: Any) -> str:
@@ -268,7 +287,7 @@ class GitleaksConverter:
 
             vulnerability = GitLabVulnerabilityFormat.create_vulnerability(
                 name=f"Secret: {finding.get('Description', 'Unknown secret')}",
-                message=f"Potential secret found: {finding.get('Match', '')[:50]}...",
+                message=f"Potential secret found: {_redact_secret(finding.get('Match', ''))}",
                 description=f"Gitleaks detected a potential secret leak. Rule: {rule_id}",
                 severity=severity,
                 confidence="high",
@@ -581,7 +600,7 @@ class GitHubGitleaksConverter:
 
             result = GitHubSarifFormat.create_result(
                 rule_id=rule_id,
-                message=f"Potential secret found: {match[:100]}...",
+                message=f"Potential secret found: {_redact_secret(match)}",
                 level=level,
                 locations=[GitHubSarifFormat.create_location(
                     file_path=file_path,

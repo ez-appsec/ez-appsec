@@ -18,6 +18,7 @@ from ez_appsec.converters import (
     SARIF_FINDING_ID_KEY,
     VulnerabilityConverters,
     GitLabVulnerabilityFormat,
+    _redact_secret,
 )
 from ez_appsec.schema import compute_finding_id
 
@@ -558,3 +559,61 @@ class TestGitLabV2Fields:
         sarif_id = sarif["runs"][0]["results"][0]["fingerprints"][SARIF_FINDING_ID_KEY]
         gitlab_id = gitlab["vulnerabilities"][0]["id"]
         assert sarif_id == gitlab_id == compute_finding_id("rule1", "a.py", 5)
+
+
+SECRET = "AKIAIOSFODNN7EXAMPLE"
+
+
+def _write_tmp(payload):
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    json.dump(payload, f)
+    f.flush()
+    f.close()
+    return f.name
+
+
+class TestRedactSecret:
+    """MEDIUM-1 regression: gitleaks secret material must never reach reports/logs."""
+
+    def test_redact_helper_never_returns_raw_secret(self):
+        rendered = _redact_secret(SECRET)
+        assert SECRET not in rendered
+        assert rendered  # non-empty
+
+    def test_redact_helper_short_secret_fully_masked(self):
+        # Secrets <= 8 chars expose no prefix at all.
+        rendered = _redact_secret("abc123")
+        assert "abc123" not in rendered
+        assert rendered.startswith("***")
+
+    def test_redact_helper_empty(self):
+        assert _redact_secret("") == ""
+        assert _redact_secret(None) == ""
+
+    def test_redact_helper_is_stable_for_dedup(self):
+        # Same secret -> same digest suffix, enabling stable dedup across scans.
+        assert _redact_secret(SECRET) == _redact_secret(SECRET)
+
+    def test_gitlab_converter_redacts_match_in_message(self):
+        gitleaks_data = [{
+            "Description": "AWS Access Key", "RuleID": "aws-access-key",
+            "Match": SECRET, "File": "config.py",
+            "StartLine": 10, "EndLine": 10,
+            "Info": {"Severity": "critical"},
+        }]
+        report = GitleaksConverter.convert(_write_tmp(gitleaks_data))
+        message = report["vulnerabilities"][0]["message"]
+        assert SECRET not in message
+        assert SECRET not in json.dumps(report)  # nowhere in the whole report
+
+    def test_sarif_converter_redacts_match_in_message(self):
+        gitleaks_data = [{
+            "Description": "AWS Access Key", "RuleID": "aws-access-key",
+            "Match": SECRET, "File": "config.py",
+            "StartLine": 10, "EndLine": 10,
+            "Info": {"Severity": "critical"},
+        }]
+        sarif = GitHubGitleaksConverter.convert(_write_tmp(gitleaks_data))
+        message = sarif["runs"][0]["results"][0]["message"]["text"]
+        assert SECRET not in message
+        assert SECRET not in json.dumps(sarif)
