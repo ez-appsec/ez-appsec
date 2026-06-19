@@ -1,3 +1,25 @@
+## [1.7.21](https://github.com/ez-appsec/ez-appsec/compare/v1.7.20...v1.7.21) (2026-06-19)
+
+
+### Bug Fixes
+
+* avoid secrets in workflow condition ([118e167](https://github.com/ez-appsec/ez-appsec/commit/118e167588eca1b95bce52828673816efd7e1e76))
+* coerce SARIF artifact URIs to strings ([da2ed0e](https://github.com/ez-appsec/ez-appsec/commit/da2ed0e7e1de49b7839e0aeec9b79c8d7fcd9723))
+* preserve v2 finding fields during scan persistence ([8de8367](https://github.com/ez-appsec/ez-appsec/commit/8de8367967e82ff523bfe16e0ccbdc17a63d1e56))
+* **redact:** mask gitleaks secret material in converter output ([97964ed](https://github.com/ez-appsec/ez-appsec/commit/97964ed50d3032e43ac5ae5def10f9abfae3bf44)), closes [PR#67](https://github.com/PR/issues/67)
+* **sarif:** normalize artifact URIs before upload ([2713ced](https://github.com/ez-appsec/ez-appsec/commit/2713ced3557449410e8f25435d21f3c4265ca890))
+
+
+### Features
+
+* add FindingV2 Pydantic model and stable finding_id computation ([59086f9](https://github.com/ez-appsec/ez-appsec/commit/59086f9d11fd35e2e660d6c25522ece67db2a3f4))
+* **M002-S01-T04:** add scan-level first_seen tracking and ScanRecord persistence ([a07220b](https://github.com/ez-appsec/ez-appsec/commit/a07220b5009261ce08a48e32e8b5b5ef69c90d77))
+* **M002-S01-T05:** pass v2 fields through SARIF and GitLab converters ([72822f5](https://github.com/ez-appsec/ez-appsec/commit/72822f5dddfc5a9cf5a1104d69891cfb7463c269))
+* **M002-S02:** wire scanner storage backend ([108ac84](https://github.com/ez-appsec/ez-appsec/commit/108ac842f0b804b4f364e15bb83c43ce113b71de))
+* **M002-S03:** add exports and observability ([36ec2f7](https://github.com/ez-appsec/ez-appsec/commit/36ec2f7ffc48faef90dd8e8a65ac8386d8f9620e))
+* Reactive execute for T02,T03 ([30f0860](https://github.com/ez-appsec/ez-appsec/commit/30f0860f614e6413181f54a8b9e4bce27d0027f7))
+* **ux:** surface v2 signal in CLI, PR comments, and JSON output ([3f731ab](https://github.com/ez-appsec/ez-appsec/commit/3f731ab869fbd54cb7cc256983b642805b514667))
+
 ## [1.7.20](https://github.com/ez-appsec/ez-appsec/compare/v1.7.19...v1.7.20) (2026-05-13)
 
 
