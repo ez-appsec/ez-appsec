@@ -31,7 +31,7 @@ _OPTIONAL_NOISE_FIELDS = frozenset({
 })
 
 
-def _slim_finding_payload(finding: FindingV2) -> Dict[str, Any]:
+def _slim_finding_payload(finding: FindingV2) -> dict[str, Any]:
     """Serialize a finding, dropping empty optional fields to reduce JSON noise."""
     data = finding.model_dump(mode="json", exclude_none=True)
     for key in _OPTIONAL_NOISE_FIELDS:
