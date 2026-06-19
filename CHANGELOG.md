@@ -1,3 +1,10 @@
+## [1.7.22](https://github.com/ez-appsec/ez-appsec/compare/v1.7.21...v1.7.22) (2026-06-19)
+
+
+### Features
+
+* add REST API for querying findings and triggering scans (PLAN-14) ([#27](https://github.com/ez-appsec/ez-appsec/issues/27)) ([8df73f6](https://github.com/ez-appsec/ez-appsec/commit/8df73f6a0dea5b656357f78e4948fb6ffda2a3c2))
+
 ## [1.7.21](https://github.com/ez-appsec/ez-appsec/compare/v1.7.20...v1.7.21) (2026-06-19)
 
 
