@@ -27,6 +27,8 @@ class TestSQLInjectionDetection:
     def test_mysql_sql_injection_is_detected(self):
         """Verify MySQL SQL injection patterns are detected"""
         scanner = SemgrepScanner()
+        if not scanner.is_installed():
+            pytest.skip("semgrep not installed")
 
         if not scanner.is_installed():
             pytest.skip("semgrep not installed")

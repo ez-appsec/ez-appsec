@@ -6,7 +6,8 @@ Measures scan time, resource usage, and scalability across codebase sizes.
 import pytest
 import time
 import os
-import psutil
+
+psutil = pytest.importorskip("psutil", reason="psutil not installed")
 import tempfile
 import shutil
 from pathlib import Path
@@ -72,7 +73,6 @@ def test_config():
     """Test configuration optimized for performance tests"""
     config = Config()
     config.severity = "medium"
-    config.max_findings = 1000
     return config
 
 
@@ -248,7 +248,6 @@ class TestScalingCharacteristics:
                 continue
             ratio = durations[i] / durations[i-1]
             size_ratio = sizes[i] / sizes[i-1]
-            # Time ratio should be between 0.5x and 3x of size ratio
             assert 0.5 * size_ratio <= ratio <= 3 * size_ratio, \
                 f"Non-linear scaling detected: size {sizes[i-1]}->{sizes[i]}, time {durations[i-1]:.2f}->{durations[i]:.2f}s"
 
