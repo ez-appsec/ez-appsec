@@ -26,6 +26,7 @@ class GitHubDashboard {
         this.scannerFilter  = document.getElementById('scanner-filter');
         this.searchFilter   = document.getElementById('search-filter');
         this.resetButton    = document.getElementById('reset-filters');
+        this.exportButtons  = {};
         this.container      = document.getElementById('vulnerabilities-container');
         this.projectTree    = document.getElementById('project-tree');
         this.sidebar        = document.getElementById('sidebar');
@@ -42,6 +43,7 @@ class GitHubDashboard {
     }
 
     async init() {
+        this.createExportControls();
         this.attachEventListeners();
         this.initModal();
         this.initRemediationModal();
@@ -191,6 +193,34 @@ class GitHubDashboard {
         this.scannerFilter.addEventListener('change',  () => this.applyFilters());
         this.searchFilter.addEventListener('input',    () => this.applyFilters());
         this.resetButton.addEventListener('click',     () => this.resetFilters());
+        this.exportButtons.csv?.addEventListener('click',   () => this.exportFindings('csv'));
+        this.exportButtons.sarif?.addEventListener('click', () => this.exportFindings('sarif'));
+        this.exportButtons.json?.addEventListener('click',  () => this.exportFindings('json'));
+    }
+
+    createExportControls() {
+        const toolbar = document.querySelector('.filter-bar__inner');
+        if (!toolbar || toolbar.querySelector('.export-actions')) return;
+
+        const group = document.createElement('div');
+        group.className = 'export-actions';
+        group.setAttribute('aria-label', 'Export filtered findings');
+
+        [
+            ['csv', 'Export CSV'],
+            ['sarif', 'Export SARIF'],
+            ['json', 'Export JSON']
+        ].forEach(([format, label]) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.id = `export-${format}`;
+            button.className = 'btn btn--outline btn--sm btn--export';
+            button.textContent = label;
+            group.appendChild(button);
+            this.exportButtons[format] = button;
+        });
+
+        toolbar.appendChild(group);
     }
 
     resetFilters() {
@@ -198,6 +228,198 @@ class GitHubDashboard {
         this.scannerFilter.value  = '';
         this.searchFilter.value   = '';
         this.applyFilters();
+    }
+
+    // ── Exports ────────────────────────────────────────────────────
+
+    exportFindings(format) {
+        const findings = this.getCurrentExportFindings();
+        const serializers = {
+            csv: () => ({
+                body: this.serializeFindingsToCsv(findings),
+                mime: 'text/csv;charset=utf-8',
+                filename: 'ez-appsec-findings.csv'
+            }),
+            sarif: () => ({
+                body: JSON.stringify(this.serializeFindingsToSarif(findings), null, 2),
+                mime: 'application/sarif+json;charset=utf-8',
+                filename: 'ez-appsec-findings.sarif.json'
+            }),
+            json: () => ({
+                body: JSON.stringify(findings, null, 2),
+                mime: 'application/json;charset=utf-8',
+                filename: 'ez-appsec-findings.json'
+            })
+        };
+
+        if (!serializers[format]) return;
+        const exportPayload = serializers[format]();
+        this.triggerDownload(exportPayload.body, exportPayload.mime, exportPayload.filename);
+    }
+
+    getCurrentExportFindings() {
+        return Array.isArray(this.filteredVulnerabilities)
+            ? this.filteredVulnerabilities
+            : this.allVulnerabilities;
+    }
+
+    serializeFindingsToCsv(findings) {
+        const headers = [
+            'finding_id',
+            'severity',
+            'rule_id',
+            'file_name',
+            'start_line',
+            'category',
+            'description',
+            'solution',
+            'scanner',
+            'first_seen'
+        ];
+
+        const rows = findings.map(finding => headers.map(header => this.csvEscape(this.getExportField(finding, header))));
+        return [headers.map(header => this.csvEscape(header)), ...rows]
+            .map(row => row.join(','))
+            .join('\r\n') + '\r\n';
+    }
+
+    serializeFindingsToSarif(findings) {
+        const rules = new Map();
+        const results = findings.map(finding => {
+            const ruleId = this.getExportField(finding, 'rule_id') || this.getExportField(finding, 'scanner') || 'ez-appsec-finding';
+            const description = this.getExportField(finding, 'description') || 'Security finding';
+            const fileName = this.getExportField(finding, 'file_name');
+            const startLine = this.toSarifLine(this.getExportField(finding, 'start_line'));
+            const result = {
+                ruleId,
+                level: this.mapSeverityToSarifLevel(this.getExportField(finding, 'severity')),
+                message: { text: description }
+            };
+
+            if (fileName) {
+                result.locations = [
+                    {
+                        physicalLocation: {
+                            artifactLocation: { uri: fileName },
+                            region: { startLine, endLine: startLine, startColumn: 1, endColumn: 1 }
+                        }
+                    }
+                ];
+            }
+
+            const findingId = this.getExportField(finding, 'finding_id');
+            if (findingId) {
+                result.fingerprints = { 'ezAppsecFindingId/v1': findingId };
+            }
+
+            const properties = {};
+            ['category', 'first_seen', 'severity', 'scanner'].forEach(key => {
+                const value = this.getExportField(finding, key);
+                if (value) properties[key] = value;
+            });
+            if (Object.keys(properties).length > 0) {
+                result.properties = properties;
+            }
+
+            if (!rules.has(ruleId)) {
+                rules.set(ruleId, {
+                    id: ruleId,
+                    name: ruleId,
+                    shortDescription: { text: description }
+                });
+            }
+
+            return result;
+        });
+
+        return {
+            version: '2.1.0',
+            '$schema': 'https://json.schemastore.org/sarif-2.1.0.json',
+            runs: [
+                {
+                    tool: {
+                        driver: {
+                            name: 'ez-appsec',
+                            informationUri: 'https://github.com/ez-appsec/ez-appsec',
+                            rules: Array.from(rules.values())
+                        }
+                    },
+                    results
+                }
+            ]
+        };
+    }
+
+    getExportField(finding, field) {
+        const fallbackKeys = {
+            finding_id: ['finding_id', 'id', 'fingerprint'],
+            severity: ['severity'],
+            rule_id: ['rule_id', 'ruleId', 'check_id', 'name'],
+            file_name: ['file_name', 'file', 'path'],
+            start_line: ['start_line', 'line', 'line_number'],
+            category: ['category', 'type'],
+            description: ['description', 'message', 'name'],
+            solution: ['solution', 'remediation', 'fix'],
+            scanner: ['scanner'],
+            first_seen: ['first_seen', 'firstSeen']
+        };
+
+        for (const key of fallbackKeys[field] || [field]) {
+            const value = finding?.[key];
+            if (value !== undefined && value !== null && value !== '') {
+                return this.stringifyExportValue(value);
+            }
+        }
+        return '';
+    }
+
+    stringifyExportValue(value) {
+        if (typeof value === 'string') return value;
+        if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+        try {
+            return JSON.stringify(value);
+        } catch (error) {
+            return String(value);
+        }
+    }
+
+    csvEscape(value) {
+        return `"${String(value).replace(/"/g, '""')}"`;
+    }
+
+    mapSeverityToSarifLevel(severity) {
+        const mapping = {
+            critical: 'error',
+            high: 'error',
+            medium: 'warning',
+            low: 'note',
+            info: 'note'
+        };
+        return mapping[String(severity).toLowerCase()] || 'warning';
+    }
+
+    toSarifLine(value) {
+        const parsed = Number.parseInt(value, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    }
+
+    triggerDownload(body, mime, filename) {
+        const safeFilenames = new Set([
+            'ez-appsec-findings.csv',
+            'ez-appsec-findings.sarif.json',
+            'ez-appsec-findings.json'
+        ]);
+        const safeFilename = safeFilenames.has(filename) ? filename : 'ez-appsec-findings.json';
+        const blob = new Blob([body], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = safeFilename;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
     }
 
     // ── Config ─────────────────────────────────────────────────────

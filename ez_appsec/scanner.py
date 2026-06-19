@@ -1,6 +1,11 @@
 """Core security scanning engine"""
 
+import importlib.util
+import json
+import logging
 import os
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from ez_appsec.config import Config
@@ -9,12 +14,104 @@ from ez_appsec.external_scanners import ExternalScannerManager
 from ez_appsec.converters import VulnerabilityConverters, GitLabVulnerabilityFormat
 from ez_appsec.policy import PolicyEngine
 from ez_appsec.license_checker import check_licenses
+from ez_appsec.schema import ScanRecord, compute_finding_id, finding_from_issue, generate_scan_id
+from ez_appsec.storage import get_storage_backend
+
+
+logger = logging.getLogger(__name__)
+
+
+_JSON_LOG_RESERVED = {
+    "args",
+    "asctime",
+    "created",
+    "exc_info",
+    "exc_text",
+    "filename",
+    "funcName",
+    "levelname",
+    "levelno",
+    "lineno",
+    "module",
+    "msecs",
+    "message",
+    "msg",
+    "name",
+    "pathname",
+    "process",
+    "processName",
+    "relativeCreated",
+    "stack_info",
+    "thread",
+    "threadName",
+}
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Format log records as single-line JSON for machine ingestion."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(),
+            "level": record.levelname,
+            "message": record.getMessage(),
+        }
+
+        for key, value in record.__dict__.items():
+            if key in _JSON_LOG_RESERVED or key.startswith("_"):
+                continue
+            payload[key] = value
+
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(payload, default=str, separators=(",", ":"))
+
+
+def configure_logging_from_env() -> bool:
+    """Enable structured JSON logging when EZ_APPSEC_LOG_FORMAT=json is set."""
+    if os.getenv("EZ_APPSEC_LOG_FORMAT", "").lower() != "json":
+        return False
+
+    formatter = JsonLogFormatter()
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+    else:
+        for handler in root_logger.handlers:
+            handler.setFormatter(formatter)
+    return True
+
+
+def _opentelemetry_sdk_available() -> bool:
+    """Return True when the optional OpenTelemetry SDK extra is installed."""
+    try:
+        return importlib.util.find_spec("opentelemetry.sdk") is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+def _build_otel_attributes(issue: Dict[str, Any], scan_id: str) -> Dict[str, Any]:
+    """Build stable OpenTelemetry span attributes for a finding."""
+    attrs: Dict[str, Any] = {
+        "ez_appsec.scan_id": scan_id,
+        "ez_appsec.finding_id": issue.get("finding_id", ""),
+        "ez_appsec.rule_id": issue.get("rule_id", ""),
+        "ez_appsec.severity": issue.get("severity", ""),
+        "ez_appsec.category": issue.get("category", "unknown"),
+        "code.filepath": issue.get("file", ""),
+        "code.lineno": issue.get("line", 0),
+    }
+    return {key: value for key, value in attrs.items() if value not in (None, "")}
 
 
 class SecurityScanner:
     """Main security scanner orchestrating all detection mechanisms"""
 
     def __init__(self, config: Config, use_external_scanners: bool = True, license_check: bool = False):
+        configure_logging_from_env()
         self.config = config
         self.use_external = use_external_scanners
         self.license_check = license_check
@@ -27,11 +124,120 @@ class SecurityScanner:
 
         # Track suppressed findings for reporting
         self.suppressed_count = 0
-    
+
+        # Storage backend for finding persistence and previous-scan lookup
+        self.storage_backend = get_storage_backend()
+
+    def _results_path(self, base_path: Path) -> Path:
+        """Return the JSON results path used for previous-scan lookup."""
+        configured_output = getattr(self.config, "output_file", None)
+        if configured_output:
+            return Path(configured_output)
+        if base_path.is_dir():
+            return base_path / "vulnerabilities.json"
+        return base_path.parent / "vulnerabilities.json"
+
+    def _load_previous_findings(self, results_path: Path) -> List[Dict[str, Any]]:
+        """Load prior findings through the configured storage backend if present."""
+        if not results_path.exists():
+            return []
+
+        try:
+            findings = self.storage_backend.read_findings(results_path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return []
+
+        return [finding.model_dump(mode="json") for finding in findings]
+
+    @staticmethod
+    def _coerce_line(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            normalized = value.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized)
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+
+    def _ensure_finding_id(self, issue: Dict[str, Any]) -> str:
+        existing = issue.get("finding_id")
+        if existing:
+            return str(existing)
+
+        rule_id = issue.get("rule_id") or issue.get("id") or issue.get("check_id") or ""
+        file_path = issue.get("file") or issue.get("path") or issue.get("filename") or ""
+        line = self._coerce_line(issue.get("line") or issue.get("start_line"))
+        finding_id = compute_finding_id(str(rule_id), str(file_path), line)
+        issue["finding_id"] = finding_id
+        return finding_id
+
+    def _apply_scan_tracking(
+        self,
+        issues: List[Dict[str, Any]],
+        previous_findings: List[Dict[str, Any]],
+        scan_id: str,
+        scan_timestamp: datetime,
+    ) -> Dict[str, int]:
+        """Populate v2 temporal tracking fields on current findings."""
+        scan_ts = scan_timestamp.isoformat()
+        previous_by_id = {
+            self._ensure_finding_id(previous): previous
+            for previous in previous_findings
+            if isinstance(previous, dict)
+        }
+
+        current_ids = set()
+        new_count = 0
+        otel_enabled = _opentelemetry_sdk_available()
+
+        for issue in issues:
+            finding_id = self._ensure_finding_id(issue)
+            current_ids.add(finding_id)
+            previous = previous_by_id.get(finding_id)
+
+            if previous:
+                first_seen_dt = self._parse_timestamp(previous.get("first_seen")) or scan_timestamp
+                trend = "unchanged"
+            else:
+                first_seen_dt = scan_timestamp
+                trend = "new"
+                new_count += 1
+
+            age_days = max((scan_timestamp.date() - first_seen_dt.date()).days, 0)
+
+            issue["scan_id"] = scan_id
+            issue["scan_timestamp"] = scan_ts
+            issue["first_seen"] = first_seen_dt.isoformat()
+            issue["last_seen"] = scan_ts
+            issue["age_days"] = age_days
+            issue["trend"] = trend
+            issue["schema_version"] = "2"
+            if otel_enabled:
+                issue["otel_attributes"] = _build_otel_attributes(issue, scan_id)
+
+        resolved_count = len(set(previous_by_id) - current_ids)
+        return {"new_count": new_count, "resolved_count": resolved_count}
+
     def scan(self, path: str, custom_prompt: str = None) -> Dict[str, Any]:
         """Execute full security scan using external scanners only"""
 
+        started_at = time.monotonic()
+        scan_id = generate_scan_id()
+        scan_timestamp = datetime.now(timezone.utc)
         base_path = Path(path)
+        results_path = self._results_path(base_path)
+        logger.info("Using storage backend: %s", self.storage_backend.__class__.__name__)
+        previous_findings = self._load_previous_findings(results_path)
         issues = []
         scanner_results = {}
 
@@ -66,11 +272,31 @@ class SecurityScanner:
         if self.config.severity != "all":
             issues = self._filter_by_severity(issues, self.config.severity)
 
+        tracking_counts = self._apply_scan_tracking(
+            issues, previous_findings, scan_id, scan_timestamp
+        )
+
         # Sort by severity
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         issues.sort(
             key=lambda x: severity_order.get(x.get("severity", "low"), 4)
         )
+
+        scan_record = ScanRecord(
+            scan_id=scan_id,
+            scan_timestamp=scan_timestamp,
+            project=str(base_path),
+            scanner_versions={},
+            finding_count=len(issues),
+            new_count=tracking_counts["new_count"],
+            resolved_count=tracking_counts["resolved_count"],
+            duration_seconds=time.monotonic() - started_at,
+        )
+        configured_output = getattr(self.config, "output_file", None)
+        output_path = None
+        if configured_output:
+            stored_findings = [finding_from_issue(issue) for issue in issues]
+            output_path = self.storage_backend.write_findings(stored_findings, scan_record, results_path)
 
         result = {
             "issues": issues,
@@ -78,7 +304,11 @@ class SecurityScanner:
             "suppressed": self.suppressed_count,
             "path": str(base_path),
             "scanner_results": scanner_results,
+            "scan_record": scan_record.model_dump(mode="json"),
         }
+        if output_path is not None:
+            result["output_path"] = str(output_path)
+            result["scan_record_path"] = str(output_path.with_name("scan_record.json"))
 
         if policy_result is not None:
             result["policy_violations"] = policy_result["violations"]
@@ -88,6 +318,18 @@ class SecurityScanner:
         if license_result is not None:
             result["license_summary"] = license_result["summary"]
             result["license_packages"] = license_result["packages"]
+
+        logger.info(
+            "Security scan completed",
+            extra={
+                "scan_id": scan_id,
+                "finding_count": len(issues),
+                "new_count": tracking_counts["new_count"],
+                "resolved_count": tracking_counts["resolved_count"],
+                "suppressed_count": self.suppressed_count,
+                "storage_backend": self.storage_backend.__class__.__name__,
+            },
+        )
 
         return result
 

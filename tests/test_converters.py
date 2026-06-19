@@ -11,9 +11,16 @@ from ez_appsec.converters import (
     GitHubSemgrepConverter,
     GitHubKicsConverter,
     GitHubGrypeConverter,
+    GitleaksConverter,
+    SemgrepConverter,
+    KicsConverter,
+    GrypeConverter,
+    SARIF_FINDING_ID_KEY,
     VulnerabilityConverters,
-    GitLabVulnerabilityFormat
+    GitLabVulnerabilityFormat,
+    _redact_secret,
 )
+from ez_appsec.schema import compute_finding_id
 
 
 class TestGitHubSarifFormat:
@@ -76,6 +83,43 @@ class TestGitHubSarifFormat:
         assert location["physicalLocation"]["region"]["endLine"] == 10
         assert location["physicalLocation"]["region"]["startColumn"] == 1
         assert location["physicalLocation"]["region"]["endColumn"] == 50
+
+    @pytest.mark.parametrize(
+        ("file_path", "expected_uri"),
+        [
+            ({"uri": "src/app.py"}, "src/app.py"),
+            ({"file": "src/file.py"}, "src/file.py"),
+            ({"path": Path("src/path.py")}, "src/path.py"),
+            (["src/list.py"], "src/list.py"),
+            (Path("src\\windows.py"), "src/windows.py"),
+            (None, "unknown"),
+        ],
+    )
+    def test_create_location_coerces_artifact_uri_to_string(self, file_path, expected_uri):
+        """SARIF upload requires artifactLocation.uri to be a string."""
+        location = GitHubSarifFormat.create_location(file_path=file_path)
+
+        uri = location["physicalLocation"]["artifactLocation"]["uri"]
+        assert uri == expected_uri
+        assert isinstance(uri, str)
+
+    def test_create_location_coerces_region_values_to_positive_ints(self):
+        """SARIF region values should stay primitive ints even from scanner strings."""
+        location = GitHubSarifFormat.create_location(
+            file_path="test.py",
+            start_line="not-a-line",
+            end_line="12",
+            start_column=None,
+            end_column="3",
+        )
+
+        region = location["physicalLocation"]["region"]
+        assert region == {
+            "startLine": 1,
+            "endLine": 12,
+            "startColumn": 1,
+            "endColumn": 3,
+        }
 
     def test_map_severity_to_level(self):
         """Test severity to SARIF level mapping"""
@@ -303,3 +347,273 @@ class TestVulnerabilityConverters:
 
         assert len(merged["runs"][0]["results"]) == 2
         assert merged["runs"][0]["tool"]["driver"]["name"] == "ez-appsec"
+
+
+class TestSarifV2Fields:
+    """v2 field passthrough in SARIF helpers and converters."""
+
+    def test_v1_call_omits_v2_fields(self):
+        """v1 callers (no v2 kwargs) get a result with no fingerprints/properties."""
+        result = GitHubSarifFormat.create_result(
+            rule_id="R1", message="m", level="warning"
+        )
+        assert "fingerprints" not in result
+        assert "properties" not in result
+
+    def test_v2_finding_id_emitted_as_fingerprint(self):
+        result = GitHubSarifFormat.create_result(
+            rule_id="R1", message="m", finding_id="abc123",
+        )
+        assert result["fingerprints"][SARIF_FINDING_ID_KEY] == "abc123"
+
+    def test_v2_category_and_first_seen_in_properties(self):
+        result = GitHubSarifFormat.create_result(
+            rule_id="R1", message="m",
+            category="sast",
+            first_seen="2026-06-18T07:00:00+00:00",
+        )
+        assert result["properties"]["category"] == "sast"
+        assert result["properties"]["first_seen"] == "2026-06-18T07:00:00+00:00"
+
+    def test_gitleaks_to_sarif_includes_v2_fields(self):
+        gitleaks_data = [{
+            "Description": "AWS Access Key",
+            "RuleID": "aws-access-key",
+            "Match": "x", "File": "config.py",
+            "StartLine": 10, "EndLine": 10,
+            "Info": {"Severity": "critical"},
+        }]
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(gitleaks_data, f); f.flush()
+            report = GitHubGitleaksConverter.convert(f.name)
+
+        result = report["runs"][0]["results"][0]
+        expected_id = compute_finding_id("aws-access-key", "config.py", 10)
+        assert result["fingerprints"][SARIF_FINDING_ID_KEY] == expected_id
+        assert result["properties"]["category"] == "hardcoded-secret"
+
+    def test_semgrep_to_sarif_includes_v2_fields(self):
+        semgrep_data = {
+            "results": [{
+                "check_id": "py.flask.xss",
+                "path": "app.py",
+                "start": {"line": 20, "col": 1},
+                "end": {"line": 20, "col": 50},
+                "extra": {"message": "XSS", "severity": "ERROR",
+                          "metadata": {"security-severity": "high"}},
+            }]
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(semgrep_data, f); f.flush()
+            report = GitHubSemgrepConverter.convert(f.name)
+
+        result = report["runs"][0]["results"][0]
+        expected_id = compute_finding_id("py.flask.xss", "app.py", 20)
+        assert result["fingerprints"][SARIF_FINDING_ID_KEY] == expected_id
+        assert result["properties"]["category"] == "sast"
+
+    def test_kics_to_sarif_includes_v2_fields(self):
+        kics_data = {
+            "queries": [{
+                "queryName": "S3 public",
+                "description": "S3 public access",
+                "severity": "HIGH",
+                "files": ["terraform/s3.tf"],
+            }]
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(kics_data, f); f.flush()
+            report = GitHubKicsConverter.convert(f.name)
+
+        result = report["runs"][0]["results"][0]
+        expected_id = compute_finding_id("S3 public", "terraform/s3.tf", 1)
+        assert result["fingerprints"][SARIF_FINDING_ID_KEY] == expected_id
+        assert result["properties"]["category"] == "iac"
+
+    def test_grype_to_sarif_includes_v2_fields(self):
+        grype_data = {
+            "matches": [{
+                "artifact": {"name": "requests", "version": "2.20.0"},
+                "vulnerability": {
+                    "id": "CVE-2023-12345",
+                    "severity": "High",
+                    "description": "x",
+                    "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2023-12345",
+                },
+            }]
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(grype_data, f); f.flush()
+            report = GitHubGrypeConverter.convert(f.name)
+
+        result = report["runs"][0]["results"][0]
+        expected_id = compute_finding_id("CVE-2023-12345", "dependency:requests", 0)
+        assert result["fingerprints"][SARIF_FINDING_ID_KEY] == expected_id
+        assert result["properties"]["category"] == "dependency"
+
+
+class TestGitLabV2Fields:
+    """v2 field passthrough in GitLab helpers and converters."""
+
+    def test_v1_call_omits_v2_fields_and_gets_uuid_id(self):
+        vuln = GitLabVulnerabilityFormat.create_vulnerability(
+            name="n", message="m", description="d", severity="high",
+        )
+        assert "category_v2" not in vuln
+        assert "first_seen" not in vuln
+        # v1 id should still be a UUID-style string
+        assert isinstance(vuln["id"], str) and len(vuln["id"]) >= 32
+
+    def test_finding_id_replaces_uuid_when_provided(self):
+        vuln = GitLabVulnerabilityFormat.create_vulnerability(
+            name="n", message="m", description="d", severity="high",
+            finding_id="stable-id-1",
+            category_v2="sast",
+            first_seen="2026-06-18T07:00:00+00:00",
+        )
+        assert vuln["id"] == "stable-id-1"
+        assert vuln["category_v2"] == "sast"
+        assert vuln["first_seen"] == "2026-06-18T07:00:00+00:00"
+        # GitLab top-level category enum stays unchanged
+        assert vuln["category"] == "sast"
+
+    def test_gitleaks_to_gitlab_includes_v2_fields(self):
+        gitleaks_data = [{
+            "Description": "AWS Access Key", "RuleID": "aws-access-key",
+            "Match": "x", "File": "config.py",
+            "StartLine": 10, "EndLine": 10,
+            "Info": {"Severity": "critical"},
+        }]
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(gitleaks_data, f); f.flush()
+            report = GitleaksConverter.convert(f.name)
+
+        vuln = report["vulnerabilities"][0]
+        assert vuln["id"] == compute_finding_id("aws-access-key", "config.py", 10)
+        assert vuln["category_v2"] == "hardcoded-secret"
+
+    def test_semgrep_to_gitlab_includes_v2_fields(self):
+        semgrep_data = {
+            "results": [{
+                "check_id": "py.flask.xss",
+                "path": "app.py",
+                "start": {"line": 20}, "end": {"line": 20},
+                "extra": {"message": "XSS", "severity": "ERROR",
+                          "metadata": {"security-severity": "high"}},
+            }]
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(semgrep_data, f); f.flush()
+            report = SemgrepConverter.convert(f.name)
+
+        vuln = report["vulnerabilities"][0]
+        assert vuln["id"] == compute_finding_id("py.flask.xss", "app.py", 20)
+        assert vuln["category_v2"] == "sast"
+
+    def test_kics_to_gitlab_includes_v2_fields(self):
+        kics_data = {
+            "queries": [{
+                "queryName": "S3 public",
+                "description": "S3 public access",
+                "severity": "HIGH",
+                "files": ["terraform/s3.tf"],
+            }]
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(kics_data, f); f.flush()
+            report = KicsConverter.convert(f.name)
+
+        vuln = report["vulnerabilities"][0]
+        assert vuln["id"] == compute_finding_id("S3 public", "terraform/s3.tf", 1)
+        assert vuln["category_v2"] == "iac"
+
+    def test_grype_to_gitlab_includes_v2_fields(self):
+        grype_data = {
+            "matches": [{
+                "artifact": {"name": "requests", "version": "2.20.0"},
+                "vulnerability": {"id": "CVE-2023-12345", "severity": "High",
+                                  "description": "x", "dataSource": ""},
+            }]
+        }
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(grype_data, f); f.flush()
+            report = GrypeConverter.convert(f.name)
+
+        vuln = report["vulnerabilities"][0]
+        assert vuln["id"] == compute_finding_id("CVE-2023-12345", "dependency:requests", 0)
+        assert vuln["category_v2"] == "dependency"
+
+    def test_finding_id_is_stable_across_runs(self):
+        """Same input → same finding_id across both SARIF and GitLab converters."""
+        gitleaks_data = [{
+            "Description": "x", "RuleID": "rule1",
+            "Match": "x", "File": "a.py",
+            "StartLine": 5, "EndLine": 5,
+            "Info": {"Severity": "high"},
+        }]
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(gitleaks_data, f); f.flush()
+            sarif = GitHubGitleaksConverter.convert(f.name)
+            gitlab = GitleaksConverter.convert(f.name)
+
+        sarif_id = sarif["runs"][0]["results"][0]["fingerprints"][SARIF_FINDING_ID_KEY]
+        gitlab_id = gitlab["vulnerabilities"][0]["id"]
+        assert sarif_id == gitlab_id == compute_finding_id("rule1", "a.py", 5)
+
+
+SECRET = "AKIAIOSFODNN7EXAMPLE"
+
+
+def _write_tmp(payload):
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    json.dump(payload, f)
+    f.flush()
+    f.close()
+    return f.name
+
+
+class TestRedactSecret:
+    """MEDIUM-1 regression: gitleaks secret material must never reach reports/logs."""
+
+    def test_redact_helper_never_returns_raw_secret(self):
+        rendered = _redact_secret(SECRET)
+        assert SECRET not in rendered
+        assert rendered  # non-empty
+
+    def test_redact_helper_short_secret_fully_masked(self):
+        # Secrets <= 8 chars expose no prefix at all.
+        rendered = _redact_secret("abc123")
+        assert "abc123" not in rendered
+        assert rendered.startswith("***")
+
+    def test_redact_helper_empty(self):
+        assert _redact_secret("") == ""
+        assert _redact_secret(None) == ""
+
+    def test_redact_helper_is_stable_for_dedup(self):
+        # Same secret -> same digest suffix, enabling stable dedup across scans.
+        assert _redact_secret(SECRET) == _redact_secret(SECRET)
+
+    def test_gitlab_converter_redacts_match_in_message(self):
+        gitleaks_data = [{
+            "Description": "AWS Access Key", "RuleID": "aws-access-key",
+            "Match": SECRET, "File": "config.py",
+            "StartLine": 10, "EndLine": 10,
+            "Info": {"Severity": "critical"},
+        }]
+        report = GitleaksConverter.convert(_write_tmp(gitleaks_data))
+        message = report["vulnerabilities"][0]["message"]
+        assert SECRET not in message
+        assert SECRET not in json.dumps(report)  # nowhere in the whole report
+
+    def test_sarif_converter_redacts_match_in_message(self):
+        gitleaks_data = [{
+            "Description": "AWS Access Key", "RuleID": "aws-access-key",
+            "Match": SECRET, "File": "config.py",
+            "StartLine": 10, "EndLine": 10,
+            "Info": {"Severity": "critical"},
+        }]
+        sarif = GitHubGitleaksConverter.convert(_write_tmp(gitleaks_data))
+        message = sarif["runs"][0]["results"][0]["message"]["text"]
+        assert SECRET not in message
+        assert SECRET not in json.dumps(sarif)

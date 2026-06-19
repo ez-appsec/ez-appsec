@@ -354,6 +354,44 @@ class TestErrorHandling:
         result = runner.invoke(main, ['scan', str(link_path)])
         assert result.exit_code == 0
 
+    def test_serve_metrics_help_exposes_flags(self):
+        """UX-1: the v2 metrics endpoint must be reachable from the CLI."""
+        runner = CliRunner()
+        result = runner.invoke(main, ['serve-metrics', '--help'])
+        assert result.exit_code == 0
+        assert 'serve-metrics' in result.output or 'Serve Prometheus' in result.output
+        assert '--storage-backend' in result.output
+        assert '--host' in result.output
+        assert '--project' in result.output
+
+    def test_scan_summary_shows_trend_when_v2_computed(self, tmp_path, monkeypatch):
+        """UX-1: new/resolved counts computed by the scanner must reach stdout."""
+        from ez_appsec import scanner as scanner_mod
+
+        sample_file = tmp_path / "sample.py"
+        sample_file.write_text("password = 'hardcoded'\n")
+
+        real_scan = scanner_mod.SecurityScanner.scan
+
+        def fake_scan(self, path, custom_prompt=None):
+            result = real_scan(self, path, custom_prompt)
+            result["scan_record"] = {
+                "scan_id": "s1", "new_count": 3, "resolved_count": 1,
+                "finding_count": 5,
+            }
+            # Make a couple of findings look aged for the >30d line.
+            for issue in result.get("issues", []):
+                issue["age_days"] = 45
+            return result
+
+        monkeypatch.setattr(scanner_mod.SecurityScanner, "scan", fake_scan)
+        runner = CliRunner()
+        result = runner.invoke(main, ['scan', str(sample_file)])
+        assert result.exit_code == 0
+        assert 'Trend:' in result.output
+        assert '3 new' in result.output
+        assert '1 resolved' in result.output
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

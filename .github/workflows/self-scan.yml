@@ -37,13 +37,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # -----------------------------------------------------------------------
       # Install ez-appsec from source
       # -----------------------------------------------------------------------
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: pip
@@ -91,13 +91,46 @@ jobs:
       - name: Count findings
         id: count
         run: |
-          COUNT=$(python3 -c "
-          import json
-          data = json.load(open('${SARIF_FILE}'))
-          print(len(data['runs'][0]['results']))
-          ")
-          echo "findings-count=$COUNT" >> "$GITHUB_OUTPUT"
-          echo "Findings: $COUNT"
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          data = json.load(open(os.environ['SARIF_FILE']))
+          results = data.get('runs', [{}])[0].get('results', [])
+          print(f"findings-count={len(results)}")
+          PY
+          echo "Findings: $(awk -F= '/^findings-count=/{print $2}' "$GITHUB_OUTPUT")"
+
+      - name: Summarize vulnerabilities (severity + trend)
+        id: summarize
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          from collections import Counter
+          path = os.environ['VULNS_FILE']
+          try:
+              data = json.load(open(path))
+          except (FileNotFoundError, json.JSONDecodeError):
+              print("summary-json={}")
+              raise SystemExit(0)
+          vulns = data.get('vulnerabilities', []) if isinstance(data, dict) else data
+          sev = Counter((v.get('severity') or 'unknown').lower() for v in vulns)
+          trends = Counter((v.get('trend') or 'unchanged').lower() for v in vulns)
+          summary = {
+              'total': len(vulns),
+              'critical': sev.get('critical', 0),
+              'high': sev.get('high', 0),
+              'medium': sev.get('medium', 0),
+              'low': sev.get('low', 0),
+              'info': sev.get('info', 0),
+              'new': trends.get('new', 0),
+              'unchanged': trends.get('unchanged', 0),
+              'resolved': trends.get('resolved', 0),
+          }
+          import json as _j
+          print(f"summary-json={_j.dumps(summary)}")
+          PY
+        env:
+          VULNS_FILE: ${{ env.OUTPUT_DIR }}/vulnerabilities.json
 
       - name: Generate vulnerabilities.json
         id: web-report
@@ -109,14 +142,14 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Upload SARIF to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ${{ env.SARIF_FILE }}
         continue-on-error: true
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ez-appsec-self-scan-${{ github.sha }}
           path: ${{ env.OUTPUT_DIR }}/
@@ -126,10 +159,24 @@ jobs:
       # -----------------------------------------------------------------------
       # Push to dashboard (main branch only)
       # -----------------------------------------------------------------------
+      - name: Check dashboard app credentials
+        id: dashboard-creds
+        if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request' && vars.EZ_APPSEC_DASHBOARD_REPO != ''
+        env:
+          EZ_APPSEC_APP_ID: ${{ secrets.EZ_APPSEC_APP_ID }}
+          EZ_APPSEC_PRIVATE_KEY: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
+        run: |
+          if [ -n "${EZ_APPSEC_APP_ID}" ] && [ -n "${EZ_APPSEC_PRIVATE_KEY}" ]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "Dashboard app credentials are not configured — skipping dashboard token mint."
+          fi
+
       - name: Mint App token for dashboard push
         id: dash-token
-        if: steps.web-report.outcome == 'success' && github.event_name != 'pull_request' && vars.EZ_APPSEC_DASHBOARD_REPO != '' && secrets.EZ_APPSEC_APP_ID != ''
-        uses: actions/create-github-app-token@v1
+        if: steps.dashboard-creds.outputs.enabled == 'true'
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.EZ_APPSEC_APP_ID }}
           private-key: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
@@ -179,19 +226,60 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Comment on PR
         if: github.event_name == 'pull_request' && steps.scan.outcome == 'success'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
-            const count = '${{ steps.count.outputs.findings-count }}';
             const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
-            const severity = 'all';
+
+            // v2 summary: severity breakdown + new/resolved trend from vulnerabilities.json
+            let summary = null;
+            const raw = '${{ steps.summarize.outputs.summary-json }}';
+            if (raw) {
+              try { summary = JSON.parse(raw); } catch (e) { summary = null; }
+            }
+
+            const SEV_META = {
+              critical: { icon: '🔴', label: 'Critical' },
+              high:     { icon: '🟠', label: 'High' },
+              medium:   { icon: '🟡', label: 'Medium' },
+              low:      { icon: '🔵', label: 'Low' },
+              info:     { icon: '⚪', label: 'Info' },
+            };
 
             let body = `## 🔒 ez-appsec Self-Scan Results\n\n`;
             body += `| Scanner | Status |\n|---------|--------|\n`;
             body += `| gitleaks | ✓ secrets detection |\n`;
             body += `| semgrep  | ✓ SAST |\n`;
             body += `| grype    | ✓ dependency CVEs |\n\n`;
-            body += `**Total findings (severity: ${severity}):** ${count}\n\n`;
+
+            if (summary) {
+              const total = summary.total || 0;
+              const rows = ['critical', 'high', 'medium', 'low', 'info']
+                .map(s => {
+                  const meta = SEV_META[s];
+                  const c = summary[s] || 0;
+                  return c > 0 ? `| ${meta.icon} ${meta.label} | ${c} |` : null;
+                })
+                .filter(Boolean)
+                .join('\n');
+              if (rows) {
+                body += `| Severity | Count |\n|----------|-------|\n${rows}\n\n`;
+              } else {
+                body += `**Total findings:** ${total}\n\n`;
+              }
+              const trendParts = [];
+              if (summary.new) trendParts.push(`**${summary.new} new**`);
+              if (summary.resolved) trendParts.push(`**${summary.resolved} resolved**`);
+              if (trendParts.length) {
+                body += `${trendParts.join(' · ')} since last scan\n\n`;
+              } else if (total === 0) {
+                body += `✅ No findings\n\n`;
+              }
+            } else {
+              const count = '${{ steps.count.outputs.findings-count }}';
+              body += `**Total findings:** ${count}\n\n`;
+            }
+
             body += `📊 [View full results and artifacts](${runUrl})\n`;
 
             const { data: comments } = await github.rest.issues.listComments({

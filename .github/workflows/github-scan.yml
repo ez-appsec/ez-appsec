@@ -53,7 +53,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run ez-appsec scan
         id: scan
@@ -82,25 +82,78 @@ jobs:
       - name: Count findings
         id: summary
         run: |
-          if [ -f "${EZ_APPSEC_SARIF}" ]; then
-            COUNT=$(python3 -c "import json; print(len(json.load(open('${EZ_APPSEC_SARIF}'))['runs'][0]['results']))")
-            echo "findings-count=$COUNT" >> $GITHUB_OUTPUT
-            echo "Found $COUNT security findings"
-          else
-            echo "findings-count=0" >> $GITHUB_OUTPUT
+          if [ ! -f "${EZ_APPSEC_SARIF}" ]; then
+            echo "findings-count=0" >> "$GITHUB_OUTPUT"
             echo "No findings found"
+            exit 0
           fi
+          COUNT=$(python3 -c "import json; print(len(json.load(open('${EZ_APPSEC_SARIF}'))['runs'][0]['results']))")
+          echo "findings-count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT security findings"
+
+      - name: Validate SARIF for GitHub upload
+        if: always()
+        run: |
+          if [ ! -f "${EZ_APPSEC_SARIF}" ]; then
+            echo "No SARIF file found; skipping validation"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+          import os
+
+          sarif_path = os.environ["EZ_APPSEC_SARIF"]
+
+          def coerce_uri(value):
+              if isinstance(value, dict):
+                  for key in ("uri", "file", "path", "name"):
+                      nested = value.get(key)
+                      if nested:
+                          return coerce_uri(nested)
+                  return "unknown"
+              if isinstance(value, (list, tuple)):
+                  for item in value:
+                      if item:
+                          return coerce_uri(item)
+                  return "unknown"
+              if value is None:
+                  return "unknown"
+              text = str(value).strip()
+              return text.replace("\\\\", "/") if text else "unknown"
+
+          with open(sarif_path, encoding="utf-8") as fh:
+              sarif = json.load(fh)
+
+          fixes = 0
+          for run in sarif.get("runs", []):
+              for result in run.get("results", []):
+                  for location in result.get("locations", []):
+                      artifact = location.get("physicalLocation", {}).get("artifactLocation")
+                      if not isinstance(artifact, dict):
+                          continue
+                      uri = artifact.get("uri")
+                      coerced = coerce_uri(uri)
+                      if uri != coerced or not isinstance(uri, str):
+                          artifact["uri"] = coerced
+                          fixes += 1
+
+          with open(sarif_path, "w", encoding="utf-8") as fh:
+              json.dump(sarif, fh, indent=2)
+              fh.write("\n")
+
+          print(f"SARIF validation complete; normalized {fixes} artifact URI value(s)")
+          PY
 
       - name: Upload SARIF to GitHub Security
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ${{ env.EZ_APPSEC_SARIF }}
         continue-on-error: true
 
       - name: Upload scan results as artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ez-appsec-scan-${{ github.sha }}
           path: ${{ env.EZ_APPSEC_SARIF }}
@@ -115,7 +168,7 @@ jobs:
 
       - name: Upload vulnerabilities.json as artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ez-appsec-vulns-${{ github.sha }}
           path: ${{ env.EZ_APPSEC_OUTPUT_DIR }}/vulnerabilities.json
@@ -154,9 +207,23 @@ jobs:
               bucket = sev if sev in by_sev else "INFO"
               by_sev[bucket].append(item)
 
+          # v2 trend: count new / resolved since the previous scan
+          trends = {"new": 0, "unchanged": 0, "resolved": 0}
+          for item in findings:
+              t = (item.get("trend") or "unchanged").lower()
+              if t in trends:
+                  trends[t] += 1
+
           total = sum(len(v) for v in by_sev.values())
           lines = []
           lines.append(f"### Security Findings: {total} total")
+          if trends["new"] or trends["resolved"]:
+              trend_parts = []
+              if trends["new"]:
+                  trend_parts.append(f"**{trends['new']} new**")
+              if trends["resolved"]:
+                  trend_parts.append(f"**{trends['resolved']} resolved**")
+              lines.append(f"_{' · '.join(trend_parts)} since last scan_")
           lines.append("")
           lines.append("| Severity | Count |")
           lines.append("|----------|-------|")
@@ -320,7 +387,7 @@ jobs:
 
       - name: Comment on PR with findings
         if: github.event_name == 'pull_request' && steps.scan.outcome == 'success'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');

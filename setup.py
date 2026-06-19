@@ -48,6 +48,15 @@ setup(
             "mypy>=1.0",
             "psutil>=5.9",
         ],
+        "sql": [
+            "sqlalchemy>=2.0",
+        ],
+        "metrics": [
+            "prometheus_client>=0.20",
+        ],
+        "otel": [
+            "opentelemetry-sdk>=1.25",
+        ],
     },
     entry_points={
         "console_scripts": [

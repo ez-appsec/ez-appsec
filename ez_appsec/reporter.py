@@ -5,6 +5,27 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 
+def _coerce_sarif_uri(value: Any) -> str:
+    """Coerce scanner file/location values into a SARIF artifact URI string."""
+    if isinstance(value, Path):
+        return value.as_posix().replace("\\", "/")
+    if isinstance(value, dict):
+        for key in ("uri", "file", "path", "name"):
+            nested = value.get(key)
+            if nested:
+                return _coerce_sarif_uri(nested)
+        return "unknown"
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if item:
+                return _coerce_sarif_uri(item)
+        return "unknown"
+    if value is None:
+        return "unknown"
+    text = str(value).strip()
+    return text.replace("\\", "/") if text else "unknown"
+
+
 class Reporter:
     """Generate reports in various formats"""
     
@@ -29,7 +50,7 @@ class Reporter:
                     {
                         "physicalLocation": {
                             "artifactLocation": {
-                                "uri": issue.get("file", "")
+                                "uri": _coerce_sarif_uri(issue.get("file"))
                             },
                             "region": {
                                 "startLine": issue.get("line", 1)

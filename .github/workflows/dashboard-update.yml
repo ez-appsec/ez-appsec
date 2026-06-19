@@ -20,14 +20,14 @@ jobs:
     steps:
       - name: Mint App token
         id: token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.EZ_APPSEC_APP_ID }}
           private-key: ${{ secrets.EZ_APPSEC_PRIVATE_KEY }}
           owner: ez-appsec
           repositories: ez-appsec
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ steps.token.outputs.token }}
 

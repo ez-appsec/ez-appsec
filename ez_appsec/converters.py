@@ -1,11 +1,64 @@
 """Converters for external scanner outputs to GitLab vulnerability format and GitHub SARIF format"""
 
+import hashlib
 import json
 import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 from ez_appsec import __version__
+from ez_appsec.schema import compute_finding_id
+
+# Stable namespace key for the ez-appsec finding_id fingerprint in SARIF output.
+# Per SARIF 2.1: result.fingerprints keys are tool-defined namespaced identifiers.
+SARIF_FINDING_ID_KEY = "ezAppsecFindingId/v1"
+
+
+def _coerce_line(value: Any) -> int:
+    """Coerce a value to a 1-based line number, defaulting to 0 on failure."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _redact_secret(match: Any) -> str:
+    """Render a gitleaks secret match as a non-recoverable masked+hashed form.
+
+    The raw secret substring must never be echoed into reports, artifacts, PR
+    comments, or logs — those surfaces are designed to be public/shared, so
+    republishing the cleartext defeats the purpose of a secret scanner. We keep
+    a short prefix for triage context and a sha256 suffix for stable dedup,
+    neither of which is reversible to the original secret.
+    """
+    if not match:
+        return ""
+    text = str(match)
+    digest = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()[:8]
+    if len(text) <= 8:
+        return f"***{digest}"
+    return f"{text[:4]}…***{digest}"
+
+
+def _coerce_sarif_uri(value: Any) -> str:
+    """Coerce scanner file/location values into a SARIF artifact URI string."""
+    if isinstance(value, Path):
+        return value.as_posix().replace("\\", "/")
+    if isinstance(value, dict):
+        for key in ("uri", "file", "path", "name"):
+            nested = value.get(key)
+            if nested:
+                return _coerce_sarif_uri(nested)
+        return "unknown"
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if item:
+                return _coerce_sarif_uri(item)
+        return "unknown"
+    if value is None:
+        return "unknown"
+    text = str(value).strip()
+    return text.replace("\\", "/") if text else "unknown"
 
 
 class GitHubSarifFormat:
@@ -66,9 +119,16 @@ class GitHubSarifFormat:
         level: str = "warning",
         locations: List[Dict[str, Any]] = None,
         fixes: List[Dict[str, Any]] = None,
-        code_flows: List[Dict[str, Any]] = None
+        code_flows: List[Dict[str, Any]] = None,
+        finding_id: Optional[str] = None,
+        category: Optional[str] = None,
+        first_seen: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Create a SARIF result"""
+        """Create a SARIF result.
+
+        v2 fields (finding_id, category, first_seen) are emitted via SARIF-standard
+        fingerprints and properties when provided; omitted entirely for v1 callers.
+        """
         result = {
             "ruleId": rule_id,
             "level": level,
@@ -86,27 +146,38 @@ class GitHubSarifFormat:
         if code_flows:
             result["codeFlows"] = code_flows
 
+        if finding_id:
+            result["fingerprints"] = {SARIF_FINDING_ID_KEY: finding_id}
+
+        properties: Dict[str, Any] = {}
+        if category:
+            properties["category"] = category
+        if first_seen:
+            properties["first_seen"] = first_seen
+        if properties:
+            result["properties"] = properties
+
         return result
 
     @staticmethod
     def create_location(
-        file_path: str,
+        file_path: Any,
         start_line: int = 1,
         end_line: int = 1,
         start_column: int = 1,
         end_column: int = 1
     ) -> Dict[str, Any]:
-        """Create a SARIF physical location"""
+        """Create a SARIF physical location with schema-valid primitive fields."""
         return {
             "physicalLocation": {
                 "artifactLocation": {
-                    "uri": file_path
+                    "uri": _coerce_sarif_uri(file_path)
                 },
                 "region": {
-                    "startLine": start_line,
-                    "endLine": end_line,
-                    "startColumn": start_column,
-                    "endColumn": end_column
+                    "startLine": _coerce_line(start_line) or 1,
+                    "endLine": _coerce_line(end_line) or 1,
+                    "startColumn": _coerce_line(start_column) or 1,
+                    "endColumn": _coerce_line(end_column) or 1
                 }
             }
         }
@@ -147,15 +218,25 @@ class GitLabVulnerabilityFormat:
         location: Dict[str, Any] = None,
         identifiers: List[Dict[str, Any]] = None,
         links: List[Dict[str, Any]] = None,
-        scanner: Dict[str, Any] = None
+        scanner: Dict[str, Any] = None,
+        finding_id: Optional[str] = None,
+        category_v2: Optional[str] = None,
+        first_seen: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Create a single vulnerability entry in GitLab format"""
+        """Create a single vulnerability entry in GitLab format.
 
-        vuln_id = str(uuid.uuid4())
+        v2 fields when provided:
+          - finding_id replaces the generated uuid so the id is stable across scans
+          - category_v2 surfaces the ez-appsec category (e.g. 'hardcoded-secret', 'sast')
+            without overwriting GitLab's required top-level 'category' enum
+          - first_seen surfaces the ISO timestamp of the first scan that saw the finding
+        """
+
+        vuln_id = finding_id or str(uuid.uuid4())
 
         vulnerability = {
             "id": vuln_id,
-            "category": "sast",  # or "secret_detection", "dependency_scanning", etc.
+            "category": "sast",  # GitLab schema: sast | secret_detection | dependency_scanning | ...
             "name": name,
             "message": message,
             "description": description,
@@ -171,6 +252,11 @@ class GitLabVulnerabilityFormat:
             "identifiers": identifiers or [],
             "links": links or []
         }
+
+        if category_v2:
+            vulnerability["category_v2"] = category_v2
+        if first_seen:
+            vulnerability["first_seen"] = first_seen
 
         return vulnerability
 
@@ -194,29 +280,36 @@ class GitleaksConverter:
             # Map gitleaks severity to GitLab severity
             severity = GitleaksConverter._map_severity(finding.get("Info", {}).get("Severity", "critical"))
 
+            rule_id = finding.get("RuleID", "unknown")
+            file_path = finding.get("File", "unknown")
+            start_line = _coerce_line(finding.get("StartLine", 1))
+            finding_id = compute_finding_id(str(rule_id), str(file_path), start_line)
+
             vulnerability = GitLabVulnerabilityFormat.create_vulnerability(
                 name=f"Secret: {finding.get('Description', 'Unknown secret')}",
-                message=f"Potential secret found: {finding.get('Match', '')[:50]}...",
-                description=f"Gitleaks detected a potential secret leak. Rule: {finding.get('RuleID', 'unknown')}",
+                message=f"Potential secret found: {_redact_secret(finding.get('Match', ''))}",
+                description=f"Gitleaks detected a potential secret leak. Rule: {rule_id}",
                 severity=severity,
                 confidence="high",
                 solution="Review and rotate the exposed secret. Remove from version control if committed.",
                 location={
-                    "file": finding.get("File", "unknown"),
-                    "start_line": finding.get("StartLine", 1),
+                    "file": file_path,
+                    "start_line": start_line,
                     "end_line": finding.get("EndLine", 1),
                     "class": "secret",
-                    "method": finding.get("RuleID", "unknown")
+                    "method": rule_id
                 },
                 identifiers=[{
                     "type": "gitleaks_rule",
-                    "name": finding.get("RuleID", "unknown"),
-                    "value": finding.get("RuleID", "unknown")
+                    "name": rule_id,
+                    "value": rule_id
                 }],
                 scanner={
                     "id": "gitleaks",
                     "name": "Gitleaks"
-                }
+                },
+                finding_id=finding_id,
+                category_v2="hardcoded-secret",
             )
 
             vulnerabilities.append(vulnerability)
@@ -266,10 +359,13 @@ class SemgrepConverter:
                 metadata.get("security-severity", "") or metadata.get("impact", "")
             )
 
+            check_id = result.get("check_id", "unknown")
+            finding_id = compute_finding_id(str(check_id), str(path), _coerce_line(start_line))
+
             vulnerability = GitLabVulnerabilityFormat.create_vulnerability(
-                name=f"Semgrep: {result.get('check_id', 'unknown')}",
+                name=f"Semgrep: {check_id}",
                 message=result.get("extra", {}).get("message", "Code pattern detected"),
-                description=f"Semgrep rule violation: {result.get('check_id', 'unknown')}",
+                description=f"Semgrep rule violation: {check_id}",
                 severity=severity,
                 confidence="medium",
                 solution=result.get("extra", {}).get("fix", "Review the code pattern and fix according to security best practices."),
@@ -277,18 +373,20 @@ class SemgrepConverter:
                     "file": path,
                     "start_line": start_line,
                     "end_line": end_line,
-                    "class": result.get("check_id", "unknown"),
-                    "method": result.get("check_id", "unknown")
+                    "class": check_id,
+                    "method": check_id
                 },
                 identifiers=[{
                     "type": "semgrep_rule",
-                    "name": result.get("check_id", "unknown"),
-                    "value": result.get("check_id", "unknown")
+                    "name": check_id,
+                    "value": check_id
                 }],
                 scanner={
                     "id": "semgrep",
                     "name": "Semgrep"
-                }
+                },
+                finding_id=finding_id,
+                category_v2="sast",
             )
 
             vulnerabilities.append(vulnerability)
@@ -336,6 +434,12 @@ class KicsConverter:
 
             files = query.get("files", [])
             for file_info in files:
+                file_path = file_info if isinstance(file_info, str) else file_info.get("file_name", "unknown")
+                line = 1
+                if isinstance(file_info, dict):
+                    line = _coerce_line(file_info.get("line", 1)) or 1
+                finding_id = compute_finding_id(str(query_name), str(file_path), line)
+
                 vulnerability = GitLabVulnerabilityFormat.create_vulnerability(
                     name=f"KICS: {query_name}",
                     message=query.get("description", "Infrastructure as Code security issue"),
@@ -344,9 +448,9 @@ class KicsConverter:
                     confidence="medium",
                     solution="Review the infrastructure configuration and apply security best practices.",
                     location={
-                        "file": file_info,
-                        "start_line": 1,
-                        "end_line": 1,
+                        "file": file_path,
+                        "start_line": line,
+                        "end_line": line,
                         "class": "iac",
                         "method": query_name
                     },
@@ -358,7 +462,9 @@ class KicsConverter:
                     scanner={
                         "id": "kics",
                         "name": "KICS"
-                    }
+                    },
+                    finding_id=finding_id,
+                    category_v2="iac",
                 )
 
                 vulnerabilities.append(vulnerability)
@@ -401,9 +507,13 @@ class GrypeConverter:
             # Map grype severity
             severity = GrypeConverter._map_severity(vulnerability.get("severity", "medium"))
 
+            vuln_rule_id = vulnerability.get("id") or artifact.get("name") or "unknown"
+            artifact_name = artifact.get("name", "unknown")
+            finding_id = compute_finding_id(str(vuln_rule_id), f"dependency:{artifact_name}", 0)
+
             vulnerability_entry = GitLabVulnerabilityFormat.create_vulnerability(
-                name=f"Dependency: {artifact.get('name', 'unknown')} - {vulnerability.get('id', 'unknown')}",
-                message=f"Vulnerable package: {artifact.get('name', 'unknown')} {artifact.get('version', '')}",
+                name=f"Dependency: {artifact_name} - {vulnerability.get('id', 'unknown')}",
+                message=f"Vulnerable package: {artifact_name} {artifact.get('version', '')}",
                 description=vulnerability.get("description", "Known vulnerability in dependency"),
                 severity=severity,
                 confidence="high",
@@ -412,7 +522,7 @@ class GrypeConverter:
                     "file": "dependency",
                     "dependency": {
                         "package": {
-                            "name": artifact.get("name", "unknown")
+                            "name": artifact_name
                         },
                         "version": artifact.get("version", "")
                     }
@@ -429,7 +539,9 @@ class GrypeConverter:
                 scanner={
                     "id": "grype",
                     "name": "Grype"
-                }
+                },
+                finding_id=finding_id,
+                category_v2="dependency",
             )
 
             vulnerabilities.append(vulnerability_entry)
@@ -483,16 +595,20 @@ class GitHubGitleaksConverter:
             level = GitHubSarifFormat.map_severity_to_level(severity)
             match = finding.get('Match', '')
             file_path = finding.get("File", "unknown")
+            start_line = _coerce_line(finding.get("StartLine", 1))
+            finding_id = compute_finding_id(str(rule_id), str(file_path), start_line)
 
             result = GitHubSarifFormat.create_result(
                 rule_id=rule_id,
-                message=f"Potential secret found: {match[:100]}...",
+                message=f"Potential secret found: {_redact_secret(match)}",
                 level=level,
                 locations=[GitHubSarifFormat.create_location(
                     file_path=file_path,
-                    start_line=finding.get("StartLine", 1),
+                    start_line=start_line,
                     end_line=finding.get("EndLine", 1)
-                )]
+                )],
+                finding_id=finding_id,
+                category="hardcoded-secret",
             )
             results.append(result)
 
@@ -553,6 +669,8 @@ class GitHubSemgrepConverter:
             start_col = start.get("col", 1)
             end_col = end.get("col", start_col)
 
+            finding_id = compute_finding_id(str(check_id), str(path), _coerce_line(start_line))
+
             result_entry = GitHubSarifFormat.create_result(
                 rule_id=check_id,
                 message=extra.get("message", "Code pattern detected"),
@@ -563,7 +681,9 @@ class GitHubSemgrepConverter:
                     end_line=end_line,
                     start_column=start_col,
                     end_column=end_col
-                )]
+                )],
+                finding_id=finding_id,
+                category="sast",
             )
             results.append(result_entry)
 
@@ -609,12 +729,23 @@ class GitHubKicsConverter:
             # Add results for each file
             files = query.get("files", [])
             for file_info in files:
-                # file_info is typically a file path
+                # file_info may be a string path or a dict with file_name/line
+                if isinstance(file_info, dict):
+                    file_path = file_info.get("file_name", "unknown")
+                    line = _coerce_line(file_info.get("line", 1)) or 1
+                else:
+                    file_path = file_info
+                    line = 1
+
+                finding_id = compute_finding_id(str(query_name), str(file_path), line)
+
                 result_entry = GitHubSarifFormat.create_result(
                     rule_id=query_name,
                     message=query.get("description", "Infrastructure security issue"),
                     level=level,
-                    locations=[GitHubSarifFormat.create_location(file_path=file_info)]
+                    locations=[GitHubSarifFormat.create_location(file_path=file_path, start_line=line, end_line=line)],
+                    finding_id=finding_id,
+                    category="iac",
                 )
                 results.append(result_entry)
 
@@ -661,11 +792,16 @@ class GitHubGrypeConverter:
                 )
 
             # Create result - dependency vulnerabilities don't have line numbers
+            artifact_name = artifact.get("name", "unknown")
+            finding_id = compute_finding_id(str(vuln_id), f"dependency:{artifact_name}", 0)
+
             result_entry = GitHubSarifFormat.create_result(
                 rule_id=vuln_id,
-                message=f"Vulnerable package: {artifact.get('name', 'unknown')} {artifact.get('version', '')} - {vuln_id}",
+                message=f"Vulnerable package: {artifact_name} {artifact.get('version', '')} - {vuln_id}",
                 level=level,
-                locations=[GitHubSarifFormat.create_location(file_path=f"dependency: {artifact.get('name', 'unknown')}")]
+                locations=[GitHubSarifFormat.create_location(file_path=f"dependency: {artifact_name}")],
+                finding_id=finding_id,
+                category="dependency",
             )
             results.append(result_entry)
 

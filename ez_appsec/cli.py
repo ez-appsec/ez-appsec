@@ -70,6 +70,27 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
             click.echo(f"\n✓ Security scan completed")
             click.echo(f"  Total issues found: {len(results['issues'])}")
 
+        # v2 trend signal - surface new/resolved counts and aging when the
+        # scanner computed them. This is the headline value of schema v2:
+        # answering "what changed since last scan?" without digging into JSON.
+        scan_record = results.get("scan_record") or {}
+        new_count = scan_record.get("new_count")
+        resolved_count = scan_record.get("resolved_count")
+        if not baseline_path and (new_count is not None or resolved_count is not None):
+            parts = []
+            if new_count is not None:
+                parts.append(f"{new_count} new")
+            if resolved_count is not None:
+                parts.append(f"{resolved_count} resolved")
+            if parts:
+                click.echo(f"  Trend: {', '.join(parts)} since last scan")
+            aging = [
+                i for i in results["issues"]
+                if isinstance(i.get("age_days"), int) and i["age_days"] > 30
+            ]
+            if aging:
+                click.echo(f"  Aging: {len(aging)} finding(s) older than 30 days")
+
         if results.get('suppressed', 0) > 0:
             click.echo(f"  [suppressed] {results['suppressed']} finding(s) matched ignore rules")
 
@@ -80,13 +101,16 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
                 click.echo(f"    {issue['description']}")
 
         if output:
-            try:
-                with open(output, 'w') as f:
-                    json.dump(results, f, indent=2)
-                click.echo(f"\n✓ Results saved to: {output}")
-            except Exception as e:
-                click.echo(f"\n✗ Error writing results to file: {str(e)}", err=True)
-                sys.exit(1)
+            if results.get("output_path"):
+                click.echo(f"\n✓ Results saved to: {results['output_path']}")
+            else:
+                try:
+                    with open(output, 'w') as f:
+                        json.dump(results, f, indent=2)
+                    click.echo(f"\n✓ Results saved to: {output}")
+                except Exception as e:
+                    click.echo(f"\n✗ Error writing results to file: {str(e)}", err=True)
+                    sys.exit(1)
 
         if slack_webhook or teams_webhook:
             proj = project_name or os.path.basename(os.path.abspath(path))
@@ -158,7 +182,7 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
         # License compliance results
         if results.get("license_summary"):
             ls = results["license_summary"]
-            click.echo(f"\n  License check: {ls['total']} package(s) — "
+            click.echo(f"\n  License check: {ls['total']} package(s) - "
                         f"{ls['allowed']} allowed, {ls['denied']} denied, {ls['unknown']} unknown")
             license_findings = [i for i in results['issues'] if i.get('category') == 'license_compliance']
             if ls["denied"] > 0:
@@ -170,7 +194,7 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
                             extras = f" (also declares: {', '.join(l for l in f['all_licenses'] if l != f['license'])})"
                         click.echo(f"    - {f['package']}@{f['package_version']}: {f['license']}{extras}", err=True)
             if ls["unknown"] > 0:
-                click.echo(f"  ⚠ {ls['unknown']} unknown license(s) — review and add to allowed_licenses or denied_licenses:")
+                click.echo(f"  ⚠ {ls['unknown']} unknown license(s) - review and add to allowed_licenses or denied_licenses:")
                 for f in license_findings:
                     if f['severity'] == 'medium':
                         click.echo(f"    - {f['package']}@{f['package_version']}: {f['license']}")
@@ -209,10 +233,10 @@ def gitlab_scan(path, ai_prompt, severity, output, config_file):
         config = Config.from_file(config_file)
         if severity:
             config.severity = severity
-        
+
         scanner = SecurityScanner(config)
         results = scanner.scan_to_gitlab_format(path, output, ai_prompt)
-        
+
         click.echo(f"\n✓ GitLab vulnerability scan completed")
         click.echo(f"  Total vulnerabilities found: {len(results['vulnerabilities'])}")
         if results.get('suppressed_count', 0) > 0:
@@ -223,12 +247,12 @@ def gitlab_scan(path, ai_prompt, severity, output, config_file):
             for vuln in results['vulnerabilities'][:5]:
                 click.echo(f"  [{vuln['severity']}] {vuln['name']}")
                 click.echo(f"    {vuln['message']}")
-        
+
         if output:
             click.echo(f"\n✓ GitLab report saved to: {output}")
         else:
             click.echo("  Use --output to save report to file")
-            
+
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
         sys.exit(1)
@@ -238,11 +262,11 @@ def gitlab_scan(path, ai_prompt, severity, output, config_file):
 def init():
     """Initialize ez-appsec configuration in current directory"""
     config_path = Path(".ez-appsec.yaml")
-    
+
     if config_path.exists():
         click.echo("✓ Configuration already exists at .ez-appsec.yaml")
         return
-    
+
     config_content = """# ez-appsec configuration
 languages:
   - python
@@ -257,7 +281,7 @@ ai:
   model: gpt-4
   temperature: 0.5
 
-# Ignore rules — suppress known false positives
+# Ignore rules - suppress known false positives
 # ignore:
 #   - rule_id: generic-api-key
 #     file_path: "tests/**"
@@ -267,7 +291,7 @@ ai:
 #     reason: "Mitigated, revisit later"
 #     until: "2025-06-01"
 
-# Policy rules — enforce security standards
+# Policy rules - enforce security standards
 # policy:
 #   - severity: critical
 #     action: fail
@@ -280,7 +304,7 @@ ai:
 #     action: warn
 #     max_count: 5
 
-# License compliance — SPDX identifiers (see https://spdx.org/licenses/)
+# License compliance - SPDX identifiers (see https://spdx.org/licenses/)
 # Supports wildcards: GPL* matches GPL-2.0, GPL-3.0-only, etc.
 # Run with: ez-appsec scan --license-check
 # license_policy:
@@ -298,10 +322,10 @@ ai:
 #     - SSPL*
 #     - EUPL*
 """
-    
+
     with open(config_path, "w") as f:
         f.write(config_content)
-    
+
     click.echo(f"✓ Configuration created at {config_path}")
 
 
@@ -312,16 +336,16 @@ def check(path):
     try:
         scanner = SecurityScanner(Config())
         results = scanner.quick_check(path)
-        
+
         click.echo(f"Quick Check Results:")
         click.echo(f"  Files scanned: {results['files_scanned']}")
         click.echo(f"  Potential issues: {results['issue_count']}")
-        
+
         if results['issue_count'] == 0:
             click.echo("  ✓ No secrets detected")
         else:
             click.echo("  ⚠️  Potential secrets found - review above")
-        
+
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
         sys.exit(1)
@@ -354,7 +378,7 @@ def check_config(config_path):
 
     valid_severities = {"all", "critical", "high", "medium", "low"}
     if "severity" in raw and raw["severity"] not in valid_severities:
-        errors.append(f"Invalid severity '{raw['severity']}' — must be one of: {', '.join(sorted(valid_severities))}")
+        errors.append(f"Invalid severity '{raw['severity']}' - must be one of: {', '.join(sorted(valid_severities))}")
 
     ignore_data = raw.get("ignore", [])
     if not isinstance(ignore_data, list):
@@ -398,11 +422,11 @@ def check_config(config_path):
         if "action" not in item:
             errors.append(f"{prefix}: 'action' is required")
         elif item["action"] not in valid_policy_actions:
-            errors.append(f"{prefix}: invalid action '{item['action']}' — must be one of: {', '.join(sorted(valid_policy_actions))}")
+            errors.append(f"{prefix}: invalid action '{item['action']}' - must be one of: {', '.join(sorted(valid_policy_actions))}")
         if "severity" in item and item["severity"] not in valid_policy_severities:
-            errors.append(f"{prefix}: invalid severity '{item['severity']}' — must be one of: {', '.join(sorted(valid_policy_severities))}")
+            errors.append(f"{prefix}: invalid severity '{item['severity']}' - must be one of: {', '.join(sorted(valid_policy_severities))}")
         if "category" in item and item["category"] not in valid_policy_categories:
-            errors.append(f"{prefix}: invalid category '{item['category']}' — must be one of: {', '.join(sorted(valid_policy_categories))}")
+            errors.append(f"{prefix}: invalid category '{item['category']}' - must be one of: {', '.join(sorted(valid_policy_categories))}")
         if "max_count" in item and not isinstance(item["max_count"], int):
             errors.append(f"{prefix}: 'max_count' must be an integer")
 
@@ -455,15 +479,15 @@ def check_config(config_path):
 def status():
     """Check status of all security scanners"""
     from ez_appsec.external_scanners import ExternalScannerManager
-    
+
     manager = ExternalScannerManager()
     installed = manager.get_installed()
-    
+
     click.echo("Scanner Status:")
     for name, is_installed in installed.items():
         status = "✓ installed" if is_installed else "✗ not installed"
         click.echo(f"  {name}: {status}")
-    
+
     missing = [name for name, inst in installed.items() if not inst]
     if missing:
         click.echo("\nInstall missing scanners:")
@@ -471,43 +495,111 @@ def status():
             click.echo(f"  {line}")
 
 
+@main.command("serve-metrics")
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    show_default=True,
+    help="Bind host (use 0.0.0.0 to expose; ensure an auth layer is in front)",
+)
+@click.option("--port", default=9108, show_default=True, help="Listen port")
+@click.option(
+    "--findings",
+    "storage_path",
+    type=click.Path(),
+    default="vulnerabilities.json",
+    show_default=True,
+    help="Path to vulnerabilities.json produced by scan",
+)
+@click.option("--project", default=None, help="Override the project label")
+@click.option(
+    "--storage-backend",
+    type=click.Choice(["json", "sql"]),
+    default=None,
+    help="Storage backend (default: from EZ_APPSEC_STORAGE_BACKEND, else json)",
+)
+def serve_metrics(host, port, storage_path, project, storage_backend):
+    """Serve Prometheus metrics for the latest scan findings
+
+    Exposes GET /metrics in Prometheus text exposition format, grouped by
+    severity, category, and project. Reads findings from the configured
+    storage backend (JSON file or SQL via EZ_APPSEC_STORAGE_URL).
+
+    Requires the optional 'metrics' extra: pip install 'ez-appsec[metrics]'.
+
+    \b
+    Examples:
+      ez-appsec serve-metrics
+      ez-appsec serve-metrics --findings /data/vulnerabilities.json --project api
+      EZ_APPSEC_STORAGE_URL=sqlite:///findings.db ez-appsec serve-metrics --storage-backend sql
+
+    \b
+    Note: --host 0.0.0.0 binds to all interfaces. The endpoint is
+    unauthenticated; put it behind a reverse proxy with auth, or bind to
+    loopback (the default) and scrape from the same host.
+    """
+    import os
+
+    if storage_backend:
+        os.environ["EZ_APPSEC_STORAGE_BACKEND"] = storage_backend
+
+    from ez_appsec.metrics_endpoint import (
+        MetricsDependencyError,
+        serve_metrics as _serve,
+    )
+
+    try:
+        click.echo(f"Serving ez-appsec metrics on http://{host}:{port}/metrics")
+        click.echo(f"  findings: {storage_path}")
+        if storage_backend:
+            click.echo(f"  backend:  {storage_backend}")
+        click.echo("  (Ctrl-C to stop)")
+        _serve(host=host, port=port, storage_path=storage_path, project=project)
+    except MetricsDependencyError as exc:
+        click.echo(f"✗ {exc}", err=True)
+        sys.exit(1)
+    except Exception as exc:
+        click.echo(f"✗ Error: {exc}", err=True)
+        sys.exit(1)
+
+
 @main.command()
 @click.argument("path", type=click.Path(exists=True), default=".")
 @click.option("--output", type=click.Path(), help="Output directory for web dashboard", default="./web/data")
 def web_report(path, output):
     """Generate web dashboard for vulnerability reporting
-    
+
     Generates a JSON report compatible with the web vulnerability dashboard
     and optionally creates the dashboard files.
-    
+
     PATH: Directory to scan (default: current directory)
     """
     try:
         import json
         from pathlib import Path as PathlibPath
-        
+
         config = Config()
         scanner = SecurityScanner(config)
-        
+
         # Generate GitLab format report
         gitlab_report = scanner.scan_to_gitlab_format(path)
-        
+
         # Create output directory
         output_dir = PathlibPath(output)
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Save vulnerabilities to web data directory
         report_file = output_dir / "vulnerabilities.json"
         with open(report_file, 'w') as f:
             json.dump(gitlab_report, f, indent=2)
-        
+
         click.echo(f"\n✓ Web report generated")
         click.echo(f"  Vulnerabilities: {len(gitlab_report['vulnerabilities'])}")
         click.echo(f"  Report saved: {report_file}")
         click.echo(f"\n📊 To view the dashboard:")
         click.echo(f"  cd web && python -m http.server 8000")
         click.echo(f"  Then open http://localhost:8000")
-        
+
     except Exception as e:
         click.echo(f"✗ Error: {str(e)}", err=True)
         sys.exit(1)

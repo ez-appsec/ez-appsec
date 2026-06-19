@@ -77,6 +77,7 @@ update_phase5.py
 .gsd-id
 .mcp.json
 .bg-shell/
+.claude/worktrees/
 Thumbs.db
 *.code-workspace
 .env.*
@@ -89,3 +90,17 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# ── GSD baseline (auto-generated) ──
+nul
+nul.*
+con
+con.*
+prn
+prn.*
+aux
+aux.*
+com[1-9]
+com[1-9].*
+lpt[1-9]
+lpt[1-9].*
