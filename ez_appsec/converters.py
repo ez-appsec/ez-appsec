@@ -21,6 +21,27 @@ def _coerce_line(value: Any) -> int:
         return 0
 
 
+def _coerce_sarif_uri(value: Any) -> str:
+    """Coerce scanner file/location values into a SARIF artifact URI string."""
+    if isinstance(value, Path):
+        return value.as_posix().replace("\\", "/")
+    if isinstance(value, dict):
+        for key in ("uri", "file", "path", "name"):
+            nested = value.get(key)
+            if nested:
+                return _coerce_sarif_uri(nested)
+        return "unknown"
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if item:
+                return _coerce_sarif_uri(item)
+        return "unknown"
+    if value is None:
+        return "unknown"
+    text = str(value).strip()
+    return text.replace("\\", "/") if text else "unknown"
+
+
 class GitHubSarifFormat:
     """GitHub SARIF format converter for GitHub Advanced Security integration"""
 
@@ -121,23 +142,23 @@ class GitHubSarifFormat:
 
     @staticmethod
     def create_location(
-        file_path: str,
+        file_path: Any,
         start_line: int = 1,
         end_line: int = 1,
         start_column: int = 1,
         end_column: int = 1
     ) -> Dict[str, Any]:
-        """Create a SARIF physical location"""
+        """Create a SARIF physical location with schema-valid primitive fields."""
         return {
             "physicalLocation": {
                 "artifactLocation": {
-                    "uri": file_path
+                    "uri": _coerce_sarif_uri(file_path)
                 },
                 "region": {
-                    "startLine": start_line,
-                    "endLine": end_line,
-                    "startColumn": start_column,
-                    "endColumn": end_column
+                    "startLine": _coerce_line(start_line) or 1,
+                    "endLine": _coerce_line(end_line) or 1,
+                    "startColumn": _coerce_line(start_column) or 1,
+                    "endColumn": _coerce_line(end_column) or 1
                 }
             }
         }

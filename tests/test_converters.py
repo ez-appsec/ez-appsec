@@ -83,6 +83,43 @@ class TestGitHubSarifFormat:
         assert location["physicalLocation"]["region"]["startColumn"] == 1
         assert location["physicalLocation"]["region"]["endColumn"] == 50
 
+    @pytest.mark.parametrize(
+        ("file_path", "expected_uri"),
+        [
+            ({"uri": "src/app.py"}, "src/app.py"),
+            ({"file": "src/file.py"}, "src/file.py"),
+            ({"path": Path("src/path.py")}, "src/path.py"),
+            (["src/list.py"], "src/list.py"),
+            (Path("src\\windows.py"), "src/windows.py"),
+            (None, "unknown"),
+        ],
+    )
+    def test_create_location_coerces_artifact_uri_to_string(self, file_path, expected_uri):
+        """SARIF upload requires artifactLocation.uri to be a string."""
+        location = GitHubSarifFormat.create_location(file_path=file_path)
+
+        uri = location["physicalLocation"]["artifactLocation"]["uri"]
+        assert uri == expected_uri
+        assert isinstance(uri, str)
+
+    def test_create_location_coerces_region_values_to_positive_ints(self):
+        """SARIF region values should stay primitive ints even from scanner strings."""
+        location = GitHubSarifFormat.create_location(
+            file_path="test.py",
+            start_line="not-a-line",
+            end_line="12",
+            start_column=None,
+            end_column="3",
+        )
+
+        region = location["physicalLocation"]["region"]
+        assert region == {
+            "startLine": 1,
+            "endLine": 12,
+            "startColumn": 1,
+            "endColumn": 3,
+        }
+
     def test_map_severity_to_level(self):
         """Test severity to SARIF level mapping"""
         assert GitHubSarifFormat.map_severity_to_level("critical") == "error"
