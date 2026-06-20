@@ -249,7 +249,10 @@ class TestAWSKeyProvider:
     def test_can_rotate_supported_rules(self):
         provider = AWSKeyProvider()
         assert provider.can_rotate("aws-access-key-id") is True
-        assert provider.can_rotate("aws-secret-access-key") is True
+        assert provider.can_rotate("aws-access-token") is True
+        # AWS cannot identify an IAM access key from the secret half alone.
+        # Rotating this would create an unrelated key and leave the leak active.
+        assert provider.can_rotate("aws-secret-access-key") is False
         assert provider.can_rotate("github-pat") is False
 
 
@@ -369,6 +372,57 @@ class TestRotateSecrets:
         assert results[0].rotated is True
         assert results[0].old_revoked is True
         assert results[0].new_secret_stored is True
+
+
+    @patch("ez_appsec.secret_rotator.subprocess.run")
+    def test_rotated_false_when_deactivation_fails(self, mock_run):
+        list_resp = MagicMock(returncode=0, stdout=json.dumps({
+            "AccessKeyMetadata": [
+                {"AccessKeyId": "AKIAIOSFODNN7EXAMPLE", "UserName": "bot", "Status": "Active"},
+            ],
+        }))
+        create_resp = MagicMock(returncode=0, stdout=json.dumps({
+            "AccessKey": {
+                "AccessKeyId": "AKIANEW",
+                "SecretAccessKey": "newsecret",
+                "UserName": "bot",
+            },
+        }))
+        deactivate_resp = MagicMock(returncode=1, stderr="access denied")
+        mock_run.side_effect = [list_resp, create_resp, deactivate_resp]
+
+        results = rotate_secrets([_secret()])
+
+        assert len(results) == 1
+        assert results[0].rotated is False
+        assert results[0].old_revoked is False
+
+
+    @patch("ez_appsec.secret_rotator.subprocess.run")
+    def test_store_write_failure_reports_error(self, mock_run):
+        list_resp = MagicMock(returncode=0, stdout=json.dumps({
+            "AccessKeyMetadata": [
+                {"AccessKeyId": "AKIAIOSFODNN7EXAMPLE", "UserName": "bot", "Status": "Active"},
+            ],
+        }))
+        create_resp = MagicMock(returncode=0, stdout=json.dumps({
+            "AccessKey": {
+                "AccessKeyId": "AKIANEW",
+                "SecretAccessKey": "newsecret",
+                "UserName": "bot",
+            },
+        }))
+        deactivate_resp = MagicMock(returncode=0)
+        store_resp = MagicMock(returncode=1)
+        mock_run.side_effect = [list_resp, create_resp, deactivate_resp, store_resp]
+
+        store = GitHubActionsSecretStore("owner/repo", token="fake")
+        results = rotate_secrets([_secret()], store=store)
+
+        assert len(results) == 1
+        assert results[0].rotated is True
+        assert results[0].new_secret_stored is False
+        assert "Failed to write" in results[0].error
 
     def test_multiple_secrets_mixed_results(self):
         secrets = [

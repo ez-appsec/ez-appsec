@@ -81,7 +81,10 @@ class SecretProvider(ABC):
 class AWSKeyProvider(SecretProvider):
     """Rotate AWS IAM access keys."""
 
-    _handled_rules = {"aws-access-key-id", "aws-secret-access-key", "aws-access-token"}
+    # AWS can rotate by AccessKeyId. The secret access key half cannot be mapped
+    # back to an IAM key via AWS APIs, so treating aws-secret-access-key as
+    # rotatable would create an unrelated key and leave the leaked key active.
+    _handled_rules = {"aws-access-key-id", "aws-access-token"}
 
     def can_rotate(self, rule_id: str) -> bool:
         return rule_id in self._handled_rules
@@ -453,17 +456,27 @@ def rotate_secrets(
         rotation = provider.rotate(secret.match, secret.rule_id)
 
         stored = False
+        store_error = ""
         if store and rotation.get("new_value"):
             stored = store.write(env_var_name, rotation["new_value"])
+            if not stored:
+                store_error = f"Failed to write {env_var_name} to {type(store).__name__}"
+                logger.warning(store_error)
+
+        error_msg = None
+        if not rotation.get("new_value") and not rotation.get("revoked"):
+            error_msg = rotation.get("details")
+        elif store_error:
+            error_msg = store_error
 
         results.append(RotationResult(
             secret=secret,
-            rotated=bool(rotation.get("new_value") or rotation.get("revoked")),
+            rotated=bool(rotation.get("revoked")),
             env_var_name=env_var_name,
             old_revoked=rotation.get("revoked", False),
             new_secret_stored=stored,
             store_target=type(store).__name__ if store else "",
-            error=rotation.get("details") if not rotation.get("new_value") and not rotation.get("revoked") else None,
+            error=error_msg,
         ))
 
     return results
