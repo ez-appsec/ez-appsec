@@ -1,3 +1,10 @@
+## [1.7.24](https://github.com/ez-appsec/ez-appsec/compare/v1.7.23...v1.7.24) (2026-06-20)
+
+
+### Features
+
+* add expanded SAST rules and image rule validation ([fef57ab](https://github.com/ez-appsec/ez-appsec/commit/fef57abf6f3b639900bb69daf8c62a0630b1ff1a)), closes [#29](https://github.com/ez-appsec/ez-appsec/issues/29)
+
 ## [1.7.23](https://github.com/ez-appsec/ez-appsec/compare/v1.7.22...v1.7.23) (2026-06-20)
 
 
