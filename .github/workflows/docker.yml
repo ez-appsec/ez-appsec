@@ -85,6 +85,60 @@ jobs:
             images/Dockerfile.semgrep
         continue-on-error: true
 
+  lint-rule-fixtures:
+    name: Lint Rule Fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install language runtimes
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ruby php-cli
+          # node is preinstalled on ubuntu-latest
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install semgrep and pytest
+        run: |
+          pip install --no-cache-dir semgrep pyyaml pytest
+
+      - name: Syntax-check Ruby fixtures
+        run: |
+          echo "🔍 Checking Ruby fixture syntax (ruby -c)..."
+          fail=0
+          for f in rules/*/tests/*.rb; do
+            if ! ruby -c "$f" >/dev/null; then echo "  FAIL $f"; fail=1; fi
+          done
+          exit $fail
+
+      - name: Syntax-check PHP fixtures
+        run: |
+          echo "🔍 Checking PHP fixture syntax (php -l)..."
+          fail=0
+          for f in rules/*/tests/*.php; do
+            if ! php -l "$f" >/dev/null 2>&1; then echo "  FAIL $f"; php -l "$f"; fail=1; fi
+          done
+          exit $fail
+
+      - name: Syntax-check JavaScript fixtures
+        run: |
+          echo "🔍 Checking JavaScript fixture syntax (node --check)..."
+          fail=0
+          for f in rules/*/tests/*.js; do
+            if ! node --check "$f" 2>/dev/null; then echo "  FAIL $f"; node --check "$f"; fail=1; fi
+          done
+          exit $fail
+
+      - name: Run semgrep rule fixture tests
+        run: |
+          echo "🧪 Verifying each rule fires on its TP and is clean on its TN..."
+          pytest tests/test_rule_fixtures.py -q
+
   # ============================================
   # TEST STAGE
   # ============================================
