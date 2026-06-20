@@ -1,3 +1,10 @@
+## [1.7.25](https://github.com/ez-appsec/ez-appsec/compare/v1.7.24...v1.7.25) (2026-06-20)
+
+
+### Features
+
+* add secret rotation for leaked credentials (PLAN-17) ([#30](https://github.com/ez-appsec/ez-appsec/issues/30)) ([9b3d80c](https://github.com/ez-appsec/ez-appsec/commit/9b3d80c91a75ab600837957331d038e9481e1735))
+
 ## [1.7.24](https://github.com/ez-appsec/ez-appsec/compare/v1.7.23...v1.7.24) (2026-06-20)
 
 
