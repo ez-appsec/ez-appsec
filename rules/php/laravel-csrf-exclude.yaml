@@ -1,0 +1,17 @@
+rules:
+  - id: ez-laravel-csrf-exclude
+    message: >-
+      Routes listed in VerifyCsrfToken::$except bypass CSRF verification.
+      This allows cross-site request forgery attacks against those endpoints.
+      For API routes, use Sanctum or Passport token auth instead.
+    severity: WARNING
+    languages: [php]
+    metadata:
+      cwe: "CWE-352"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: HIGH
+    pattern: |
+      class $CLASS extends VerifyCsrfToken {
+          protected $except = [...];
+      }

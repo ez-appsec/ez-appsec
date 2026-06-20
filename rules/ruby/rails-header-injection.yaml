@@ -1,0 +1,17 @@
+rules:
+  - id: ez-rails-header-injection
+    message: >-
+      User-supplied parameter is used directly in a response header. An attacker
+      can inject CRLF characters to add arbitrary headers or split the HTTP
+      response, enabling cache poisoning or XSS.
+    severity: ERROR
+    languages: [ruby]
+    metadata:
+      cwe: "CWE-113"
+      owasp: "A03:2021 Injection"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: response.headers[$KEY] = params[...]
+      - pattern: response.set_header($KEY, params[...])
+      - pattern: headers[$KEY] = params[...]

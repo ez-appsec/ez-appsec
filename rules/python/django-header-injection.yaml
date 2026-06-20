@@ -1,0 +1,26 @@
+rules:
+  - id: ez-django-header-injection
+    message: >-
+      User input is used directly in an HTTP response header without sanitization.
+      An attacker can inject CRLF characters to add arbitrary headers or split
+      the response, enabling cache poisoning or XSS via header injection.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      cwe: "CWE-113"
+      owasp: "A03:2021 Injection"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: |
+          $VAL = request.$METHOD.get(...)
+          ...
+          $RESPONSE[$HEADER] = $VAL
+      - pattern: |
+          $VAL = request.$METHOD.get(...)
+          ...
+          $RESPONSE.__setitem__($HEADER, $VAL)
+      - pattern: |
+          $VAL = request.$METHOD[...]
+          ...
+          $RESPONSE[$HEADER] = $VAL

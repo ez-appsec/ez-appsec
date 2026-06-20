@@ -1,0 +1,17 @@
+rules:
+  - id: ez-rails-csrf-skip
+    message: >-
+      Skipping CSRF verification disables Rails' built-in CSRF protection for
+      the controller. This allows cross-site request forgery attacks. For API
+      controllers, use token-based auth instead of disabling CSRF globally.
+    severity: WARNING
+    languages: [ruby]
+    metadata:
+      cwe: "CWE-352"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: "skip_before_action :verify_authenticity_token"
+      - pattern: skip_forgery_protection
+      - pattern: "protect_from_forgery with: :null_session"

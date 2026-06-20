@@ -42,7 +42,8 @@ def main():
 @click.option("--license-check", is_flag=True, default=False, help="Run license compliance check (requires syft)")
 @click.option("--image", default=None, help="Container image to scan for OS-level CVEs (e.g. nginx:latest)")
 @click.option("--registry-auth", default=None, help="Private registry credentials in user:token format")
-def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project, sbom, sbom_output, license_check, image, registry_auth):
+@click.option("--rules", multiple=True, help="Custom rule packs to enable (python, ruby, java, javascript, php, or 'all')")
+def scan(path, ai_prompt, languages, severity, output, config_file, baseline_path, baseline_threshold, slack_webhook, teams_webhook, project_name, dashboard_url, jira_url, jira_email, jira_token, jira_project, sbom, sbom_output, license_check, image, registry_auth, rules):
     """Scan a codebase for security vulnerabilities using AI analysis
 
     PATH: Directory or file to scan (default: current directory)
@@ -57,6 +58,13 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
             config.output_file = output
 
         scanner = SecurityScanner(config, license_check=license_check)
+
+        if rules and scanner.external:
+            from ez_appsec.external_scanners import resolve_rules_dirs
+            extra_dirs = resolve_rules_dirs(list(rules))
+            if extra_dirs and "semgrep" in scanner.external.scanners:
+                scanner.external.scanners["semgrep"].extra_rules_dirs = extra_dirs
+                click.echo(f"  Custom rules: {', '.join(rules)} ({len(extra_dirs)} pack(s))")
         results = scanner.scan(path, ai_prompt)
 
         if image:

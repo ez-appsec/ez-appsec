@@ -1,0 +1,20 @@
+rules:
+  - id: ez-laravel-mass-assignment
+    message: >-
+      Passing all request input directly to a model create/update without
+      validation allows mass assignment. An attacker can set sensitive fields
+      like is_admin by adding unexpected request parameters. Use
+      $request->validated() or $request->only([...]) instead.
+    severity: ERROR
+    languages: [php]
+    metadata:
+      cwe: "CWE-915"
+      owasp: "A04:2021 Insecure Design"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: $MODEL::create($request->all())
+      - pattern: $MODEL::update($request->all())
+      - pattern: $OBJ->fill($request->all())
+      - pattern: $OBJ->update($request->all())
+      - pattern: new $MODEL($request->all())

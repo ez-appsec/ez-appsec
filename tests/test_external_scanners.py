@@ -1,5 +1,7 @@
 """Tests for external scanner wrappers"""
 
+from unittest.mock import patch
+
 import pytest
 from ez_appsec.external_scanners import (
     GitleaksScanner,
@@ -262,6 +264,18 @@ class TestSemgrepAIRemediation:
         result = scanner._add_ai_remediation_fields(finding, source)
         assert result["fix_type"] == "code_change"
         assert result["fix_complexity"] == "moderate"
+
+
+class TestGrypeDependencyInstall:
+    def test_missing_package_manager_does_not_crash(self, tmp_path, caplog):
+        """Thin images omit npm/pip; dependency manifest generation should degrade to a warning."""
+        (tmp_path / "package.json").write_text('{"name":"demo","dependencies":{"left-pad":"1.3.0"}}')
+        scanner = GrypeScanner()
+
+        with patch("ez_appsec.external_scanners.subprocess.run", side_effect=FileNotFoundError("npm")):
+            scanner._install_dependencies(str(tmp_path))
+
+        assert "Dependency manifest generation skipped: npm is not installed" in caplog.text
 
 
 class TestKicsAIRemediation:

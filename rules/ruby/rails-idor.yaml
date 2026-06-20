@@ -1,0 +1,23 @@
+rules:
+  - id: ez-rails-idor-find
+    message: >-
+      Direct use of params[:id] to find a record without scoping to the current
+      user. This allows IDOR — attackers can access other users' records by
+      changing the ID in the request.
+    severity: ERROR
+    languages: [ruby]
+    metadata:
+      cwe: "CWE-639"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: $MODEL.find(params[...])
+          - pattern: "$MODEL.find_by(id: params[...])"
+          - pattern: $MODEL.find_by_id(params[...])
+      # $MODEL must be a bare model class (e.g. Invoice), not a scoped receiver
+      # like current_user.invoices or @user.invoices — those are IDOR-safe.
+      - metavariable-regex:
+          metavariable: $MODEL
+          regex: "^[A-Z][A-Za-z0-9_]*$"

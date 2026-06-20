@@ -1,0 +1,20 @@
+rules:
+  - id: ez-spring-insecure-deserialization
+    message: >-
+      Deserializing untrusted data with ObjectInputStream allows arbitrary code
+      execution. An attacker can craft a serialized Java object that executes
+      arbitrary commands when deserialized.
+    severity: ERROR
+    languages: [java]
+    metadata:
+      cwe: "CWE-502"
+      owasp: "A08:2021 Software and Data Integrity Failures"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: new ObjectInputStream($REQ.getInputStream())
+      - pattern: |
+          ObjectInputStream $OIS = new ObjectInputStream(...);
+          ...
+          $OIS.readObject();
+      - pattern: new ObjectInputStream(new ByteArrayInputStream($DATA))

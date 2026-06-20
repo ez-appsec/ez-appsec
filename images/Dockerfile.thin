@@ -1,8 +1,14 @@
-# Pull kics binary from official image
-FROM checkmarx/kics@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602 as kics
+# Thin ez-appsec image: standard scanners, no runtime package managers.
+#
+# Tradeoff: grype dependency discovery will not auto-run npm/pip for projects
+# that only have package.json or requirements.txt. Commit lockfiles/SBOMs, or
+# use the standard image when automatic dependency installation is required.
 
-# Multi-stage build for minimal image size (pinned versions to satisfy hadolint)
-FROM python:3.11.9-alpine3.18 as builder
+# Pull kics binary from official image
+FROM checkmarx/kics@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602 AS kics
+
+# Multi-stage build for minimal image size (pinned versions match standard image where possible)
+FROM python:3.11.9-alpine3.18 AS builder
 
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
@@ -14,11 +20,9 @@ RUN apk add --no-cache \
     git=2.40.4-r0
 
 WORKDIR /app
-
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy and build wheel
 COPY . /app
 RUN pip install --no-cache-dir build==1.4.0 && python -m build --wheel --outdir /dist
 
@@ -30,7 +34,8 @@ SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Install runtime dependencies (pinned versions)
+# No nodejs/npm in thin image. Keep pip only long enough to install runtime deps,
+# then remove it before the final image layer.
 RUN apk add --no-cache \
     python3=3.11.12-r1 \
     git=2.40.4-r0 \
@@ -39,9 +44,7 @@ RUN apk add --no-cache \
     bash=5.2.15-r5 \
     ca-certificates=20241121-r1 \
     libffi=3.4.4-r2 \
-    openssl=3.1.8-r0 \
-    nodejs=18.20.1-r0 \
-    npm=9.6.6-r0 && \
+    openssl=3.1.8-r0 && \
     python3 -m ensurepip && \
     python3 -m pip install --no-cache-dir --upgrade pip==26.0.1
 
@@ -62,11 +65,9 @@ RUN ARCH=$(uname -m) && \
 RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin && \
     grype version
 
-# semgrep via pip (pinned)
 RUN pip install --no-cache-dir semgrep==1.157.0 && \
     semgrep --version && \
-    find /usr/lib/python3.11/site-packages -depth -type d -name __pycache__ -exec rm -rf {} + && \
-    rm -rf /usr/lib/python3.11/ensurepip
+    find /usr/lib/python3.11/site-packages -depth -type d -name __pycache__ -exec rm -rf {} +
 
 # Bundle GitLab SAST rules (language dirs only — offline use, richer severity metadata)
 RUN curl -sSfL "https://gitlab.com/gitlab-org/security-products/sast-rules/-/archive/main/sast-rules-main.tar.gz" \
@@ -79,41 +80,34 @@ RUN curl -sSfL "https://gitlab.com/gitlab-org/security-products/sast-rules/-/arc
     rm -rf /tmp/sast-rules.tar.gz /tmp/sast-rules-extract && \
     curl -sSfL "https://semgrep.dev/c/p/ruby" -o /usr/local/share/sast-rules/ruby.yml
 
-# Copy kics binary and assets from official image
 COPY --from=kics /app/bin/kics /usr/local/bin/kics
 COPY --from=kics /app/bin/assets /usr/local/bin/assets
 RUN kics version
 
-# Install ez-appsec wheel and dependencies from builder
 COPY --from=builder /dist/*.whl /tmp/
 COPY --from=builder /app/requirements.txt /tmp/
 RUN pip install --no-cache-dir -r /tmp/requirements.txt /tmp/*.whl && \
     rm /tmp/*.whl /tmp/requirements.txt && \
     find /usr/lib/python3.11/site-packages -depth -type d -name __pycache__ -exec rm -rf {} + && \
-    rm -rf /usr/lib/python3.11/ensurepip
+    rm -rf /usr/lib/python3.11/ensurepip \
+           /usr/lib/python3.11/site-packages/pip \
+           /usr/lib/python3.11/site-packages/pip-* \
+           /usr/bin/pip* /usr/local/bin/pip*
 
-ENV PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+ENV PATH="/usr/local/bin:/usr/bin:/bin:$PATH" \
+    EZ_APPSEC_THIN_IMAGE=1
 
-# Copy custom SAST rule packs
 COPY rules/ /app/rules/
-
-# Copy website files
 COPY web/ /web/
 
-# Create non-root user for runtime
 RUN addgroup -S ezappsec && adduser -S -G ezappsec ezappsec && \
     mkdir -p /scan /home/ezappsec/.cache && \
     chown -R ezappsec:ezappsec /web /app/rules /home/ezappsec /scan
 
 USER ezappsec
+WORKDIR /scan
 ENV HOME=/home/ezappsec
 
-WORKDIR /scan
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD ez-appsec --version || exit 1
-
-# Default command
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD ez-appsec --version || exit 1
 ENTRYPOINT ["ez-appsec"]
 CMD ["--help"]

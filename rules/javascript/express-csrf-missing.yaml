@@ -1,0 +1,30 @@
+rules:
+  - id: ez-express-no-csrf
+    message: >-
+      Express POST/PUT/DELETE route without CSRF middleware. If this app uses
+      cookies or sessions, state-changing endpoints need CSRF protection. Use
+      the csurf or csrf-csrf middleware, or use token-based auth instead.
+    severity: WARNING
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-352"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: LOW
+    pattern-either:
+      - pattern: |
+          app.post($PATH, function($REQ, $RES) {
+              ...
+          })
+      - pattern: |
+          app.put($PATH, function($REQ, $RES) {
+              ...
+          })
+      - pattern: |
+          app.delete($PATH, function($REQ, $RES) {
+              ...
+          })
+      - pattern: |
+          router.post($PATH, function($REQ, $RES) {
+              ...
+          })

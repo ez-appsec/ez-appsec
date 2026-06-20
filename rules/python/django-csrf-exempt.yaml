@@ -1,0 +1,23 @@
+rules:
+  - id: ez-django-csrf-exempt
+    message: >-
+      View decorated with @csrf_exempt disables Django's CSRF protection.
+      This allows cross-site request forgery attacks against this endpoint.
+      If the endpoint modifies state, remove the exemption and use proper
+      CSRF tokens. For API endpoints, use token-based auth instead.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      cwe: "CWE-352"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: HIGH
+    patterns:
+      - pattern: |
+          @csrf_exempt
+          def $FUNC(...):
+              ...
+      - pattern-not-inside: |
+          @require_http_methods(["GET"])
+          def $FUNC(...):
+              ...

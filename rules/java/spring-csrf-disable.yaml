@@ -1,0 +1,17 @@
+rules:
+  - id: ez-spring-csrf-disable
+    message: >-
+      CSRF protection is explicitly disabled via csrf().disable(). This allows
+      cross-site request forgery attacks. For REST APIs using token-based auth,
+      this may be acceptable, but for session-based web apps it is dangerous.
+    severity: WARNING
+    languages: [java]
+    metadata:
+      cwe: "CWE-352"
+      owasp: "A01:2021 Broken Access Control"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: http.csrf().disable()
+      - pattern: http.csrf(csrf -> csrf.disable())
+      - pattern: $HTTP.csrf(AbstractHttpConfigurer::disable)

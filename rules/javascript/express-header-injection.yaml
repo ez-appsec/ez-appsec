@@ -1,0 +1,20 @@
+rules:
+  - id: ez-express-header-injection
+    message: >-
+      User input from request query, params, or body is used directly in a
+      response header. An attacker can inject CRLF characters to add arbitrary
+      headers or split the HTTP response.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-113"
+      owasp: "A03:2021 Injection"
+      category: security
+      confidence: MEDIUM
+    pattern-either:
+      - pattern: $RES.setHeader($NAME, req.query.$KEY)
+      - pattern: $RES.setHeader($NAME, req.params.$KEY)
+      - pattern: $RES.setHeader($NAME, req.body.$KEY)
+      - pattern: $RES.set($NAME, req.query.$KEY)
+      - pattern: $RES.set($NAME, req.params.$KEY)
+      - pattern: $RES.header($NAME, req.query.$KEY)

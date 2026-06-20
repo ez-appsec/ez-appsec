@@ -1,0 +1,25 @@
+rules:
+  - id: ez-laravel-insecure-deserialization
+    message: >-
+      Using unserialize() on user input allows arbitrary code execution via PHP
+      object injection. An attacker can craft a serialized payload that triggers
+      magic methods (__destruct, __wakeup) to execute arbitrary code. Use
+      json_decode() instead.
+    severity: ERROR
+    languages: [php]
+    metadata:
+      cwe: "CWE-502"
+      owasp: "A08:2021 Software and Data Integrity Failures"
+      category: security
+      confidence: HIGH
+    pattern-either:
+      - pattern: unserialize($request->input(...))
+      - pattern: unserialize($request->$PARAM)
+      - pattern: |
+          $DATA = $request->input(...);
+          ...
+          unserialize($DATA);
+      - pattern: |
+          $DATA = $request->$PARAM;
+          ...
+          unserialize($DATA);
