@@ -1,3 +1,10 @@
+## [1.7.27](https://github.com/ez-appsec/ez-appsec/compare/v1.7.26...v1.7.27) (2026-06-20)
+
+
+### Bug Fixes
+
+* normalize image findings and add scanner integration checks ([#71](https://github.com/ez-appsec/ez-appsec/issues/71)) ([304c5cd](https://github.com/ez-appsec/ez-appsec/commit/304c5cd3913dc4b646f21d86cd3d2e01f70cd1b6))
+
 ## [1.7.26](https://github.com/ez-appsec/ez-appsec/compare/v1.7.25...v1.7.26) (2026-06-20)
 
 
