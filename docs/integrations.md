@@ -123,3 +123,42 @@ When license checking is enabled, the scan result includes:
 - name: Scan with license compliance
   run: ez-appsec scan . --license-check --output results.json
 ```
+
+## REST API
+
+The optional REST API (`api/`, packaged as `ghcr.io/ez-appsec/ez-appsec-api`)
+exposes dashboard findings and on-demand scans over HTTP. It is intended for
+**trusted, operator-only** networks; it is not hardened for unauthenticated
+internet exposure.
+
+### Endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | none | Liveness probe |
+| `POST` | `/scan` | required | Enqueue a scan; returns `{job_id}` |
+| `GET` | `/scan/{job_id}` | required | Poll scan status |
+| `GET` | `/projects` | required | List dashboard projects |
+| `GET` | `/projects/{slug}/findings` | required | List findings (supports `severity`, `category`, `scanner`, `file` filters) |
+| `GET` | `/projects/{slug}/history` | required | Trend history |
+| `GET` | `/openapi.json` | required | OpenAPI schema (gated to avoid surface enumeration) |
+| `GET` | `/docs` | required | Swagger UI |
+
+### Configuration
+
+| Env var | Required | Description |
+|---|---|---|
+| `EZ_APPSEC_API_KEY` | yes | API key; the process **fails fast at startup** if unset. Sent via `X-API-Key` header. |
+| `EZ_APPSEC_ALLOWED_ROOTS` | no | Colon-separated list of local paths scans may target. When set, `POST /scan` with a local path outside these roots is rejected (HTTP 400). Unset = no restriction. |
+| `EZ_DASHBOARD_OWNER` / `EZ_DASHBOARD_REPO` | no | Dashboard GitHub repo to read findings from. |
+| `GITHUB_TOKEN` | recommended | Raises the GitHub API rate limit for dashboard reads. |
+
+### Security notes
+
+- Authentication uses `hmac.compare_digest` (constant-time) and is enforced on
+  every endpoint except `/health`.
+- Scan targets are validated before reaching a subprocess: leading-dash paths
+  and SSH-style `git@` URLs are rejected (HTTP/HTTPS clone URLs only).
+- `EZ_APPSEC_ALLOWED_ROOTS` confines local scan targets to approved directories.
+- Scan jobs are tracked in a bounded, TTL-evicted store and run on a fixed-size
+  worker pool to prevent unbounded resource use.

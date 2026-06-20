@@ -43,7 +43,10 @@ class Identifier(BaseModel):
 class Vulnerability(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    id: str
+    # Some finding sources (notably PLAN-15 image/container findings) do not
+    # carry a stable id; defaulting to "" lets those pass validation instead
+    # of returning a 500. Callers can compute one via compute_finding_id().
+    id: str = ""
     category: str = "sast"
     name: str = ""
     message: str = ""

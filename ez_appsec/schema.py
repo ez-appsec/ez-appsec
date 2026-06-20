@@ -80,6 +80,52 @@ def generate_scan_id() -> str:
     return str(uuid.uuid4())
 
 
+def finding_file_path(value: Dict[str, Any]) -> str:
+    """Extract a normalized file path from a finding dict across known shapes.
+
+    Shared by the REST API and the dashboard so both surfaces render the same
+    path for the same finding. Handles v1 flat findings (``file`` / ``file_name``),
+    object-shaped ``location.file`` (e.g. KICS, grype image findings), and the
+    dashboard-fixture shape. Returns "" when no path can be derived.
+    """
+    if not isinstance(value, dict):
+        return ""
+    if value.get("file"):
+        return normalize_path(str(value["file"]))
+    if value.get("file_name"):
+        return normalize_path(str(value["file_name"]))
+    location = value.get("location")
+    if isinstance(location, dict):
+        file_info = location.get("file")
+        if isinstance(file_info, dict):
+            name = file_info.get("file_name") or file_info.get("path") or file_info.get("name")
+            if name:
+                return normalize_path(str(name))
+        elif isinstance(file_info, str) and file_info:
+            return normalize_path(file_info)
+        path = location.get("path")
+        if isinstance(path, str) and path:
+            return normalize_path(path)
+    return ""
+
+
+def finding_scanner_name(value: Dict[str, Any]) -> str:
+    """Extract a scanner display name from a finding dict.
+
+    Handles string scanner fields ("gitleaks") and object-shaped scanner fields
+    ({"id": "semgrep", "name": "Semgrep"}). Shared with the dashboard so the
+    API and dashboard agree on the scanner label.
+    """
+    if not isinstance(value, dict):
+        return ""
+    scanner = value.get("scanner")
+    if isinstance(scanner, dict):
+        return str(scanner.get("name") or scanner.get("id") or "")
+    if scanner is None:
+        return ""
+    return str(scanner)
+
+
 class FindingV2(BaseModel):
     model_config = ConfigDict(extra="allow")
 
