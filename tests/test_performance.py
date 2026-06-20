@@ -6,14 +6,14 @@ Measures scan time, resource usage, and scalability across codebase sizes.
 import pytest
 import time
 import os
-
-psutil = pytest.importorskip("psutil", reason="psutil not installed")
 import tempfile
 import shutil
 from pathlib import Path
 from typing import Dict, List, Any
 from ez_appsec.config import Config
 from ez_appsec.scanner import SecurityScanner
+
+psutil = pytest.importorskip("psutil", reason="psutil required for performance tests")
 
 
 class PerformanceMetrics:
