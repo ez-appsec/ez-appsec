@@ -1,3 +1,10 @@
+## [1.7.23](https://github.com/ez-appsec/ez-appsec/compare/v1.7.22...v1.7.23) (2026-06-20)
+
+
+### Features
+
+* add container image scanning via grype (PLAN-15) ([#28](https://github.com/ez-appsec/ez-appsec/issues/28)) ([26741f0](https://github.com/ez-appsec/ez-appsec/commit/26741f004a0b3feb61230e5b821fba417ebe377f))
+
 ## [1.7.22](https://github.com/ez-appsec/ez-appsec/compare/v1.7.21...v1.7.22) (2026-06-19)
 
 
