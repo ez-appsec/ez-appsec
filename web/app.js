@@ -563,7 +563,7 @@ class VulnerabilityDashboard {
     getScannerName(vuln) {
         if (vuln.scanner?.name) return vuln.scanner.name;
         if (vuln.scanner?.id)   return vuln.scanner.id;
-        if (vuln.scanner)       return vuln.scanner;
+        if (typeof vuln.scanner === 'string') return vuln.scanner;
         return 'unknown';
     }
 

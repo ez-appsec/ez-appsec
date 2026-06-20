@@ -1,0 +1,8 @@
+# Project-local ez-appsec configuration.
+# Scanner integration fixtures intentionally contain vulnerable examples; they
+# are exercised by scripts/verify-scanner-integration.py and should not fail
+# repository self-scans or PR code-scanning checks.
+ignore:
+  - file_path: "tests/fixtures/scanners/**"
+    permanent: true
+    reason: "Intentional scanner integration fixtures with seeded vulnerabilities."
