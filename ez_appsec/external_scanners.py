@@ -850,7 +850,15 @@ class GrypeScanner(ScannerWrapper):
                 if cmd is None:
                     return
                 logger.info(f"Generating dependency manifest via: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True, cwd=path, timeout=300)
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=path, timeout=300)
+                except FileNotFoundError:
+                    logger.warning(
+                        "Dependency manifest generation skipped: %s is not installed. "
+                        "Commit a lockfile/SBOM or use the standard image for automatic dependency installation.",
+                        cmd[0],
+                    )
+                    return
                 if result.returncode != 0:
                     logger.warning(f"Dependency manifest generation failed: {result.stderr[:200]}")
                 return
