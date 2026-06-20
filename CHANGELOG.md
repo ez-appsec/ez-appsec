@@ -1,3 +1,10 @@
+## [1.7.26](https://github.com/ez-appsec/ez-appsec/compare/v1.7.25...v1.7.26) (2026-06-20)
+
+
+### Bug Fixes
+
+* **api:** harden REST API from PR [#27](https://github.com/ez-appsec/ez-appsec/issues/27) code review ([#72](https://github.com/ez-appsec/ez-appsec/issues/72)) ([3d96e95](https://github.com/ez-appsec/ez-appsec/commit/3d96e95a945ecccba87779ce42674e23afd1a5bc)), closes [#1](https://github.com/ez-appsec/ez-appsec/issues/1) [#10](https://github.com/ez-appsec/ez-appsec/issues/10) [#2](https://github.com/ez-appsec/ez-appsec/issues/2) [#3](https://github.com/ez-appsec/ez-appsec/issues/3) [#6](https://github.com/ez-appsec/ez-appsec/issues/6) [#21](https://github.com/ez-appsec/ez-appsec/issues/21) [#5](https://github.com/ez-appsec/ez-appsec/issues/5) [#5](https://github.com/ez-appsec/ez-appsec/issues/5) [#4](https://github.com/ez-appsec/ez-appsec/issues/4) [#7](https://github.com/ez-appsec/ez-appsec/issues/7) [#11](https://github.com/ez-appsec/ez-appsec/issues/11) [#12](https://github.com/ez-appsec/ez-appsec/issues/12) [#13](https://github.com/ez-appsec/ez-appsec/issues/13) [#25](https://github.com/ez-appsec/ez-appsec/issues/25) [#14](https://github.com/ez-appsec/ez-appsec/issues/14) [#15](https://github.com/ez-appsec/ez-appsec/issues/15) [#16](https://github.com/ez-appsec/ez-appsec/issues/16) [#17](https://github.com/ez-appsec/ez-appsec/issues/17) [#8](https://github.com/ez-appsec/ez-appsec/issues/8) [#18](https://github.com/ez-appsec/ez-appsec/issues/18) [#20](https://github.com/ez-appsec/ez-appsec/issues/20) [#23](https://github.com/ez-appsec/ez-appsec/issues/23) [#22](https://github.com/ez-appsec/ez-appsec/issues/22) [#15](https://github.com/ez-appsec/ez-appsec/issues/15) [#13](https://github.com/ez-appsec/ez-appsec/issues/13) [#14](https://github.com/ez-appsec/ez-appsec/issues/14) [#26](https://github.com/ez-appsec/ez-appsec/issues/26)
+
 ## [1.7.25](https://github.com/ez-appsec/ez-appsec/compare/v1.7.24...v1.7.25) (2026-06-20)
 
 
