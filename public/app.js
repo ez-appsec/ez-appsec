@@ -159,24 +159,38 @@ class VulnerabilityDashboard {
     }
 
     getFilePath(vuln) {
-        if (vuln.location?.file) return vuln.location.file;
-        if (vuln.file) return vuln.file;
-        if (vuln.location?.dependency?.package?.name) {
-            return `dependency: ${vuln.location.dependency.package.name}`;
+        const file = vuln.location?.file ?? vuln.file;
+        if (typeof file === 'string' && file.trim()) return file;
+        if (file && typeof file === 'object') {
+            const fileName = file.file_name || file.name || file.path;
+            if (fileName) return fileName;
         }
+
+        const dependency = vuln.location?.dependency || vuln.dependency || {};
+        const packageInfo = dependency.package || {};
+        const packageName = packageInfo.name || dependency.package_name || vuln.package_name || vuln.artifact?.name;
+        const packageVersion = dependency.version || packageInfo.version || vuln.installed_version || vuln.artifact?.version;
+        if (packageName) {
+            return packageVersion ? `dependency: ${packageName}@${packageVersion}` : `dependency: ${packageName}`;
+        }
+
+        const image = vuln.image || vuln.container_image || vuln.location?.image || vuln.artifact?.locations?.[0]?.path;
+        if (image) return `image: ${image}`;
+
         return 'unknown';
     }
 
     getLineNumber(vuln) {
         if (vuln.location?.start_line) return vuln.location.start_line;
+        if (vuln.location?.file?.start_line) return vuln.location.file.start_line;
         if (vuln.line) return vuln.line;
         return null;
     }
 
     getScannerName(vuln) {
         if (vuln.scanner?.name) return vuln.scanner.name;
-        if (vuln.scanner?.id) return vuln.scanner.id;
-        if (vuln.scanner) return vuln.scanner;
+        if (vuln.scanner?.id)   return vuln.scanner.id;
+        if (typeof vuln.scanner === 'string') return vuln.scanner;
         return 'unknown';
     }
 

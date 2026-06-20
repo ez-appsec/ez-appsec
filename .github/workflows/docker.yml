@@ -282,6 +282,12 @@ jobs:
             -v "$PWD:/workspace:ro" -w /workspace \
             ez-appsec:standard-rule-test scripts/verify-rule-fixtures.py
 
+      - name: Run scanner integration tests in standard image
+        run: |
+          docker run --rm --entrypoint python3 \
+            -v "$PWD:/workspace:ro" -w /workspace \
+            ez-appsec:standard-rule-test scripts/verify-scanner-integration.py
+
       - name: Test image functionality
         if: github.event_name != 'pull_request'
         run: |
