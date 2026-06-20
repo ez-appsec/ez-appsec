@@ -1,4 +1,5 @@
-FROM python:3.12-slim AS builder
+# Pinned patch version for reproducible image builds.
+FROM python:3.12.7-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -9,13 +10,22 @@ RUN pip install --no-cache-dir -r api-requirements.txt -r requirements.txt
 COPY . /app
 RUN pip install --no-cache-dir -e .
 
-FROM python:3.12-slim
+FROM python:3.12.7-slim-bookworm
 
 RUN groupadd -r ezapi && useradd -r -g ezapi ezapi
 
+# Copy only the installed interpreter state plus the package source we need.
+# We deliberately do NOT copy the whole repo into the runtime image (tests,
+# fixtures, .git, dashboard JSON) to keep the image small and avoid shipping
+# scanner fixtures that contain intentional secret-like strings.
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-COPY --from=builder /app /app
+COPY --from=builder /app/api /app/api
+COPY --from=builder /app/ez_appsec /app/ez_appsec
+
+# ezapi owns /app so uvicorn can write logs/temp if ever needed; reads-only by
+# default would surface confusing failures the first time something writes.
+RUN chown -R ezapi:ezapi /app
 
 WORKDIR /app
 

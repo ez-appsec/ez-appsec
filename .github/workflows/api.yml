@@ -85,3 +85,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+
+      # Smoke-test the image so entrypoint/health regressions are caught before
+      # a tag is pushed to GHCR (review #26). Runs on PRs and main pushes.
+      - name: Smoke test built image
+        run: |
+          docker build -f Dockerfile.api -t ez-appsec-api:smoke .
+          docker run --rm -d --name api-smoke -p 8000:8000 \
+            -e EZ_APPSEC_API_KEY=smoke-key ez-appsec-api:smoke
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8000/health >/dev/null; then
+              echo "health check passed"
+              docker stop api-smoke
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API container did not become healthy"
+          docker logs api-smoke || true
+          docker stop api-smoke || true
+          exit 1
