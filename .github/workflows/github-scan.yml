@@ -29,20 +29,48 @@ jobs:
     continue-on-error: true
     steps:
       - name: Check for newer ez-appsec release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CURRENT_VERSION: ${{ vars.EZ_APPSEC_VERSION || 'latest' }}
         run: |
-          LATEST=$(curl -sSf \
-            -H "Accept: application/vnd.github+json" \
-            -H "User-Agent: ez-appsec-version-check/1.0" \
-            https://api.github.com/repos/ez-appsec/ez-appsec/releases/latest \
-            | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
-          CURRENT="${{ vars.EZ_APPSEC_VERSION || 'latest' }}"
-          if [ "$CURRENT" = "latest" ]; then
-            echo "::warning::ez-appsec: using 'latest' image tag. Pin EZ_APPSEC_VERSION to a specific version for reproducible scans. Current release: ${LATEST}"
-          elif [ "$CURRENT" != "$LATEST" ]; then
-            echo "::warning::ez-appsec ${CURRENT} is outdated. Latest release: ${LATEST}. Update the EZ_APPSEC_VERSION variable."
-          else
-            echo "ez-appsec ${CURRENT} is up to date."
-          fi
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          current = os.environ.get("CURRENT_VERSION", "latest")
+          req = urllib.request.Request(
+              "https://api.github.com/repos/ez-appsec/ez-appsec/releases/latest",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "ez-appsec-version-check/1.0",
+                  "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=15) as response:
+                  latest = json.load(response)["tag_name"].lstrip("v")
+          except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
+              print(f"::notice::ez-appsec version check skipped: could not fetch latest release ({exc})")
+              sys.exit(0)
+
+          if current == "latest":
+              print(
+                  "::warning::ez-appsec: using 'latest' image tag. "
+                  "Pin EZ_APPSEC_VERSION to a specific version for reproducible scans. "
+                  f"Current release: {latest}"
+              )
+          elif current != latest:
+              print(
+                  f"::warning::ez-appsec {current} is outdated. Latest release: {latest}. "
+                  "Update the EZ_APPSEC_VERSION variable."
+              )
+          else:
+              print(f"ez-appsec {current} is up to date.")
+          PY
 
   scan:
     name: Security Scan
