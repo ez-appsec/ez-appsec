@@ -11,8 +11,14 @@ rules:
       owasp: "A01:2021 Broken Access Control"
       category: security
       confidence: MEDIUM
-    pattern-either:
-      - pattern: $MODEL::find($request->input(...))
-      - pattern: $MODEL::find($request->$PARAM)
-      - pattern: $MODEL::findOrFail($request->input(...))
-      - pattern: $MODEL::where('id', $request->input(...))->first()
+    patterns:
+      - pattern-either:
+          - pattern: $MODEL::find($request->input(...))
+          - pattern: $MODEL::find($request->$PARAM)
+          - pattern: $MODEL::findOrFail($request->input(...))
+          - pattern: $MODEL::where('id', $request->input(...))->first()
+      # $MODEL must be a bare model class (e.g. Invoice), not a scoped receiver
+      # chain like auth()->user()->invoices() — those are IDOR-safe.
+      - metavariable-regex:
+          metavariable: $MODEL
+          regex: "^[A-Z][A-Za-z0-9_\\\\]*$"

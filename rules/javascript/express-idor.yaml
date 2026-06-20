@@ -11,8 +11,14 @@ rules:
       owasp: "A01:2021 Broken Access Control"
       category: security
       confidence: MEDIUM
-    pattern-either:
-      - pattern: $MODEL.findById(req.params.$ID)
-      - pattern: $MODEL.findByPk(req.params.$ID)
-      - pattern: "$MODEL.findOne({where: {id: req.params.$ID}})"
-      - pattern: "$MODEL.findOne({_id: req.params.$ID})"
+    patterns:
+      - pattern-either:
+          - pattern: $MODEL.findById(req.params.$ID)
+          - pattern: $MODEL.findByPk(req.params.$ID)
+          - pattern: "$MODEL.findOne({where: {id: req.params.$ID}})"
+          - pattern: "$MODEL.findOne({_id: req.params.$ID})"
+      # Exclude lookups that also scope by the authenticated user (IDOR-safe).
+      # These match the common Mongoose/Sequelize "filter by userId" patterns.
+      - pattern-not: "$MODEL.findOne({ _id: req.params.$ID, userId: req.user.$FIELD })"
+      - pattern-not: "$MODEL.findOne({ _id: req.params.$ID, owner: req.user.$FIELD })"
+      - pattern-not: "$MODEL.findOne({ where: { id: req.params.$ID, userId: req.user.$FIELD } })"

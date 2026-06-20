@@ -12,13 +12,18 @@ rules:
       category: security
       confidence: MEDIUM
     patterns:
-      - pattern: |
-          $REPO.findById($ID)
+      - pattern: $REPO.findById($ID)
       - pattern-inside: |
           public $RET $METHOD(@PathVariable $TYPE $ID, ...) {
               ...
           }
+      # Exclude methods that perform an ownership check against the principal.
+      # The check typically reads getOwnerId().equals(principal.getName()).
       - pattern-not-inside: |
-          if (...$ID...equals(...$USER...)) {
+          public $RET $METHOD(@PathVariable $TYPE $ID, ...) {
+              ...
+              if ($ENT.getOwnerId().equals($PRINC.getName())) {
+                  ...
+              }
               ...
           }
