@@ -1,3 +1,10 @@
+## [1.7.28](https://github.com/ez-appsec/ez-appsec/compare/v1.7.27...v1.7.28) (2026-06-27)
+
+
+### Features
+
+* Commercial Roadmap for Customer Onboarding and Growth ([6e0ec76](https://github.com/ez-appsec/ez-appsec/commit/6e0ec76aba68df17a6d5ba6af8ec4d2cfd9e5a90))
+
 ## [1.7.27](https://github.com/ez-appsec/ez-appsec/compare/v1.7.26...v1.7.27) (2026-06-20)
 
 
