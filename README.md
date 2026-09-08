@@ -1,3 +1,5 @@
+ # Deprecated - project migrated to sourcebsastion/source bastion project
+
 # ez-appsec
 
 **AI-powered application security scanning** — free, open-source, works with GitHub and GitLab.
