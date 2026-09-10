@@ -21,6 +21,12 @@ from ez_appsec.converters import VulnerabilityConverters
 from ez_appsec.scanner import SecurityScanner
 
 
+def test_repository_grype_exclusion_uses_supported_path_prefix():
+    config = (Path(__file__).parents[1] / ".grype.yaml").read_text()
+
+    assert '- "./tests/live/**"' in config
+
+
 @pytest.mark.parametrize(
     ("scanner", "name"),
     [
