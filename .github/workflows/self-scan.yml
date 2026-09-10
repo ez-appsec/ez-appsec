@@ -69,14 +69,19 @@ jobs:
 
       - name: Install KICS
         env:
-          KICS_VERSION: "2.1.20"
-          KICS_SHA256: "8a5aa375ccfdc0ddd1114eddf1f9638ad7f6122e98d12a592207509dbe6d81f8"
+          KICS_IMAGE: "checkmarx/kics@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602"
         run: |
-          curl -sSLo /tmp/kics.tar.gz \
-            "https://github.com/Checkmarx/kics/releases/download/v${KICS_VERSION}/kics_${KICS_VERSION}_linux_amd64.tar.gz"
-          echo "${KICS_SHA256}  /tmp/kics.tar.gz" | sha256sum --check -
-          tar -xzf /tmp/kics.tar.gz -C /tmp kics
+          docker pull "${KICS_IMAGE}"
+          KICS_CONTAINER="$(docker create "${KICS_IMAGE}")"
+          trap 'docker rm -f "${KICS_CONTAINER}" >/dev/null 2>&1 || true' EXIT
+          mkdir -p /tmp/kics-assets
+          docker cp "${KICS_CONTAINER}:/app/bin/kics" /tmp/kics
+          docker cp "${KICS_CONTAINER}:/app/bin/assets/." /tmp/kics-assets
           sudo install -m 0755 /tmp/kics /usr/local/bin/kics
+          sudo install -d /usr/local/bin/assets
+          sudo cp -R /tmp/kics-assets/. /usr/local/bin/assets/
+          docker rm "${KICS_CONTAINER}"
+          trap - EXIT
           kics version
 
       - name: Install grype

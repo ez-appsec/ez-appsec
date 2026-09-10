@@ -22,12 +22,13 @@ def test_self_scan_installs_pinned_external_toolchain():
 
     assert 'VERSION="v8.30.1"' in workflow
     assert 'pip install "semgrep==1.176.1"' in workflow
-    assert 'KICS_VERSION: "2.1.20"' in workflow
     assert (
-        'KICS_SHA256: "8a5aa375ccfdc0ddd1114eddf1f9638ad7f6122e98d12a592207509dbe6d81f8"'
+        'KICS_IMAGE: "checkmarx/kics@sha256:'
+        '3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602"'
         in workflow
     )
-    assert "sha256sum --check -" in workflow
+    assert 'docker cp "${KICS_CONTAINER}:/app/bin/kics"' in workflow
+    assert 'docker cp "${KICS_CONTAINER}:/app/bin/assets/."' in workflow
     assert "v0.110.0" in workflow
 
 

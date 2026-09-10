@@ -566,6 +566,23 @@ class KicsScanner(ScannerWrapper):
 
     component_name = "kics"
 
+    @staticmethod
+    def _find_assets_path() -> Optional[Path]:
+        """Locate the query assets distributed alongside the KICS binary."""
+        candidates = []
+        configured = os.environ.get("KICS_ASSETS_PATH")
+        if configured:
+            candidates.append(Path(configured))
+
+        binary = shutil.which("kics")
+        if binary:
+            candidates.append(Path(binary).resolve().parent / "assets")
+
+        for candidate in candidates:
+            if (candidate / "queries").is_dir() and (candidate / "libraries").is_dir():
+                return candidate
+        return None
+
     def _add_ai_remediation_fields(
         self,
         finding: Dict[str, Any],
@@ -673,7 +690,7 @@ class KicsScanner(ScannerWrapper):
         """Check if kics is installed"""
         try:
             subprocess.run(["kics", "version"], capture_output=True, check=True)
-            return True
+            return self._find_assets_path() is not None
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
@@ -696,6 +713,10 @@ class KicsScanner(ScannerWrapper):
         # temp file so the caller can os.unlink it without leaving the dir behind.
         output_dir = tempfile.mkdtemp()
         kics_output_path = os.path.join(output_dir, "results.json")
+        assets_path = self._find_assets_path()
+        if assets_path is None:
+            shutil.rmtree(output_dir, ignore_errors=True)
+            self._fail("not_installed")
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as standalone:
             standalone_path = standalone.name
@@ -703,7 +724,12 @@ class KicsScanner(ScannerWrapper):
 
         try:
             result = subprocess.run(
-                ["kics", "scan", "-p", path, "-f", "json", "-o", output_dir],
+                [
+                    "kics", "scan", "-p", path,
+                    "-q", str(assets_path / "queries"),
+                    "-b", str(assets_path / "libraries"),
+                    "-f", "json", "-o", output_dir,
+                ],
                 capture_output=True,
                 text=True,
                 timeout=120

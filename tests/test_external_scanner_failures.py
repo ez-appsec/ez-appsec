@@ -1,6 +1,7 @@
 """Failure-contract tests for enabled external scanner components."""
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -117,6 +118,7 @@ def test_kics_engine_exit_is_a_failure(tmp_path):
     completed = subprocess.CompletedProcess([], 126, "", "engine failed")
     with (
         patch.object(scanner, "is_installed", return_value=True),
+        patch.object(scanner, "_find_assets_path", return_value=tmp_path),
         patch("ez_appsec.external_scanners.subprocess.run", return_value=completed),
     ):
         with pytest.raises(ScannerExecutionError) as raised:
@@ -125,6 +127,56 @@ def test_kics_engine_exit_is_a_failure(tmp_path):
     assert raised.value.scanner == "kics"
     assert raised.value.code == "execution_failed"
     assert "engine failed" not in str(raised.value)
+
+
+def test_kics_requires_binary_and_query_assets(tmp_path, monkeypatch):
+    scanner = KicsScanner()
+    binary_dir = tmp_path / "bin"
+    assets = binary_dir / "assets"
+    (assets / "queries").mkdir(parents=True)
+    (assets / "libraries").mkdir()
+    binary = binary_dir / "kics"
+    binary.touch()
+    monkeypatch.setattr(shutil, "which", lambda _name: str(binary))
+
+    with patch(
+        "ez_appsec.external_scanners.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    ):
+        assert scanner.is_installed()
+
+    (assets / "queries").rmdir()
+    with patch(
+        "ez_appsec.external_scanners.subprocess.run",
+        return_value=subprocess.CompletedProcess([], 0, "", ""),
+    ):
+        assert not scanner.is_installed()
+
+
+def test_kics_passes_matching_query_and_library_paths(tmp_path):
+    scanner = KicsScanner()
+    assets = tmp_path / "assets"
+    (assets / "queries").mkdir(parents=True)
+    (assets / "libraries").mkdir()
+
+    def write_empty_report(command, **_kwargs):
+        assert command[command.index("-q") + 1] == str(assets / "queries")
+        assert command[command.index("-b") + 1] == str(assets / "libraries")
+        output_dir = Path(command[command.index("-o") + 1])
+        (output_dir / "results.json").write_text('{"queries": []}')
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    with (
+        patch.object(scanner, "is_installed", return_value=True),
+        patch.object(scanner, "_find_assets_path", return_value=assets),
+        patch("ez_appsec.external_scanners.subprocess.run", side_effect=write_empty_report),
+    ):
+        issues, raw_path = scanner.scan_with_raw_output(str(tmp_path))
+
+    try:
+        assert issues == []
+    finally:
+        os.unlink(raw_path)
 
 
 def test_grype_dependency_preparation_failure_is_explicit(tmp_path):
