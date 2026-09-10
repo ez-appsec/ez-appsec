@@ -7,6 +7,7 @@ Validates:
 """
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ LANGUAGES = ["python", "ruby", "java", "javascript", "php"]
 
 REQUIRED_RULE_FIELDS = {"id", "message", "severity", "languages"}
 PATTERN_FIELDS = {"pattern", "pattern-either", "patterns", "pattern-regex"}
+LEGACY_PHP_RULES = Path(__file__).parent.parent / "custom-semgrep-rules.yaml"
 
 
 def _load_rules(language: str):
@@ -87,6 +89,19 @@ class TestRuleYAMLSchema:
                 f"{language}/{filename} rule '{rule['id']}' metadata.category "
                 f"should be 'security', got '{meta.get('category')}'"
             )
+
+
+class TestLegacyPHPRuleSchema:
+    """The top-level PHP pack contains regexes, not PHP AST expressions."""
+
+    def test_all_patterns_are_valid_regexes(self):
+        with open(LEGACY_PHP_RULES) as rule_file:
+            rules = yaml.safe_load(rule_file)["rules"]
+
+        assert len(rules) == 29
+        for rule in rules:
+            assert "pattern-regex" in rule, f"{rule['id']} must declare pattern-regex"
+            re.compile(rule["pattern-regex"])
 
 
 class TestTestFixtures:
