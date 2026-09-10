@@ -92,6 +92,26 @@ def test_tool_specific_finding_exit_codes_are_complete(tmp_path):
         os.unlink(raw_path)
 
 
+def test_semgrep_finding_exit_code_is_complete(tmp_path):
+    scanner = SemgrepScanner()
+
+    def write_empty_report(command, **_kwargs):
+        report_path = Path(command[command.index("--output") + 1])
+        report_path.write_text('{"results": [], "errors": []}')
+        return subprocess.CompletedProcess(command, 1, "", "")
+
+    with (
+        patch.object(scanner, "is_installed", return_value=True),
+        patch("ez_appsec.external_scanners.subprocess.run", side_effect=write_empty_report),
+    ):
+        issues, raw_path = scanner.scan_with_raw_output(str(tmp_path))
+
+    try:
+        assert issues == []
+    finally:
+        os.unlink(raw_path)
+
+
 def test_kics_engine_exit_is_a_failure(tmp_path):
     scanner = KicsScanner()
     completed = subprocess.CompletedProcess([], 126, "", "engine failed")

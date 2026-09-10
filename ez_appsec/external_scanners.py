@@ -414,7 +414,9 @@ class SemgrepScanner(ScannerWrapper):
                 timeout=300
             )
 
-            if result.returncode != 0:
+            # Semgrep reserves exit 1 for blocking findings. Fatal errors use
+            # other codes or populate the JSON error collection.
+            if result.returncode not in (0, 1):
                 self._fail("execution_failed")
 
             try:
