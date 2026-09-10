@@ -18,6 +18,11 @@ from ez_appsec.external_scanners import (
 )
 
 _semgrep_available = shutil.which("semgrep") is not None
+_external_toolchain_available = all(shutil.which(tool) for tool in ("semgrep", "gitleaks", "kics", "grype"))
+pytestmark = pytest.mark.skipif(
+    not _external_toolchain_available,
+    reason="external scanner validation requires the complete scanner toolchain",
+)
 
 
 class TestSQLInjectionDetection:

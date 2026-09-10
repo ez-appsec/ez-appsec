@@ -9,6 +9,20 @@ from unittest.mock import patch, MagicMock
 
 from click.testing import CliRunner
 from ez_appsec.cli import main, scan, gitlab_scan, github_scan, init, check, status
+from ez_appsec.external_scanners import ScannerExecutionError
+
+
+@pytest.fixture(autouse=True)
+def stub_external_scanner_execution():
+    """CLI unit tests do not depend on host-installed scanner binaries."""
+    with (
+        patch("ez_appsec.external_scanners.ExternalScannerManager.scan_all", return_value=[]),
+        patch(
+            "ez_appsec.external_scanners.ExternalScannerManager.scan_all_with_raw_outputs",
+            return_value=([], {}),
+        ),
+    ):
+        yield
 
 
 class TestCLIBasic:
@@ -69,6 +83,17 @@ def example():
         result = runner.invoke(main, ['scan', '/nonexistent/path'])
         assert result.exit_code != 0
         assert 'does not exist' in result.output
+
+    def test_scan_reports_bounded_component_failure(self, sample_file):
+        runner = CliRunner()
+        with patch(
+            "ez_appsec.external_scanners.ExternalScannerManager.scan_all",
+            side_effect=ScannerExecutionError("semgrep", "timeout"),
+        ):
+            result = runner.invoke(main, ["scan", sample_file])
+
+        assert result.exit_code == 1
+        assert "semgrep scanner failed (timeout)" in result.output
 
     def test_scan_with_invalid_output_path(self, sample_file):
         """Test scan with invalid output path"""

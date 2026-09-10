@@ -562,6 +562,68 @@ class GrypeConverter:
         return mapping.get(grype_severity, "medium")
 
 
+class PHPVulnConverter:
+    """Convert ez-appsec PHP scanner output to GitLab vulnerability format."""
+
+    @staticmethod
+    def convert(php_json_path: str) -> Dict[str, Any]:
+        with open(php_json_path, "r") as f:
+            php_data = json.load(f)
+
+        issues = php_data.get("issues")
+        if not isinstance(issues, list):
+            raise ValueError("PHP scanner output must contain an issues list")
+
+        vulnerabilities = []
+        for issue in issues:
+            if not isinstance(issue, dict):
+                raise ValueError("PHP scanner issues must be objects")
+            rule_id = str(issue.get("rule_id") or issue.get("type") or "php-vulnerability")
+            file_path = str(issue.get("file") or "unknown")
+            line = _coerce_line(issue.get("line", 1)) or 1
+            severity = PHPVulnConverter._map_severity(issue.get("severity", "medium"))
+            finding_id = compute_finding_id(rule_id, file_path, line)
+
+            vulnerabilities.append(GitLabVulnerabilityFormat.create_vulnerability(
+                name=str(issue.get("title") or rule_id),
+                message=str(issue.get("description") or "PHP vulnerability detected"),
+                description=str(issue.get("description") or "PHP vulnerability detected"),
+                severity=severity,
+                confidence="medium",
+                solution="Validate and sanitize untrusted input before using it in this operation.",
+                location={
+                    "file": file_path,
+                    "start_line": line,
+                    "end_line": line,
+                    "class": "php",
+                    "method": rule_id,
+                },
+                identifiers=[{
+                    "type": "php_vulnerability",
+                    "name": rule_id,
+                    "value": rule_id,
+                }],
+                scanner={"id": "php-vuln", "name": "ez-appsec PHP scanner"},
+                finding_id=finding_id,
+                category_v2="sast",
+            ))
+
+        return GitLabVulnerabilityFormat.create_report(vulnerabilities, "php-vuln")
+
+    @staticmethod
+    def _map_severity(severity: Any) -> str:
+        mapping = {
+            "critical": "critical",
+            "error": "high",
+            "high": "high",
+            "warning": "medium",
+            "medium": "medium",
+            "low": "low",
+            "info": "info",
+        }
+        return mapping.get(str(severity).lower(), "medium")
+
+
 class GitHubGitleaksConverter:
     """Convert gitleaks output to GitHub SARIF format"""
 
@@ -812,6 +874,56 @@ class GitHubGrypeConverter:
         return report
 
 
+class GitHubPHPVulnConverter:
+    """Convert ez-appsec PHP scanner output to GitHub SARIF format."""
+
+    @staticmethod
+    def convert(php_json_path: str) -> Dict[str, Any]:
+        with open(php_json_path, "r") as f:
+            php_data = json.load(f)
+
+        issues = php_data.get("issues")
+        if not isinstance(issues, list):
+            raise ValueError("PHP scanner output must contain an issues list")
+
+        results = []
+        rules = {}
+        for issue in issues:
+            if not isinstance(issue, dict):
+                raise ValueError("PHP scanner issues must be objects")
+            rule_id = str(issue.get("rule_id") or issue.get("type") or "php-vulnerability")
+            title = str(issue.get("title") or rule_id)
+            description = str(issue.get("description") or "PHP vulnerability detected")
+            file_path = str(issue.get("file") or "unknown")
+            line = _coerce_line(issue.get("line", 1)) or 1
+            severity = PHPVulnConverter._map_severity(issue.get("severity", "medium"))
+
+            rules.setdefault(rule_id, GitHubSarifFormat.create_rule(
+                rule_id=rule_id,
+                name=title,
+                short_description=description,
+                full_description=description,
+                help_uri="https://github.com/ez-appsec/ez-appsec",
+            ))
+            results.append(GitHubSarifFormat.create_result(
+                rule_id=rule_id,
+                message=description,
+                level=GitHubSarifFormat.map_severity_to_level(severity),
+                locations=[GitHubSarifFormat.create_location(
+                    file_path=file_path,
+                    start_line=line,
+                    end_line=line,
+                )],
+                finding_id=compute_finding_id(rule_id, file_path, line),
+                category="sast",
+            ))
+
+        report = GitHubSarifFormat.create_report(results, "php-vuln")
+        if rules:
+            report["runs"][0]["tool"]["driver"]["rules"] = list(rules.values())
+        return report
+
+
 class VulnerabilityConverters:
     """Main converter class for all scanner types"""
 
@@ -819,14 +931,16 @@ class VulnerabilityConverters:
         "gitleaks": GitleaksConverter,
         "semgrep": SemgrepConverter,
         "kics": KicsConverter,
-        "grype": GrypeConverter
+        "grype": GrypeConverter,
+        "php-vuln": PHPVulnConverter,
     }
 
     GITHUB_CONVERTERS = {
         "gitleaks": GitHubGitleaksConverter,
         "semgrep": GitHubSemgrepConverter,
         "kics": GitHubKicsConverter,
-        "grype": GitHubGrypeConverter
+        "grype": GitHubGrypeConverter,
+        "php-vuln": GitHubPHPVulnConverter,
     }
 
     @staticmethod

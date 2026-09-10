@@ -8,6 +8,7 @@ from ez_appsec.external_scanners import (
     SemgrepScanner,
     KicsScanner,
     GrypeScanner,
+    ScannerExecutionError,
 )
 
 
@@ -267,15 +268,17 @@ class TestSemgrepAIRemediation:
 
 
 class TestGrypeDependencyInstall:
-    def test_missing_package_manager_does_not_crash(self, tmp_path, caplog):
-        """Thin images omit npm/pip; dependency manifest generation should degrade to a warning."""
+    def test_missing_package_manager_fails_component(self, tmp_path):
+        """Missing preparation tools cannot produce a complete dependency result."""
         (tmp_path / "package.json").write_text('{"name":"demo","dependencies":{"left-pad":"1.3.0"}}')
         scanner = GrypeScanner()
 
         with patch("ez_appsec.external_scanners.subprocess.run", side_effect=FileNotFoundError("npm")):
-            scanner._install_dependencies(str(tmp_path))
+            with pytest.raises(ScannerExecutionError) as raised:
+                scanner._install_dependencies(str(tmp_path))
 
-        assert "Dependency manifest generation skipped: npm is not installed" in caplog.text
+        assert raised.value.scanner == "grype"
+        assert raised.value.code == "not_installed"
 
 
 class TestKicsAIRemediation:

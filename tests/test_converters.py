@@ -14,6 +14,8 @@ from ez_appsec.converters import (
     GitleaksConverter,
     SemgrepConverter,
     KicsConverter,
+    PHPVulnConverter,
+    GitHubPHPVulnConverter,
     GrypeConverter,
     SARIF_FINDING_ID_KEY,
     VulnerabilityConverters,
@@ -559,6 +561,45 @@ class TestGitLabV2Fields:
         sarif_id = sarif["runs"][0]["results"][0]["fingerprints"][SARIF_FINDING_ID_KEY]
         gitlab_id = gitlab["vulnerabilities"][0]["id"]
         assert sarif_id == gitlab_id == compute_finding_id("rule1", "a.py", 5)
+
+
+class TestPHPVulnConverters:
+    def test_php_issue_reaches_gitlab_and_github_reports(self, tmp_path):
+        raw_path = tmp_path / "php.json"
+        raw_path.write_text(json.dumps({
+            "issues": [{
+                "type": "Command Injection",
+                "title": "Command Injection in handler.php",
+                "description": "Untrusted input reaches exec",
+                "file": "src/handler.php",
+                "line": 17,
+                "severity": "CRITICAL",
+            }],
+        }))
+
+        gitlab = PHPVulnConverter.convert(str(raw_path))
+        github = GitHubPHPVulnConverter.convert(str(raw_path))
+
+        vulnerability = gitlab["vulnerabilities"][0]
+        assert vulnerability["id"] == compute_finding_id(
+            "Command Injection", "src/handler.php", 17
+        )
+        assert vulnerability["severity"] == "critical"
+        result = github["runs"][0]["results"][0]
+        assert result["ruleId"] == "Command Injection"
+        assert result["level"] == "error"
+        assert result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == (
+            "src/handler.php"
+        )
+
+    @pytest.mark.parametrize("target", ["gitlab", "github"])
+    def test_php_converter_rejects_missing_issue_list(self, tmp_path, target):
+        raw_path = tmp_path / "php.json"
+        raw_path.write_text("{}")
+        converter = PHPVulnConverter if target == "gitlab" else GitHubPHPVulnConverter
+
+        with pytest.raises(ValueError, match="issues list"):
+            converter.convert(str(raw_path))
 
 
 SECRET = "AKIAIOSFODNN7EXAMPLE"

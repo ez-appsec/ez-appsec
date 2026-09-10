@@ -64,8 +64,25 @@ jobs:
 
       - name: Install semgrep
         run: |
-          pip install semgrep
+          pip install "semgrep==1.176.1"
           semgrep --version
+
+      - name: Install KICS
+        env:
+          KICS_IMAGE: "checkmarx/kics@sha256:3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602"
+        run: |
+          docker pull "${KICS_IMAGE}"
+          KICS_CONTAINER="$(docker create "${KICS_IMAGE}")"
+          trap 'docker rm -f "${KICS_CONTAINER}" >/dev/null 2>&1 || true' EXIT
+          mkdir -p /tmp/kics-assets
+          docker cp "${KICS_CONTAINER}:/app/bin/kics" /tmp/kics
+          docker cp "${KICS_CONTAINER}:/app/bin/assets/." /tmp/kics-assets
+          sudo install -m 0755 /tmp/kics /usr/local/bin/kics
+          sudo install -d /usr/local/bin/assets
+          sudo cp -R /tmp/kics-assets/. /usr/local/bin/assets/
+          docker rm "${KICS_CONTAINER}"
+          trap - EXIT
+          kics version
 
       - name: Install grype
         run: |

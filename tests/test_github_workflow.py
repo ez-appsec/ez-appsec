@@ -13,6 +13,25 @@ from ez_appsec.converters import (
 )
 
 
+SELF_SCAN_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "self-scan.yml"
+
+
+def test_self_scan_installs_pinned_external_toolchain():
+    """The fail-closed self-scan must install every enabled external scanner."""
+    workflow = SELF_SCAN_WORKFLOW.read_text()
+
+    assert 'VERSION="v8.30.1"' in workflow
+    assert 'pip install "semgrep==1.176.1"' in workflow
+    assert (
+        'KICS_IMAGE: "checkmarx/kics@sha256:'
+        '3e5a268eb8adda2e5a483c9359ddfc4cd520ab856a7076dc0b1d8784a37e2602"'
+        in workflow
+    )
+    assert 'docker cp "${KICS_CONTAINER}:/app/bin/kics"' in workflow
+    assert 'docker cp "${KICS_CONTAINER}:/app/bin/assets/."' in workflow
+    assert "v0.110.0" in workflow
+
+
 def test_sarif_format_validation():
     """Test SARIF format meets specification"""
     report = GitHubSarifFormat.create_report([
