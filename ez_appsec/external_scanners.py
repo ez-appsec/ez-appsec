@@ -14,12 +14,37 @@ from ez_appsec.schema import compute_finding_id
 logger = logging.getLogger(__name__)
 
 
+class ScannerExecutionError(RuntimeError):
+    """A bounded, non-sensitive failure for one enabled scanner component."""
+
+    VALID_CODES = frozenset(
+        {
+            "not_installed",
+            "timeout",
+            "execution_failed",
+            "output_missing",
+            "invalid_output",
+        }
+    )
+
+    def __init__(self, scanner: str, code: str):
+        if code not in self.VALID_CODES:
+            raise ValueError(f"unknown scanner failure code: {code}")
+        self.scanner = scanner
+        self.code = code
+        super().__init__(f"{scanner} scanner failed ({code})")
+
+
 class ScannerWrapper(ABC):
     """Base class for external scanner wrappers"""
 
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
-        self.name = self.__class__.__name__
+        self.name = getattr(self, "component_name", self.__class__.__name__.lower())
+
+    def _fail(self, code: str) -> None:
+        """Raise a stable failure without including command output or source data."""
+        raise ScannerExecutionError(self.name, code)
 
     @abstractmethod
     def is_installed(self) -> bool:
@@ -72,6 +97,8 @@ class ScannerWrapper(ABC):
 class GitleaksScanner(ScannerWrapper):
     """Wrapper for gitleaks secrets detection"""
 
+    component_name = "gitleaks"
+
     def _add_ai_remediation_fields(
         self,
         finding: Dict[str, Any],
@@ -114,12 +141,12 @@ class GitleaksScanner(ScannerWrapper):
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run gitleaks scan and return raw output file path"""
         if not self.is_installed():
-            logger.warning("gitleaks not installed")
-            return [], ""
+            self._fail("not_installed")
         
         # Create temporary file for raw output
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
             raw_output_path = temp_file.name
+        completed = False
         
         try:
             result = subprocess.run(
@@ -128,12 +155,20 @@ class GitleaksScanner(ScannerWrapper):
                 text=True,
                 timeout=60
             )
+
+            # Gitleaks uses exit 1 to report that leaks were found. Other exit
+            # codes mean the scan did not complete.
+            if result.returncode not in (0, 1):
+                self._fail("execution_failed")
             
             try:
                 with open(raw_output_path) as f:
                     data = json.load(f)
             except FileNotFoundError:
-                return [], raw_output_path
+                self._fail("output_missing")
+
+            if not isinstance(data, list):
+                self._fail("invalid_output")
             
             issues = []
             for match in data:
@@ -151,13 +186,22 @@ class GitleaksScanner(ScannerWrapper):
                 finding = self._add_ai_remediation_fields(finding, match)
                 issues.append(finding)
 
+            completed = True
             return issues, raw_output_path
         except subprocess.TimeoutExpired:
-            logger.error("gitleaks scan timed out")
-            return [], raw_output_path
-        except Exception as e:
-            logger.error(f"gitleaks scan failed: {e}")
-            return [], raw_output_path
+            self._fail("timeout")
+        except json.JSONDecodeError:
+            self._fail("invalid_output")
+        except ScannerExecutionError:
+            raise
+        except Exception:
+            self._fail("execution_failed")
+        finally:
+            if not completed:
+                try:
+                    os.unlink(raw_output_path)
+                except OSError:
+                    pass
 
 
 RULES_LANGUAGE_MAP = {
@@ -202,6 +246,8 @@ def resolve_rules_dirs(language_names: List[str]) -> List[str]:
 
 class SemgrepScanner(ScannerWrapper):
     """Wrapper for semgrep SAST analysis"""
+
+    component_name = "semgrep"
 
     def __init__(self, enabled: bool = True, extra_rules_dirs: Optional[List[str]] = None):
         super().__init__(enabled)
@@ -311,12 +357,12 @@ class SemgrepScanner(ScannerWrapper):
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run semgrep scan and return raw output file path"""
         if not self.is_installed():
-            logger.warning("semgrep not installed")
-            return [], ""
+            self._fail("not_installed")
 
         # Create temporary file for raw output
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
             raw_output_path = temp_file.name
+        completed = False
 
         try:
             # Check if PHP files exist in the target
@@ -368,11 +414,19 @@ class SemgrepScanner(ScannerWrapper):
                 timeout=300
             )
 
+            if result.returncode != 0:
+                self._fail("execution_failed")
+
             try:
                 with open(raw_output_path) as f:
                     data = json.load(f)
             except FileNotFoundError:
-                return [], raw_output_path
+                self._fail("output_missing")
+
+            if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+                self._fail("invalid_output")
+            if data.get("errors"):
+                self._fail("execution_failed")
 
             issues = []
             filtered_count = 0
@@ -412,16 +466,22 @@ class SemgrepScanner(ScannerWrapper):
             if filtered_count > 0:
                 logger.info(f"Semgrep: Filtered out {filtered_count} code quality/low-severity findings")
 
+            completed = True
             return issues, raw_output_path
         except subprocess.TimeoutExpired:
-            logger.error("semgrep scan timed out")
-            return [], raw_output_path
+            self._fail("timeout")
         except json.JSONDecodeError:
-            logger.error("semgrep output is not valid JSON")
-            return [], raw_output_path
-        except Exception as e:
-            logger.error(f"semgrep scan failed: {e}")
-            return [], raw_output_path
+            self._fail("invalid_output")
+        except ScannerExecutionError:
+            raise
+        except Exception:
+            self._fail("execution_failed")
+        finally:
+            if not completed:
+                try:
+                    os.unlink(raw_output_path)
+                except OSError:
+                    pass
 
     def _is_code_quality(self, check_id: str, metadata: dict, message: str) -> bool:
         """Check if a Semgrep finding is code quality (not security)"""
@@ -501,6 +561,8 @@ class SemgrepScanner(ScannerWrapper):
 
 class KicsScanner(ScannerWrapper):
     """Wrapper for KICS infrastructure as code scanning"""
+
+    component_name = "kics"
 
     def _add_ai_remediation_fields(
         self,
@@ -625,8 +687,7 @@ class KicsScanner(ScannerWrapper):
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run KICS scan and return raw output file path"""
         if not self.is_installed():
-            logger.warning("kics not installed")
-            return [], ""
+            self._fail("not_installed")
 
         # kics -o expects a directory; it writes results.json inside it.
         # We use a temp dir for kics output, then copy results to a standalone
@@ -636,20 +697,28 @@ class KicsScanner(ScannerWrapper):
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as standalone:
             standalone_path = standalone.name
+        completed = False
 
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["kics", "scan", "-p", path, "-f", "json", "-o", output_dir],
                 capture_output=True,
                 text=True,
                 timeout=120
             )
 
+            # KICS uses 20-60 for successful scans that found results.
+            if result.returncode not in (0, 20, 30, 40, 50, 60):
+                self._fail("execution_failed")
+
             try:
                 with open(kics_output_path) as f:
                     data = json.load(f)
             except FileNotFoundError:
-                return [], standalone_path
+                self._fail("output_missing")
+
+            if not isinstance(data, dict) or not isinstance(data.get("queries"), list):
+                self._fail("invalid_output")
 
             issues = []
             filtered_count = 0
@@ -690,18 +759,23 @@ class KicsScanner(ScannerWrapper):
 
             # Copy kics results to the standalone file for the caller
             shutil.copy2(kics_output_path, standalone_path)
+            completed = True
             return issues, standalone_path
         except subprocess.TimeoutExpired:
-            logger.error("kics scan timed out")
-            return [], standalone_path
+            self._fail("timeout")
         except json.JSONDecodeError:
-            logger.error("kics output is not valid JSON")
-            return [], standalone_path
-        except Exception as e:
-            logger.error(f"kics scan failed: {e}")
-            return [], standalone_path
+            self._fail("invalid_output")
+        except ScannerExecutionError:
+            raise
+        except Exception:
+            self._fail("execution_failed")
         finally:
             shutil.rmtree(output_dir, ignore_errors=True)
+            if not completed:
+                try:
+                    os.unlink(standalone_path)
+                except OSError:
+                    pass
 
     def _is_code_quality(self, query_name: str, description: str) -> bool:
         """Check if a KICS query is code quality (not security)"""
@@ -773,6 +847,8 @@ class KicsScanner(ScannerWrapper):
 
 class GrypeScanner(ScannerWrapper):
     """Wrapper for grype vulnerability scanning"""
+
+    component_name = "grype"
 
     def _add_ai_remediation_fields(
         self,
@@ -853,14 +929,9 @@ class GrypeScanner(ScannerWrapper):
                 try:
                     result = subprocess.run(cmd, capture_output=True, text=True, cwd=path, timeout=300)
                 except FileNotFoundError:
-                    logger.warning(
-                        "Dependency manifest generation skipped: %s is not installed. "
-                        "Commit a lockfile/SBOM or use the standard image for automatic dependency installation.",
-                        cmd[0],
-                    )
-                    return
+                    self._fail("not_installed")
                 if result.returncode != 0:
-                    logger.warning(f"Dependency manifest generation failed: {result.stderr[:200]}")
+                    self._fail("execution_failed")
                 return
 
     def scan(self, path: str) -> List[Dict[str, Any]]:
@@ -871,17 +942,19 @@ class GrypeScanner(ScannerWrapper):
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run grype scan and return raw output file path"""
         if not self.is_installed():
-            logger.warning("grype not installed")
-            return [], ""
+            self._fail("not_installed")
 
         with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
             raw_output_path = temp_file.name
+        completed = False
 
         try:
             db_check = subprocess.run(["grype", "db", "status"], capture_output=True)
             if db_check.returncode != 0:
                 logger.info("grype database missing, updating...")
-                subprocess.run(["grype", "db", "update"], capture_output=True, timeout=120)
+                db_update = subprocess.run(["grype", "db", "update"], capture_output=True, timeout=120)
+                if db_update.returncode != 0:
+                    self._fail("execution_failed")
 
             self._install_dependencies(path)
 
@@ -892,11 +965,18 @@ class GrypeScanner(ScannerWrapper):
                 timeout=300
             )
 
+            # Exit 1 is a complete report when fail-on-severity is configured.
+            if result.returncode not in (0, 1):
+                self._fail("execution_failed")
+
             try:
                 with open(raw_output_path) as f:
                     data = json.load(f)
             except FileNotFoundError:
-                return [], raw_output_path
+                self._fail("output_missing")
+
+            if not isinstance(data, dict) or not isinstance(data.get("matches"), list):
+                self._fail("invalid_output")
 
             issues = []
             for match in data.get("matches", []):
@@ -918,20 +998,28 @@ class GrypeScanner(ScannerWrapper):
                 finding = self._add_ai_remediation_fields(finding, match)
                 issues.append(finding)
 
+            completed = True
             return issues, raw_output_path
         except subprocess.TimeoutExpired:
-            logger.error("grype scan timed out")
-            return [], raw_output_path
+            self._fail("timeout")
         except json.JSONDecodeError:
-            logger.error("grype output is not valid JSON")
-            return [], raw_output_path
-        except Exception as e:
-            logger.error(f"grype scan failed: {e}")
-            return [], raw_output_path
+            self._fail("invalid_output")
+        except ScannerExecutionError:
+            raise
+        except Exception:
+            self._fail("execution_failed")
+        finally:
+            if not completed:
+                try:
+                    os.unlink(raw_output_path)
+                except OSError:
+                    pass
 
 
 class PHPVulnScanner(ScannerWrapper):
     """Custom PHP vulnerability scanner with SQLi, XSS, and command injection detection"""
+
+    component_name = "php-vuln"
 
     def is_installed(self) -> bool:
         """Check if PHP scanner is available (always available for this package)"""
@@ -963,12 +1051,12 @@ class PHPVulnScanner(ScannerWrapper):
                 }, temp_file, indent=2)
 
             return issues, raw_output_path
-        except ImportError as e:
-            logger.error(f"PHP scanner not available: {e}")
-            return [], ""
-        except Exception as e:
-            logger.error(f"PHP scan failed: {e}")
-            return [], ""
+        except ImportError:
+            self._fail("not_installed")
+        except ScannerExecutionError:
+            raise
+        except Exception:
+            self._fail("execution_failed")
 
 
 class GrypeImageScanner:
@@ -1105,7 +1193,7 @@ class ExternalScannerManager:
         return "\n".join(instructions)
     
     def scan_all(self, path: str) -> List[Dict[str, Any]]:
-        """Run all enabled scanners and aggregate results"""
+        """Run all enabled scanners, failing if any component is incomplete."""
         all_issues = []
         
         for name, scanner in self.scanners.items():
@@ -1113,15 +1201,17 @@ class ExternalScannerManager:
                 logger.info(f"Running {name} scan...")
                 try:
                     issues = scanner.scan(path)
-                    all_issues.extend(issues)
-                    logger.info(f"{name} found {len(issues)} issues")
-                except Exception as e:
-                    logger.error(f"Error running {name}: {e}")
+                except ScannerExecutionError:
+                    raise
+                except Exception:
+                    raise ScannerExecutionError(name, "execution_failed") from None
+                all_issues.extend(issues)
+                logger.info(f"{name} found {len(issues)} issues")
         
         return all_issues
     
     def scan_all_with_raw_outputs(self, path: str) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
-        """Run all enabled scanners and return both results and raw output file paths"""
+        """Run enabled scanners and return outputs only after all complete."""
         all_issues = []
         raw_outputs = {}
         
@@ -1130,11 +1220,23 @@ class ExternalScannerManager:
                 logger.info(f"Running {name} scan...")
                 try:
                     issues, raw_path = scanner.scan_with_raw_output(path)
-                    all_issues.extend(issues)
-                    if raw_path:
-                        raw_outputs[name] = raw_path
-                    logger.info(f"{name} found {len(issues)} issues")
-                except Exception as e:
-                    logger.error(f"Error running {name}: {e}")
+                except ScannerExecutionError:
+                    for completed_path in raw_outputs.values():
+                        try:
+                            os.unlink(completed_path)
+                        except OSError:
+                            pass
+                    raise
+                except Exception:
+                    for completed_path in raw_outputs.values():
+                        try:
+                            os.unlink(completed_path)
+                        except OSError:
+                            pass
+                    raise ScannerExecutionError(name, "execution_failed") from None
+                all_issues.extend(issues)
+                if raw_path:
+                    raw_outputs[name] = raw_path
+                logger.info(f"{name} found {len(issues)} issues")
         
         return all_issues, raw_outputs

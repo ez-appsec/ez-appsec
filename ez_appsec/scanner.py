@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from ez_appsec.config import Config
 from ez_appsec.ai_analyzer import AIAnalyzer
-from ez_appsec.external_scanners import ExternalScannerManager
+from ez_appsec.external_scanners import ExternalScannerManager, ScannerExecutionError
 from ez_appsec.converters import VulnerabilityConverters, GitLabVulnerabilityFormat
 from ez_appsec.policy import PolicyEngine
 from ez_appsec.license_checker import check_licenses
@@ -384,8 +384,13 @@ class SecurityScanner:
                 try:
                     report = VulnerabilityConverters.convert_scanner_output(scanner_name, raw_path)
                     gitlab_reports.append(report)
-                except Exception as e:
-                    print(f"Error converting {scanner_name} output: {e}")
+                except Exception:
+                    for pending_path in raw_outputs.values():
+                        try:
+                            os.unlink(pending_path)
+                        except OSError:
+                            pass
+                    raise ScannerExecutionError(scanner_name, "invalid_output") from None
                 finally:
                     try:
                         os.unlink(raw_path)
@@ -458,11 +463,8 @@ class SecurityScanner:
             # Only run gitleaks for quick secrets check
             if hasattr(self.external, 'scanners') and 'gitleaks' in self.external.scanners:
                 gitleaks = self.external.scanners['gitleaks']
-                if gitleaks.enabled and gitleaks.is_installed():
-                    try:
-                        issues = gitleaks.scan(path)
-                    except Exception:
-                        pass
+                if gitleaks.enabled:
+                    issues = gitleaks.scan(path)
         
         return {
             "files_scanned": file_count,
@@ -508,8 +510,13 @@ class SecurityScanner:
                 try:
                     report = VulnerabilityConverters.convert_to_github_format(scanner_name, raw_path)
                     github_reports.append(report)
-                except Exception as e:
-                    print(f"Error converting {scanner_name} output to SARIF: {e}")
+                except Exception:
+                    for pending_path in raw_outputs.values():
+                        try:
+                            os.unlink(pending_path)
+                        except OSError:
+                            pass
+                    raise ScannerExecutionError(scanner_name, "invalid_output") from None
                 finally:
                     try:
                         os.unlink(raw_path)
