@@ -511,18 +511,12 @@ class SemgrepScanner(ScannerWrapper):
         completed = False
 
         try:
-            target = Path(path)
-
-            def contains_suffix(suffixes: set) -> bool:
-                if target.is_file():
-                    return target.suffix.lower() in suffixes
-                return any(
-                    candidate.is_file() and candidate.suffix.lower() in suffixes
-                    for candidate in target.rglob("*")
-                )
-
-            has_php = contains_suffix({".php"})
-            has_js = contains_suffix({".js", ".ts", ".jsx", ".tsx"})
+            # Preserve the established full-scan rule selection. M036 partial
+            # execution must use the same rules as a full scan of the same
+            # image; changing rule selection belongs in a separately versioned
+            # compatibility-key change.
+            has_php = any(Path(path).rglob("*.php"))
+            has_js = any(Path(path).rglob("*.{js,ts,jsx,tsx}"))
 
             # Build config flags
             config_flags = []

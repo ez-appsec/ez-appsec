@@ -748,7 +748,7 @@ def test_partial_component_rejects_finding_outside_covered_paths(tmp_path, monke
     assert component["findings"] == []
 
 
-def test_semgrep_partial_javascript_scope_keeps_bundled_javascript_rules(
+def test_semgrep_partial_javascript_scope_preserves_full_scan_rule_selection(
     tmp_path, monkeypatch
 ):
     source = tmp_path / "source"
@@ -756,19 +756,23 @@ def test_semgrep_partial_javascript_scope_keeps_bundled_javascript_rules(
     (source / "app.js").write_text("eval(userInput)\n", encoding="utf-8")
     scanner = SemgrepScanner()
     monkeypatch.setattr(scanner, "is_installed", lambda: True)
+    commands = []
 
     def run_semgrep(command, **_kwargs):
-        assert any(
-            argument.startswith("--config=")
-            and argument.endswith("js-semgrep-rules.yaml")
-            for argument in command
-        )
+        commands.append(command)
         report_path = Path(command[command.index("--output") + 1])
         report_path.write_text('{"errors":[],"results":[]}', encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr("ez_appsec.external_scanners.subprocess.run", run_semgrep)
+    full_findings, full_output = scanner.scan_with_raw_output(str(source))
+    Path(full_output).unlink()
+    assert full_findings == []
     assert scanner.scan_paths(str(source), ["app.js"]) == []
+    full_configs = [item for item in commands[0] if item.startswith("--config=")]
+    partial_configs = [item for item in commands[1] if item.startswith("--config=")]
+    assert partial_configs == full_configs
+    assert not any(item.endswith("js-semgrep-rules.yaml") for item in full_configs)
 
 
 def test_gitleaks_partial_scope_uses_repository_config(tmp_path, monkeypatch):
