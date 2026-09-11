@@ -24,12 +24,14 @@ Output is written atomically and includes one result for every planned
 component, the observed head, plan and image binding, bounded status and
 diagnostic codes, timestamps, and a canonical envelope digest.
 
-S03/T01 executes components planned in `full` mode. A `partial` or `reuse`
-component is reported as `not_run` with `unsupported_mode`, and the command
-exits nonzero. Later M036 scanner-capability tasks replace that explicit state
-only after their differential fixtures prove the component's narrower
-coverage. The existing `ez-appsec scan` command and its JSON output are
-unchanged.
+S03/T03 supports partial Gitleaks, Semgrep, and custom-PHP execution against
+complete copies of the planner's covered files. Gitleaks uses its current-tree
+`dir` mode, separate from the legacy full history scan. Repository Gitleaks and
+Semgrep ignore controls remain active, and findings outside the assigned scope
+make the component incomplete. Planned `reuse` is represented as an expected
+`not_run` result; KICS and Grype partial modes remain unsupported until their
+own capability tasks land. The existing `ez-appsec scan` command and its JSON
+output are unchanged.
 
 The scanner process needs the source tree, plan, and output path only. Do not
 mount provider, platform API, database, or orchestration credentials into the

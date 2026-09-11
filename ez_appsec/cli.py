@@ -258,7 +258,11 @@ def contract_scan(path, plan_path, result_envelope, scanner_image):
     except IncrementalContractError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    incomplete = any(item["status"] != "complete" for item in envelope["components"])
+    incomplete = any(
+        item["status"] == "failed"
+        or (item["status"] == "not_run" and planned["mode"] != "reuse")
+        for item, planned in zip(envelope["components"], plan["components"])
+    )
     if incomplete:
         raise click.ClickException("scan_component_incomplete")
     click.echo(f"Result envelope saved to: {result_envelope}")
