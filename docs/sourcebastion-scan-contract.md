@@ -38,6 +38,12 @@ platform can schedule a full fallback. Grype partial mode remains unsupported
 until its capability task lands. The existing `ez-appsec scan` JSON output is
 unchanged.
 
+S03/T06 caps each finding, total finding metadata, metadata depth, and the final
+result envelope. Duplicate logical findings and malformed core finding fields
+make the component incomplete. A component interrupted by cancellation records
+`failed` with the bounded `cancelled` diagnostic and still produces a complete
+result envelope for the trusted fallback path.
+
 The scanner process needs the source tree, plan, and output path only. Do not
 mount provider, platform API, database, or orchestration credentials into the
 scanner container.

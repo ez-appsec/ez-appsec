@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import stat
@@ -38,6 +39,11 @@ _FINDING_SCANNERS = {
 MAX_PLAN_BYTES = 256 * 1024
 MAX_COMPONENTS = 16
 MAX_BASELINE_AGE_SECONDS = 7 * 24 * 60 * 60
+MAX_FINDING_BYTES = 64 * 1024
+MAX_FINDING_NODES = 4096
+MAX_FINDING_DEPTH = 8
+MAX_FINDINGS_METADATA_BYTES = 8 * 1024 * 1024
+MAX_RESULT_BYTES = 16 * 1024 * 1024
 _GIT_OID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _PREFIXED_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -75,8 +81,11 @@ _DIAGNOSTIC_CODES = ScannerExecutionError.VALID_CODES | {
     "findings_limit_exceeded",
     "finding_ownership_mismatch",
     "finding_scope_mismatch",
+    "duplicate_finding",
+    "metadata_limit_exceeded",
     "execution_limit_exceeded",
     "component_unchanged",
+    "cancelled",
 }
 _PARTIAL_COMPONENTS = {"gitleaks", "semgrep", "custom_php", "kics"}
 
@@ -440,6 +449,80 @@ def _finding_in_component_scope(finding: Dict[str, Any], component: Dict[str, An
     )
 
 
+def _finding_size(finding: Dict[str, Any]) -> int | None:
+    """Return canonical bytes for bounded JSON metadata, or None if unsafe."""
+    identity = finding.get("rule_id") or finding.get("title")
+    line = finding.get("line", 1)
+    if (
+        not isinstance(finding.get("scanner"), str)
+        or not isinstance(identity, str)
+        or not identity
+        or not isinstance(finding.get("file"), str)
+        or not finding["file"]
+        or isinstance(line, bool)
+        or not isinstance(line, int)
+        or line < 1
+    ):
+        return None
+    stack = [(finding, 0)]
+    nodes = 0
+    while stack:
+        value, depth = stack.pop()
+        nodes += 1
+        if nodes > MAX_FINDING_NODES or depth > MAX_FINDING_DEPTH:
+            return None
+        if value is None or isinstance(value, (str, int, bool)):
+            continue
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                return None
+            continue
+        if isinstance(value, dict):
+            if any(not isinstance(key, str) for key in value):
+                return None
+            stack.extend((item, depth + 1) for item in value.values())
+            continue
+        if isinstance(value, list):
+            stack.extend((item, depth + 1) for item in value)
+            continue
+        return None
+    try:
+        encoded = canonical_json(finding)
+    except (IncrementalContractError, RecursionError):
+        return None
+    return len(encoded) if len(encoded) <= MAX_FINDING_BYTES else None
+
+
+def _finding_sizes(findings: list[Any]) -> list[int] | None:
+    sizes = []
+    for finding in findings:
+        if not isinstance(finding, dict):
+            return None
+        size = _finding_size(finding)
+        if size is None:
+            return None
+        sizes.append(size)
+    return sizes
+
+
+def _duplicate_findings(findings: list[Dict[str, Any]]) -> bool:
+    """Detect repeated logical identities within one component result."""
+    seen: set[bytes] = set()
+    for finding in findings:
+        identity = canonical_json(
+            {
+                "scanner": finding.get("scanner"),
+                "rule_id": finding.get("rule_id") or finding.get("title"),
+                "file": finding.get("file"),
+                "line": finding.get("line", 1),
+            }
+        )
+        if identity in seen:
+            return True
+        seen.add(identity)
+    return False
+
+
 def execute_scan_plan(
     source_path: str,
     plan: Dict[str, Any],
@@ -461,10 +544,16 @@ def execute_scan_plan(
     started_monotonic = time.monotonic()
     component_results = []
     total_findings = 0
+    finding_metadata_bytes = 0
+    cancelled = False
     for component in plan["components"]:
         name = component["name"]
         mode = component["mode"]
-        if mode == "reuse":
+        if cancelled:
+            findings = []
+            status = "failed"
+            diagnostic_code = "cancelled"
+        elif mode == "reuse":
             findings = []
             status = "not_run"
             diagnostic_code = "component_unchanged"
@@ -503,9 +592,12 @@ def execute_scan_plan(
                     findings = []
                     status = "failed"
                     diagnostic_code = "invalid_output"
+                elif (finding_sizes := _finding_sizes(findings)) is None:
+                    findings = []
+                    status = "failed"
+                    diagnostic_code = "metadata_limit_exceeded"
                 elif any(
-                    not isinstance(finding, dict)
-                    or finding.get("scanner") not in _FINDING_SCANNERS[name]
+                    finding.get("scanner") not in _FINDING_SCANNERS[name]
                     for finding in findings
                 ):
                     findings = []
@@ -518,14 +610,31 @@ def execute_scan_plan(
                     findings = []
                     status = "failed"
                     diagnostic_code = "finding_scope_mismatch"
+                elif _duplicate_findings(findings):
+                    findings = []
+                    status = "failed"
+                    diagnostic_code = "duplicate_finding"
                 elif total_findings + len(findings) > plan["limits"]["max_findings"]:
                     findings = []
                     status = "failed"
                     diagnostic_code = "findings_limit_exceeded"
+                elif (
+                    finding_metadata_bytes + sum(finding_sizes)
+                    > MAX_FINDINGS_METADATA_BYTES
+                ):
+                    findings = []
+                    status = "failed"
+                    diagnostic_code = "metadata_limit_exceeded"
                 else:
                     total_findings += len(findings)
+                    finding_metadata_bytes += sum(finding_sizes)
                     status = "complete"
                     diagnostic_code = None
+            except KeyboardInterrupt:
+                cancelled = True
+                findings = []
+                status = "failed"
+                diagnostic_code = "cancelled"
             except ScannerExecutionError as exc:
                 findings = []
                 status = "failed"
@@ -590,6 +699,11 @@ def validate_result_envelope(
     """Validate a scanner result and bind it to the exact accepted plan."""
     if not isinstance(envelope, dict):
         _result_invalid()
+    try:
+        if len(canonical_json(envelope)) > MAX_RESULT_BYTES:
+            _result_invalid()
+    except (IncrementalContractError, RecursionError):
+        _result_invalid()
     result = _exact_dict(
         envelope,
         {
@@ -631,6 +745,7 @@ def validate_result_envelope(
     if not isinstance(components, list) or len(components) != len(plan["components"]):
         _result_invalid()
     finding_count = 0
+    finding_metadata_bytes = 0
     for component, planned in zip(components, plan["components"]):
         component = _exact_dict(
             component,
@@ -675,11 +790,13 @@ def validate_result_envelope(
             )
         ):
             _result_invalid()
-        if any(
-            not isinstance(finding, dict)
-            or finding.get("scanner") not in _FINDING_SCANNERS[component["name"]]
+        finding_sizes = _finding_sizes(component["findings"])
+        if finding_sizes is None or any(
+            finding.get("scanner") not in _FINDING_SCANNERS[component["name"]]
             for finding in component["findings"]
         ):
+            _result_invalid()
+        if _duplicate_findings(component["findings"]):
             _result_invalid()
         if planned["mode"] == "partial" and any(
             not _finding_in_component_scope(finding, planned)
@@ -687,7 +804,10 @@ def validate_result_envelope(
         ):
             _result_invalid()
         finding_count += len(component["findings"])
+        finding_metadata_bytes += sum(finding_sizes)
     if finding_count > plan["limits"]["max_findings"]:
+        _result_invalid()
+    if finding_metadata_bytes > MAX_FINDINGS_METADATA_BYTES:
         _result_invalid()
 
     supplied_digest = result["result_digest"]

@@ -104,6 +104,12 @@ def _redigest(plan):
     return plan
 
 
+def _redigest_result(envelope):
+    body = {key: value for key, value in envelope.items() if key != "result_digest"}
+    envelope["result_digest"] = hashlib.sha256(_canonical(body)).hexdigest()
+    return envelope
+
+
 def _partial_sast_plan(head_sha):
     plan = _full_plan(head_sha)
     plan["mode"] = "incremental"
@@ -1265,3 +1271,187 @@ def test_contract_scan_rejects_kics_finding_outside_planned_unit(tmp_path, monke
     assert component["status"] == "failed"
     assert component["diagnostic_code"] == "finding_scope_mismatch"
     assert component["findings"] == []
+
+
+def test_contract_scan_rejects_duplicate_component_findings(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _full_plan(head_sha)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+    finding = {
+        "scanner": "gitleaks",
+        "rule_id": "generic-api-key",
+        "file": "app.py",
+        "line": 1,
+    }
+    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [finding, finding])
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+
+    assert result.exit_code == 1
+    component = json.loads(result_path.read_text(encoding="utf-8"))["components"][0]
+    assert component["status"] == "failed"
+    assert component["diagnostic_code"] == "duplicate_finding"
+    assert component["findings"] == []
+
+
+def test_contract_scan_bounds_finding_metadata(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _full_plan(head_sha)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+    monkeypatch.setattr(
+        GitleaksScanner,
+        "scan",
+        lambda self, path: [
+            {
+                "scanner": "gitleaks",
+                "rule_id": "generic-api-key",
+                "file": "app.py",
+                "line": 1,
+                "description": "x" * (64 * 1024),
+            }
+        ],
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+
+    assert result.exit_code == 1
+    encoded = result_path.read_text(encoding="utf-8")
+    component = json.loads(encoded)["components"][0]
+    assert component["status"] == "failed"
+    assert component["diagnostic_code"] == "metadata_limit_exceeded"
+    assert component["findings"] == []
+    assert "x" * 1000 not in encoded
+
+
+def test_contract_scan_records_component_cancellation(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _full_plan(head_sha)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+
+    def cancel(_self, _path):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(GitleaksScanner, "scan", cancel)
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+
+    assert result.exit_code == 1
+    component = json.loads(result_path.read_text(encoding="utf-8"))["components"][0]
+    assert component["status"] == "failed"
+    assert component["diagnostic_code"] == "cancelled"
+    assert component["findings"] == []
+
+
+def test_result_validator_rejects_malformed_component_status(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _full_plan(head_sha)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [])
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+    assert result.exit_code == 0
+    envelope = json.loads(result_path.read_text(encoding="utf-8"))
+    envelope["components"][0]["status"] = "cancelled"
+    _redigest_result(envelope)
+
+    try:
+        validate_result_envelope(envelope, plan)
+    except IncrementalContractError as exc:
+        assert str(exc) == "result_envelope_invalid"
+    else:
+        raise AssertionError("malformed component status was accepted")
+
+
+def test_result_validator_rejects_duplicate_findings_from_external_envelope(
+    tmp_path, monkeypatch
+):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _full_plan(head_sha)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+    finding = {
+        "scanner": "gitleaks",
+        "rule_id": "generic-api-key",
+        "file": "app.py",
+        "line": 1,
+    }
+    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [finding])
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+    assert result.exit_code == 0
+    envelope = json.loads(result_path.read_text(encoding="utf-8"))
+    envelope["components"][0]["findings"].append(dict(finding))
+    _redigest_result(envelope)
+
+    try:
+        validate_result_envelope(envelope, plan)
+    except IncrementalContractError as exc:
+        assert str(exc) == "result_envelope_invalid"
+    else:
+        raise AssertionError("duplicate external finding was accepted")
