@@ -31,8 +31,12 @@ equivalent to full coverage. The legacy `ez-appsec scan` command retains its
 separate Git-history scan. Repository Gitleaks and Semgrep ignore controls
 remain active, and findings outside the assigned scope make the component
 incomplete. Planned `reuse` is represented as an expected `not_run` result;
-KICS and Grype partial modes remain unsupported until their own capability
-tasks land. The existing `ez-appsec scan` JSON output is unchanged.
+S03/T04 adds KICS execution over complete planned IaC files or directories.
+Local Terraform module references must resolve inside the planned unit set;
+unresolved or out-of-scope references report `scope_unresolved` so the trusted
+platform can schedule a full fallback. Grype partial mode remains unsupported
+until its capability task lands. The existing `ez-appsec scan` JSON output is
+unchanged.
 
 The scanner process needs the source tree, plan, and output path only. Do not
 mount provider, platform API, database, or orchestration credentials into the

@@ -78,7 +78,7 @@ _DIAGNOSTIC_CODES = ScannerExecutionError.VALID_CODES | {
     "execution_limit_exceeded",
     "component_unchanged",
 }
-_PARTIAL_COMPONENTS = {"gitleaks", "semgrep", "custom_php"}
+_PARTIAL_COMPONENTS = {"gitleaks", "semgrep", "custom_php", "kics"}
 
 
 class IncrementalContractError(ValueError):
@@ -427,6 +427,19 @@ def _validate_source_tree(source_path: str, max_source_bytes: int) -> None:
         raise IncrementalContractError("source_tree_invalid") from exc
 
 
+def _finding_in_component_scope(finding: Dict[str, Any], component: Dict[str, Any]) -> bool:
+    """Check finding ownership against file or complete-IaC unit coverage."""
+    path = finding.get("file")
+    if not _valid_path(path):
+        return False
+    if component["name"] != "kics":
+        return path in component["covered_paths"]
+    return any(
+        unit == "." or path == unit or path.startswith(f"{unit}/")
+        for unit in component["iac_units"]
+    )
+
+
 def execute_scan_plan(
     source_path: str,
     plan: Dict[str, Any],
@@ -459,6 +472,7 @@ def execute_scan_plan(
             mode == "partial"
             and name in _PARTIAL_COMPONENTS
             and not component["covered_paths"]
+            and not component["iac_units"]
         ):
             findings = []
             status = "complete"
@@ -470,15 +484,14 @@ def execute_scan_plan(
         else:
             scanner = manager.scanners[COMPONENT_NAMES[name]]
             try:
-                findings = (
-                    scanner.scan_paths(source_path, component["covered_paths"])
-                    if mode == "partial"
-                    else (
-                        scanner.scan_current_tree(source_path)
-                        if name == "gitleaks"
-                        else scanner.scan(source_path)
-                    )
-                )
+                if mode == "partial" and name == "kics":
+                    findings = scanner.scan_units(source_path, component["iac_units"])
+                elif mode == "partial":
+                    findings = scanner.scan_paths(source_path, component["covered_paths"])
+                elif name == "gitleaks":
+                    findings = scanner.scan_current_tree(source_path)
+                else:
+                    findings = scanner.scan(source_path)
                 if (
                     time.monotonic() - started_monotonic
                     > plan["limits"]["max_execution_seconds"]
@@ -499,8 +512,7 @@ def execute_scan_plan(
                     status = "failed"
                     diagnostic_code = "finding_ownership_mismatch"
                 elif mode == "partial" and any(
-                    not _valid_path(finding.get("file"))
-                    or finding["file"] not in component["covered_paths"]
+                    not _finding_in_component_scope(finding, component)
                     for finding in findings
                 ):
                     findings = []
@@ -670,8 +682,7 @@ def validate_result_envelope(
         ):
             _result_invalid()
         if planned["mode"] == "partial" and any(
-            not _valid_path(finding.get("file"))
-            or finding["file"] not in planned["covered_paths"]
+            not _finding_in_component_scope(finding, planned)
             for finding in component["findings"]
         ):
             _result_invalid()

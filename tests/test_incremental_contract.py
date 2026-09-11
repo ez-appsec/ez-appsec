@@ -8,7 +8,12 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from ez_appsec.cli import main
-from ez_appsec.external_scanners import GitleaksScanner, PHPVulnScanner, SemgrepScanner
+from ez_appsec.external_scanners import (
+    GitleaksScanner,
+    KicsScanner,
+    PHPVulnScanner,
+    SemgrepScanner,
+)
 from ez_appsec.incremental_contract import IncrementalContractError, validate_result_envelope
 from ez_appsec.schema import compute_finding_id
 
@@ -127,6 +132,33 @@ def _partial_sast_plan(head_sha):
     return _redigest(plan)
 
 
+def _partial_kics_plan(head_sha, *, units=("infra",), covered=("infra/main.tf",)):
+    plan = _full_plan(head_sha)
+    plan["mode"] = "incremental"
+    plan["baseline"] = {
+        "run_id": 7,
+        "sha": head_sha,
+        "age_seconds": 60,
+        "same_ref": True,
+        "ancestor": True,
+        "applied": True,
+        "complete": True,
+    }
+    plan["scanner"]["enabled_components"] = ["kics"]
+    plan["components"] = [
+        {
+            "name": "kics",
+            "mode": "partial",
+            "reason": "component_scope_changed",
+            "compatibility_key": "5" * 64,
+            "covered_paths": list(covered),
+            "deleted_paths": [],
+            "iac_units": list(units),
+        }
+    ]
+    return _redigest(plan)
+
+
 def test_contract_scan_executes_full_plan_and_emits_bound_envelope(tmp_path, monkeypatch):
     source, head_sha = _source_tree(tmp_path)
     plan = _full_plan(head_sha)
@@ -235,14 +267,14 @@ def test_contract_scan_marks_unimplemented_partial_scope_not_run(tmp_path):
         "applied": True,
         "complete": True,
     }
-    plan["scanner"]["enabled_components"] = ["kics"]
+    plan["scanner"]["enabled_components"] = ["grype"]
     plan["components"][0].update(
         {
-            "name": "kics",
+            "name": "grype",
             "mode": "partial",
             "reason": "component_scope_changed",
-            "covered_paths": [],
-            "iac_units": ["."],
+            "covered_paths": ["package-lock.json"],
+            "iac_units": [],
         }
     )
     _redigest(plan)
@@ -948,3 +980,201 @@ def test_custom_php_partial_scope_scans_only_complete_planned_files(tmp_path):
     assert findings
     assert {finding["file"] for finding in findings} == {"app.php"}
     assert all(finding["scanner"] == "php-vuln-scanner" for finding in findings)
+
+
+def test_kics_partial_scope_scans_complete_planned_unit(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    unit = source / "infra"
+    unit.mkdir(parents=True)
+    (unit / "main.tf").write_text('module "app" { source = "./module" }\n')
+    module = unit / "module"
+    module.mkdir()
+    (module / "security.tf").write_text('resource "aws_s3_bucket" "app" {}\n')
+    (source / "outside.tf").write_text('resource "aws_s3_bucket" "outside" {}\n')
+    scanner = KicsScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+    monkeypatch.setattr(scanner, "_find_assets_path", lambda: tmp_path / "assets")
+
+    def run_kics(command, **_kwargs):
+        scoped_root = Path(command[command.index("-p") + 1])
+        assert (scoped_root / "infra/main.tf").is_file()
+        assert (scoped_root / "infra/module/security.tf").is_file()
+        assert not (scoped_root / "outside.tf").exists()
+        output_dir = Path(command[command.index("-o") + 1])
+        (output_dir / "results.json").write_text(
+            json.dumps(
+                {
+                    "queries": [
+                        {
+                            "queryName": "Bucket Encryption Disabled",
+                            "description": "Encryption is required",
+                            "severity": "HIGH",
+                            "results": [
+                                {
+                                    "file": str(scoped_root / "infra/module/security.tf"),
+                                    "line": 1,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 20, "", "")
+
+    monkeypatch.setattr("ez_appsec.external_scanners.subprocess.run", run_kics)
+    findings = scanner.scan_units(str(source), ["infra"])
+
+    assert len(findings) == 1
+    assert findings[0]["file"] == "infra/module/security.tf"
+    assert findings[0]["finding_id"] == compute_finding_id(
+        "Bucket Encryption Disabled", "infra/module/security.tf", 1
+    )
+
+
+def test_contract_scan_executes_kics_unit_and_accepts_unit_owned_finding(
+    tmp_path, monkeypatch
+):
+    source, _ = _source_tree(tmp_path)
+    infra = source / "infra"
+    infra.mkdir()
+    (infra / "main.tf").write_text('resource "aws_s3_bucket" "app" {}\n')
+    _git(source, "add", "infra/main.tf")
+    _git(source, "commit", "-m", "iac fixture")
+    head_sha = _git(source, "rev-parse", "HEAD")
+    plan = _partial_kics_plan(head_sha)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+    calls = []
+
+    def scan_units(_self, source_path, units):
+        calls.append((source_path, tuple(units)))
+        return [
+            {
+                "scanner": "kics",
+                "rule_id": "iac-rule",
+                "file": "infra/main.tf",
+                "line": 1,
+            }
+        ]
+
+    monkeypatch.setattr(KicsScanner, "scan_units", scan_units, raising=False)
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [(str(source), ("infra",))]
+    component = json.loads(result_path.read_text(encoding="utf-8"))["components"][0]
+    assert component["status"] == "complete"
+    assert component["findings"][0]["file"] == "infra/main.tf"
+
+
+def test_kics_partial_scope_rejects_unplanned_local_module_reference(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source"
+    unit = source / "infra"
+    unit.mkdir(parents=True)
+    (unit / "main.tf").write_text('module "shared" { source = "../shared" }\n')
+    shared = source / "shared"
+    shared.mkdir()
+    (shared / "main.tf").write_text('resource "aws_s3_bucket" "shared" {}\n')
+    scanner = KicsScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+    invoked = []
+    monkeypatch.setattr(
+        "ez_appsec.external_scanners.subprocess.run",
+        lambda *args, **kwargs: invoked.append(args),
+    )
+
+    try:
+        scanner.scan_units(str(source), ["infra"])
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "scope_unresolved"
+    else:
+        raise AssertionError("unplanned local module reference was scanned")
+    assert invoked == []
+
+
+def test_kics_partial_scope_rejects_unplanned_tf_json_module_reference(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source"
+    unit = source / "infra"
+    unit.mkdir(parents=True)
+    (unit / "main.tf.json").write_text(
+        json.dumps({"module": {"shared": {"source": "../shared"}}}),
+        encoding="utf-8",
+    )
+    shared = source / "shared"
+    shared.mkdir()
+    (shared / "main.tf").write_text('resource "aws_s3_bucket" "shared" {}\n')
+    scanner = KicsScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+    invoked = []
+    monkeypatch.setattr(
+        "ez_appsec.external_scanners.subprocess.run",
+        lambda *args, **kwargs: invoked.append(args),
+    )
+
+    try:
+        scanner.scan_units(str(source), ["infra"])
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "scope_unresolved"
+    else:
+        raise AssertionError("unplanned tf.json module reference was scanned")
+    assert invoked == []
+
+
+def test_contract_scan_rejects_kics_finding_outside_planned_unit(tmp_path, monkeypatch):
+    source, _ = _source_tree(tmp_path)
+    infra = source / "infra"
+    infra.mkdir()
+    (infra / "main.tf").write_text('resource "aws_s3_bucket" "app" {}\n')
+    _git(source, "add", "infra/main.tf")
+    _git(source, "commit", "-m", "iac fixture")
+    head_sha = _git(source, "rev-parse", "HEAD")
+    plan = _partial_kics_plan(head_sha)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+    monkeypatch.setattr(
+        KicsScanner,
+        "scan_units",
+        lambda self, source_path, units: [
+            {"scanner": "kics", "rule_id": "outside", "file": "other/main.tf"}
+        ],
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+
+    assert result.exit_code == 1
+    component = json.loads(result_path.read_text(encoding="utf-8"))["components"][0]
+    assert component["status"] == "failed"
+    assert component["diagnostic_code"] == "finding_scope_mismatch"
+    assert component["findings"] == []

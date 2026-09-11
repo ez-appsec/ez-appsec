@@ -6,6 +6,7 @@ import logging
 import tempfile
 import shutil
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Dict, Any, Iterator, Optional, Tuple
@@ -55,6 +56,113 @@ def _scoped_result_path(value: Any, scoped_root: Path) -> str:
     return normalized
 
 
+def _path_in_units(path: str, units: List[str]) -> bool:
+    """Return whether a repository-relative path belongs to a planned IaC unit."""
+    return any(
+        unit == "." or path == unit or path.startswith(f"{unit}/")
+        for unit in units
+    )
+
+
+def _validate_local_module_reference(
+    owner: Path, value: Any, resolved_root: Path, units: List[str]
+) -> None:
+    """Require a local module source to resolve inside a planned unit."""
+    if not isinstance(value, str):
+        raise ValueError("IaC scope cannot be resolved")
+    if not value.startswith(("./", "../")):
+        return
+    referenced = (owner.parent / value).resolve()
+    try:
+        relative = referenced.relative_to(resolved_root).as_posix()
+    except ValueError as exc:
+        raise ValueError("IaC scope cannot be resolved") from exc
+    if not referenced.is_dir() or not _path_in_units(relative, units):
+        raise ValueError("IaC scope cannot be resolved")
+
+
+def _validate_local_terraform_references(scoped_root: Path, units: List[str]) -> None:
+    """Reject local Terraform modules outside the complete planned unit set."""
+    resolved_root = scoped_root.resolve()
+    module_blocks = re.compile(r'\bmodule\s+"[^"]+"\s*\{(?P<body>.*?)\}', re.DOTALL)
+    source_value = re.compile(r'\bsource\s*=\s*(?P<value>"[^"]*"|[^\s}]+)')
+    for terraform_file in scoped_root.rglob("*.tf"):
+        try:
+            content = terraform_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ValueError("IaC scope cannot be resolved") from exc
+        for block in module_blocks.finditer(content):
+            source = source_value.search(block.group("body"))
+            if source is None or not source.group("value").startswith('"'):
+                raise ValueError("IaC scope cannot be resolved")
+            _validate_local_module_reference(
+                terraform_file,
+                source.group("value")[1:-1],
+                resolved_root,
+                units,
+            )
+    for terraform_json in scoped_root.rglob("*.tf.json"):
+        try:
+            body = json.loads(terraform_json.read_text(encoding="utf-8"))
+            modules = body.get("module", {})
+        except (AttributeError, OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError("IaC scope cannot be resolved") from exc
+        if not isinstance(modules, dict):
+            raise ValueError("IaC scope cannot be resolved")
+        for module in modules.values():
+            if not isinstance(module, dict) or "source" not in module:
+                raise ValueError("IaC scope cannot be resolved")
+            _validate_local_module_reference(
+                terraform_json,
+                module["source"],
+                resolved_root,
+                units,
+            )
+
+
+@contextmanager
+def _scoped_iac_tree(source_root: str, units: List[str]) -> Iterator[Path]:
+    """Copy complete planned IaC files or directories into an isolated tree."""
+    root = Path(source_root).resolve()
+    with tempfile.TemporaryDirectory(prefix="ez-appsec-iac-") as temporary:
+        scoped_root = Path(temporary)
+        copied: set[str] = set()
+        for unit in units:
+            relative = Path(unit)
+            if (
+                unit != "."
+                and (relative.is_absolute() or ".." in relative.parts or relative.as_posix() != unit)
+            ):
+                raise ValueError("IaC scope cannot be resolved")
+            source = root if unit == "." else root / relative
+            try:
+                resolved = source.resolve(strict=True)
+                resolved.relative_to(root)
+            except (OSError, ValueError) as exc:
+                raise ValueError("IaC scope cannot be resolved") from exc
+            if source.is_symlink():
+                raise ValueError("IaC scope cannot be resolved")
+            candidates = [resolved] if resolved.is_file() else resolved.rglob("*")
+            for candidate in candidates:
+                if ".git" in candidate.relative_to(root).parts:
+                    continue
+                if candidate.is_symlink():
+                    raise ValueError("IaC scope cannot be resolved")
+                if candidate.is_dir():
+                    continue
+                if not candidate.is_file():
+                    raise ValueError("IaC scope cannot be resolved")
+                repository_path = candidate.relative_to(root).as_posix()
+                if repository_path in copied:
+                    continue
+                copied.add(repository_path)
+                destination = scoped_root / repository_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(candidate, destination)
+        _validate_local_terraform_references(scoped_root, units)
+        yield scoped_root
+
+
 class ScannerExecutionError(RuntimeError):
     """A bounded, non-sensitive failure for one enabled scanner component."""
 
@@ -65,6 +173,7 @@ class ScannerExecutionError(RuntimeError):
             "execution_failed",
             "output_missing",
             "invalid_output",
+            "scope_unresolved",
         }
     )
 
@@ -871,6 +980,34 @@ class KicsScanner(ScannerWrapper):
         """Run KICS scan"""
         issues, _ = self.scan_with_raw_output(path)
         return issues
+
+    def scan_units(self, source_root: str, units: List[str]) -> List[Dict[str, Any]]:
+        """Scan complete planner-authorized IaC units and normalize their paths."""
+        try:
+            with _scoped_iac_tree(source_root, units) as scoped_root:
+                issues, raw_output_path = self.scan_with_raw_output(str(scoped_root))
+                try:
+                    for finding in issues:
+                        finding["file"] = _scoped_result_path(
+                            finding.get("file"), scoped_root
+                        )
+                        if not _path_in_units(finding["file"], units):
+                            self._fail("invalid_output")
+                        finding["finding_id"] = compute_finding_id(
+                            finding.get("rule_id") or finding.get("title") or "unknown",
+                            finding["file"],
+                            finding.get("line", 1),
+                        )
+                    return issues
+                finally:
+                    try:
+                        os.unlink(raw_output_path)
+                    except OSError:
+                        pass
+        except ScannerExecutionError:
+            raise
+        except Exception:
+            self._fail("scope_unresolved")
 
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run KICS scan and return raw output file path"""
