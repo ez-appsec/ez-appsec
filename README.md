@@ -55,6 +55,7 @@ That's it. The skill provisions the workflow, sets secrets, and triggers the fir
 | GitHub | [docs/github.md](docs/github.md) |
 | GitLab | [docs/gitlab.md](docs/gitlab.md) |
 | Dashboard | [docs/dashboard.md](docs/dashboard.md) |
+| SourceBastion scan contract | [docs/sourcebastion-scan-contract.md](docs/sourcebastion-scan-contract.md) |
 
 ---
 
