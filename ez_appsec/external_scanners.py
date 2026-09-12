@@ -179,6 +179,28 @@ class GitleaksScanner(ScannerWrapper):
         issues, _ = self.scan_with_raw_output(path)
         return issues
 
+    def scan_current_tree(self, source_root: str) -> List[Dict[str, Any]]:
+        """Scan the complete current tree for the portable scan contract."""
+        repository_config = Path(source_root) / ".gitleaks.toml"
+        repository_ignore = Path(source_root) / ".gitleaksignore"
+        issues, raw_output_path = self._scan_with_raw_output(
+            source_root,
+            current_tree=True,
+            config_path=(
+                str(repository_config) if repository_config.is_file() else None
+            ),
+            ignore_path=(
+                str(repository_ignore) if repository_ignore.is_file() else None
+            ),
+        )
+        try:
+            return issues
+        finally:
+            try:
+                os.unlink(raw_output_path)
+            except OSError:
+                pass
+
     def scan_paths(self, source_root: str, covered_paths: List[str]) -> List[Dict[str, Any]]:
         """Scan complete current-tree content for only the planned paths."""
         try:

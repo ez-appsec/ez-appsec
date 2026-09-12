@@ -25,13 +25,14 @@ component, the observed head, plan and image binding, bounded status and
 diagnostic codes, timestamps, and a canonical envelope digest.
 
 S03/T03 supports partial Gitleaks, Semgrep, and custom-PHP execution against
-complete copies of the planner's covered files. Gitleaks uses its current-tree
-`dir` mode, separate from the legacy full history scan. Repository Gitleaks and
-Semgrep ignore controls remain active, and findings outside the assigned scope
-make the component incomplete. Planned `reuse` is represented as an expected
-`not_run` result; KICS and Grype partial modes remain unsupported until their
-own capability tasks land. The existing `ez-appsec scan` command and its JSON
-output are unchanged.
+complete copies of the planner's covered files. Contract full and partial
+Gitleaks execution both use current-tree `dir` mode so scoped replacement is
+equivalent to full coverage. The legacy `ez-appsec scan` command retains its
+separate Git-history scan. Repository Gitleaks and Semgrep ignore controls
+remain active, and findings outside the assigned scope make the component
+incomplete. Planned `reuse` is represented as an expected `not_run` result;
+KICS and Grype partial modes remain unsupported until their own capability
+tasks land. The existing `ez-appsec scan` JSON output is unchanged.
 
 The scanner process needs the source tree, plan, and output path only. Do not
 mount provider, platform API, database, or orchestration credentials into the

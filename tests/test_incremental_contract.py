@@ -135,7 +135,7 @@ def test_contract_scan_executes_full_plan_and_emits_bound_envelope(tmp_path, mon
     plan_path.write_bytes(_canonical(plan))
     monkeypatch.setattr(
         GitleaksScanner,
-        "scan",
+        "scan_current_tree",
         lambda self, path: [
             {
                 "scanner": "gitleaks",
@@ -295,7 +295,9 @@ def test_contract_scan_rejects_traversal_scope_before_execution(tmp_path, monkey
     plan_path = tmp_path / "plan.json"
     plan_path.write_bytes(_canonical(plan))
     invoked = []
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: invoked.append(path))
+    monkeypatch.setattr(
+        GitleaksScanner, "scan_current_tree", lambda self, path: invoked.append(path)
+    )
 
     result = CliRunner().invoke(
         main,
@@ -324,7 +326,9 @@ def test_contract_scan_enforces_source_byte_limit_before_execution(tmp_path, mon
     plan_path = tmp_path / "plan.json"
     plan_path.write_bytes(_canonical(plan))
     invoked = []
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: invoked.append(path))
+    monkeypatch.setattr(
+        GitleaksScanner, "scan_current_tree", lambda self, path: invoked.append(path)
+    )
 
     result = CliRunner().invoke(
         main,
@@ -355,7 +359,7 @@ def test_contract_scan_discards_findings_that_exceed_plan_limit(tmp_path, monkey
     plan_path.write_bytes(_canonical(plan))
     monkeypatch.setattr(
         GitleaksScanner,
-        "scan",
+        "scan_current_tree",
         lambda self, path: [
             {"scanner": "gitleaks", "file": "app.py", "rule_id": "one"},
             {"scanner": "gitleaks", "file": "app.py", "rule_id": "two"},
@@ -393,7 +397,7 @@ def test_contract_scan_bounds_unexpected_component_failure(tmp_path, monkeypatch
     def fail(_self, _path):
         raise RuntimeError("customer-secret-must-not-escape")
 
-    monkeypatch.setattr(GitleaksScanner, "scan", fail)
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", fail)
     result = CliRunner().invoke(
         main,
         [
@@ -424,7 +428,7 @@ def test_contract_scan_rejects_cross_component_findings(tmp_path, monkeypatch):
     plan_path.write_bytes(_canonical(plan))
     monkeypatch.setattr(
         GitleaksScanner,
-        "scan",
+        "scan_current_tree",
         lambda self, path: [
             {"scanner": "semgrep", "file": "app.py", "rule_id": "wrong-owner"}
         ],
@@ -486,7 +490,7 @@ def test_result_validator_rejects_envelope_bound_to_another_plan(tmp_path, monke
     plan_path = tmp_path / "plan.json"
     result_path = tmp_path / "result.json"
     plan_path.write_bytes(_canonical(plan))
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [])
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", lambda self, path: [])
     result = CliRunner().invoke(
         main,
         [
@@ -522,7 +526,7 @@ def test_contract_scan_marks_execution_over_deadline_incomplete(tmp_path, monkey
     plan_path = tmp_path / "plan.json"
     result_path = tmp_path / "result.json"
     plan_path.write_bytes(_canonical(plan))
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [])
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", lambda self, path: [])
     ticks = iter([0.0, 2.0])
     monkeypatch.setattr(
         "ez_appsec.incremental_contract.time.monotonic",

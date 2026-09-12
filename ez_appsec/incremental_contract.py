@@ -473,7 +473,11 @@ def execute_scan_plan(
                 findings = (
                     scanner.scan_paths(source_path, component["covered_paths"])
                     if mode == "partial"
-                    else scanner.scan(source_path)
+                    else (
+                        scanner.scan_current_tree(source_path)
+                        if name == "gitleaks"
+                        else scanner.scan(source_path)
+                    )
                 )
                 if (
                     time.monotonic() - started_monotonic
