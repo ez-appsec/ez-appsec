@@ -493,6 +493,8 @@ def test_gitleaks_contract_finding_never_contains_detected_secret(tmp_path, monk
     monkeypatch.setattr(scanner, "is_installed", lambda: True)
 
     def write_report(command, **_kwargs):
+        assert "--redact" in command
+        assert "--redact=100" not in command
         report_path = command[command.index("--report-path") + 1]
         with open(report_path, "w", encoding="utf-8") as report:
             json.dump(
@@ -672,6 +674,8 @@ def test_gitleaks_partial_scope_uses_current_tree_and_only_complete_planned_file
 
     def run_gitleaks(command, **_kwargs):
         assert command[:2] == ["gitleaks", "dir"]
+        assert "--redact" in command
+        assert "--redact=100" not in command
         scoped_root = Path(command[2])
         assert (scoped_root / "app.py").read_text(encoding="utf-8") == "token = 'complete-file'\n"
         assert not (scoped_root / "other.py").exists()

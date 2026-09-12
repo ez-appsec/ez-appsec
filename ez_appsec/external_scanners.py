@@ -449,7 +449,7 @@ class GitleaksScanner(ScannerWrapper):
                     raw_output_path,
                     "--report-format",
                     "json",
-                    "--redact=100",
+                    "--redact",
                 ]
                 if config_path is not None:
                     command.extend(["--config", config_path])
@@ -465,7 +465,7 @@ class GitleaksScanner(ScannerWrapper):
                     raw_output_path,
                     "--report-format",
                     "json",
-                    "--redact=100",
+                    "--redact",
                 ]
             result = subprocess.run(
                 command,
