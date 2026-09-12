@@ -6,12 +6,53 @@ import logging
 import tempfile
 import shutil
 import os
+from contextlib import contextmanager
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Iterator, Optional, Tuple
 from abc import ABC, abstractmethod
 from ez_appsec.schema import compute_finding_id
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _scoped_source_tree(source_root: str, covered_paths: List[str]) -> Iterator[Path]:
+    """Copy complete planned files into an isolated tree with stable paths."""
+    root = Path(source_root).resolve()
+    with tempfile.TemporaryDirectory(prefix="ez-appsec-scope-") as temporary:
+        scoped_root = Path(temporary)
+        for relative_path in covered_paths:
+            relative = Path(relative_path)
+            source = root / relative
+            try:
+                resolved = source.resolve(strict=True)
+                resolved.relative_to(root)
+            except (OSError, ValueError) as exc:
+                raise ValueError("planned source path is unavailable") from exc
+            if source.is_symlink() or not resolved.is_file():
+                raise ValueError("planned source path is unavailable")
+            destination = scoped_root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(resolved, destination)
+        yield scoped_root
+
+
+def _scoped_result_path(value: Any, scoped_root: Path) -> str:
+    """Convert a scanner's staged path back to its repository-relative path."""
+    if not isinstance(value, str) or not value:
+        raise ValueError("scanner returned an invalid scoped path")
+    candidate = Path(value)
+    try:
+        if candidate.is_absolute():
+            candidate = candidate.relative_to(scoped_root)
+    except ValueError as exc:
+        raise ValueError("scanner returned a path outside its scope") from exc
+    normalized = candidate.as_posix()
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    if not normalized or normalized.startswith("/") or ".." in candidate.parts:
+        raise ValueError("scanner returned an invalid scoped path")
+    return normalized
 
 
 class ScannerExecutionError(RuntimeError):
@@ -137,9 +178,75 @@ class GitleaksScanner(ScannerWrapper):
         """Run gitleaks scan"""
         issues, _ = self.scan_with_raw_output(path)
         return issues
+
+    def scan_current_tree(self, source_root: str) -> List[Dict[str, Any]]:
+        """Scan the complete current tree for the portable scan contract."""
+        repository_config = Path(source_root) / ".gitleaks.toml"
+        repository_ignore = Path(source_root) / ".gitleaksignore"
+        issues, raw_output_path = self._scan_with_raw_output(
+            source_root,
+            current_tree=True,
+            config_path=(
+                str(repository_config) if repository_config.is_file() else None
+            ),
+            ignore_path=(
+                str(repository_ignore) if repository_ignore.is_file() else None
+            ),
+        )
+        try:
+            return issues
+        finally:
+            try:
+                os.unlink(raw_output_path)
+            except OSError:
+                pass
+
+    def scan_paths(self, source_root: str, covered_paths: List[str]) -> List[Dict[str, Any]]:
+        """Scan complete current-tree content for only the planned paths."""
+        try:
+            with _scoped_source_tree(source_root, covered_paths) as scoped_root:
+                repository_config = Path(source_root) / ".gitleaks.toml"
+                repository_ignore = Path(source_root) / ".gitleaksignore"
+                issues, raw_output_path = self._scan_with_raw_output(
+                    str(scoped_root),
+                    current_tree=True,
+                    config_path=(
+                        str(repository_config) if repository_config.is_file() else None
+                    ),
+                    ignore_path=(
+                        str(repository_ignore) if repository_ignore.is_file() else None
+                    ),
+                )
+                try:
+                    return issues
+                finally:
+                    try:
+                        os.unlink(raw_output_path)
+                    except OSError:
+                        pass
+        except ScannerExecutionError:
+            raise
+        except Exception:
+            self._fail("invalid_output")
     
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run gitleaks scan and return raw output file path"""
+        return self._scan_with_raw_output(
+            path,
+            current_tree=False,
+            config_path=None,
+            ignore_path=None,
+        )
+
+    def _scan_with_raw_output(
+        self,
+        path: str,
+        *,
+        current_tree: bool,
+        config_path: Optional[str],
+        ignore_path: Optional[str],
+    ) -> Tuple[List[Dict[str, Any]], str]:
+        """Run either the legacy Git-history scan or bounded current-tree scan."""
         if not self.is_installed():
             self._fail("not_installed")
         
@@ -149,8 +256,35 @@ class GitleaksScanner(ScannerWrapper):
         completed = False
         
         try:
+            if current_tree:
+                command = [
+                    "gitleaks",
+                    "dir",
+                    path,
+                    "--report-path",
+                    raw_output_path,
+                    "--report-format",
+                    "json",
+                    "--redact=100",
+                ]
+                if config_path is not None:
+                    command.extend(["--config", config_path])
+                if ignore_path is not None:
+                    command.extend(["--gitleaks-ignore-path", ignore_path])
+            else:
+                command = [
+                    "gitleaks",
+                    "detect",
+                    "--source",
+                    path,
+                    "--report-path",
+                    raw_output_path,
+                    "--report-format",
+                    "json",
+                    "--redact=100",
+                ]
             result = subprocess.run(
-                ["gitleaks", "detect", "--source", path, "--report-path", raw_output_path, "--report-format", "json"],
+                command,
                 capture_output=True,
                 text=True,
                 timeout=60
@@ -172,12 +306,15 @@ class GitleaksScanner(ScannerWrapper):
             
             issues = []
             for match in data:
+                finding_path = match.get("File", "unknown")
+                if current_tree:
+                    finding_path = _scoped_result_path(finding_path, Path(path))
                 finding = {
                     "type": "Secrets",
                     "rule_id": match.get("RuleID", "exposed-secret"),
                     "title": f"Exposed {match.get('RuleID', 'Secret')}",
                     "description": "Potential secret found; detected value redacted.",
-                    "file": match.get("File", "unknown"),
+                    "file": finding_path,
                     "line": match.get("StartLine", 1),
                     "severity": "critical",
                     "scanner": "gitleaks",
@@ -354,6 +491,37 @@ class SemgrepScanner(ScannerWrapper):
         issues, _ = self.scan_with_raw_output(path)
         return issues
 
+    def scan_paths(self, source_root: str, covered_paths: List[str]) -> List[Dict[str, Any]]:
+        """Scan complete copies of only the capability-approved source files."""
+        try:
+            with _scoped_source_tree(source_root, covered_paths) as scoped_root:
+                repository_ignore = Path(source_root) / ".semgrepignore"
+                if repository_ignore.is_file():
+                    if repository_ignore.is_symlink():
+                        self._fail("invalid_output")
+                    shutil.copy2(repository_ignore, scoped_root / ".semgrepignore")
+                issues, raw_output_path = self.scan_with_raw_output(str(scoped_root))
+                try:
+                    for finding in issues:
+                        finding["file"] = _scoped_result_path(
+                            finding.get("file"), scoped_root
+                        )
+                        finding["finding_id"] = compute_finding_id(
+                            finding.get("rule_id") or finding.get("title") or "unknown",
+                            finding["file"],
+                            finding.get("line", 1),
+                        )
+                    return issues
+                finally:
+                    try:
+                        os.unlink(raw_output_path)
+                    except OSError:
+                        pass
+        except ScannerExecutionError:
+            raise
+        except Exception:
+            self._fail("invalid_output")
+
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run semgrep scan and return raw output file path"""
         if not self.is_installed():
@@ -365,11 +533,12 @@ class SemgrepScanner(ScannerWrapper):
         completed = False
 
         try:
-            # Check if PHP files exist in the target
-            has_php = any(Path(path).rglob('*.php'))
-
-            # Check if JS/TS files exist in the target
-            has_js = any(Path(path).rglob('*.{js,ts,jsx,tsx}'))
+            # Preserve the established full-scan rule selection. M036 partial
+            # execution must use the same rules as a full scan of the same
+            # image; changing rule selection belongs in a separately versioned
+            # compatibility-key change.
+            has_php = any(Path(path).rglob("*.php"))
+            has_js = any(Path(path).rglob("*.{js,ts,jsx,tsx}"))
 
             # Build config flags
             config_flags = []
@@ -1061,6 +1230,32 @@ class PHPVulnScanner(ScannerWrapper):
         """Run PHP vulnerability scan"""
         issues, _ = self.scan_with_raw_output(path)
         return issues
+
+    def scan_paths(self, source_root: str, covered_paths: List[str]) -> List[Dict[str, Any]]:
+        """Run file-local PHP rules against complete planned PHP files only."""
+        try:
+            with _scoped_source_tree(source_root, covered_paths) as scoped_root:
+                issues, raw_output_path = self.scan_with_raw_output(str(scoped_root))
+                try:
+                    for finding in issues:
+                        finding["file"] = _scoped_result_path(
+                            finding.get("file"), scoped_root
+                        )
+                        finding.setdefault("line", 1)
+                        finding.setdefault(
+                            "rule_id", finding.get("title") or "custom-php-rule"
+                        )
+                        self._add_v2_fields(finding, "sast")
+                    return issues
+                finally:
+                    try:
+                        os.unlink(raw_output_path)
+                    except OSError:
+                        pass
+        except ScannerExecutionError:
+            raise
+        except Exception:
+            self._fail("invalid_output")
 
     def scan_with_raw_output(self, path: str) -> Tuple[List[Dict[str, Any]], str]:
         """Run PHP vulnerability scan and return raw output file path"""

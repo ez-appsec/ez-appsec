@@ -1,15 +1,16 @@
 """M036 S03 portable scan-plan and result-envelope contract."""
 
 import hashlib
-import itertools
 import json
 import subprocess
+from pathlib import Path
 
 from click.testing import CliRunner
 
 from ez_appsec.cli import main
-from ez_appsec.external_scanners import GitleaksScanner
+from ez_appsec.external_scanners import GitleaksScanner, PHPVulnScanner, SemgrepScanner
 from ez_appsec.incremental_contract import IncrementalContractError, validate_result_envelope
+from ez_appsec.schema import compute_finding_id
 
 
 SCANNER_IMAGE = "ghcr.io/ez-appsec/ez-appsec@sha256:" + "1" * 64
@@ -98,6 +99,34 @@ def _redigest(plan):
     return plan
 
 
+def _partial_sast_plan(head_sha):
+    plan = _full_plan(head_sha)
+    plan["mode"] = "incremental"
+    plan["baseline"] = {
+        "run_id": 7,
+        "sha": head_sha,
+        "age_seconds": 60,
+        "same_ref": True,
+        "ancestor": True,
+        "applied": True,
+        "complete": True,
+    }
+    plan["scanner"]["enabled_components"] = ["gitleaks", "semgrep"]
+    plan["components"] = [
+        {
+            "name": name,
+            "mode": "partial",
+            "reason": "component_scope_changed",
+            "compatibility_key": digit * 64,
+            "covered_paths": ["app.py"],
+            "deleted_paths": [],
+            "iac_units": [],
+        }
+        for name, digit in (("gitleaks", "3"), ("semgrep", "4"))
+    ]
+    return _redigest(plan)
+
+
 def test_contract_scan_executes_full_plan_and_emits_bound_envelope(tmp_path, monkeypatch):
     source, head_sha = _source_tree(tmp_path)
     plan = _full_plan(head_sha)
@@ -106,7 +135,7 @@ def test_contract_scan_executes_full_plan_and_emits_bound_envelope(tmp_path, mon
     plan_path.write_bytes(_canonical(plan))
     monkeypatch.setattr(
         GitleaksScanner,
-        "scan",
+        "scan_current_tree",
         lambda self, path: [
             {
                 "scanner": "gitleaks",
@@ -206,11 +235,14 @@ def test_contract_scan_marks_unimplemented_partial_scope_not_run(tmp_path):
         "applied": True,
         "complete": True,
     }
+    plan["scanner"]["enabled_components"] = ["kics"]
     plan["components"][0].update(
         {
+            "name": "kics",
             "mode": "partial",
             "reason": "component_scope_changed",
-            "covered_paths": ["app.py"],
+            "covered_paths": [],
+            "iac_units": ["."],
         }
     )
     _redigest(plan)
@@ -263,7 +295,9 @@ def test_contract_scan_rejects_traversal_scope_before_execution(tmp_path, monkey
     plan_path = tmp_path / "plan.json"
     plan_path.write_bytes(_canonical(plan))
     invoked = []
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: invoked.append(path))
+    monkeypatch.setattr(
+        GitleaksScanner, "scan_current_tree", lambda self, path: invoked.append(path)
+    )
 
     result = CliRunner().invoke(
         main,
@@ -292,7 +326,9 @@ def test_contract_scan_enforces_source_byte_limit_before_execution(tmp_path, mon
     plan_path = tmp_path / "plan.json"
     plan_path.write_bytes(_canonical(plan))
     invoked = []
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: invoked.append(path))
+    monkeypatch.setattr(
+        GitleaksScanner, "scan_current_tree", lambda self, path: invoked.append(path)
+    )
 
     result = CliRunner().invoke(
         main,
@@ -323,7 +359,7 @@ def test_contract_scan_discards_findings_that_exceed_plan_limit(tmp_path, monkey
     plan_path.write_bytes(_canonical(plan))
     monkeypatch.setattr(
         GitleaksScanner,
-        "scan",
+        "scan_current_tree",
         lambda self, path: [
             {"scanner": "gitleaks", "file": "app.py", "rule_id": "one"},
             {"scanner": "gitleaks", "file": "app.py", "rule_id": "two"},
@@ -361,7 +397,7 @@ def test_contract_scan_bounds_unexpected_component_failure(tmp_path, monkeypatch
     def fail(_self, _path):
         raise RuntimeError("customer-secret-must-not-escape")
 
-    monkeypatch.setattr(GitleaksScanner, "scan", fail)
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", fail)
     result = CliRunner().invoke(
         main,
         [
@@ -392,7 +428,7 @@ def test_contract_scan_rejects_cross_component_findings(tmp_path, monkeypatch):
     plan_path.write_bytes(_canonical(plan))
     monkeypatch.setattr(
         GitleaksScanner,
-        "scan",
+        "scan_current_tree",
         lambda self, path: [
             {"scanner": "semgrep", "file": "app.py", "rule_id": "wrong-owner"}
         ],
@@ -454,7 +490,7 @@ def test_result_validator_rejects_envelope_bound_to_another_plan(tmp_path, monke
     plan_path = tmp_path / "plan.json"
     result_path = tmp_path / "result.json"
     plan_path.write_bytes(_canonical(plan))
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [])
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", lambda self, path: [])
     result = CliRunner().invoke(
         main,
         [
@@ -490,7 +526,7 @@ def test_contract_scan_marks_execution_over_deadline_incomplete(tmp_path, monkey
     plan_path = tmp_path / "plan.json"
     result_path = tmp_path / "result.json"
     plan_path.write_bytes(_canonical(plan))
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [])
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", lambda self, path: [])
     ticks = iter([0.0, 2.0])
     monkeypatch.setattr(
         "ez_appsec.incremental_contract.time.monotonic",
@@ -544,3 +580,371 @@ def test_contract_scan_rejects_duplicate_json_keys(tmp_path):
 
     assert result.exit_code == 1
     assert "scan_plan_invalid" in result.output
+
+
+def test_contract_scan_executes_complete_file_secret_and_sast_scopes(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _partial_sast_plan(head_sha)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+    calls = []
+
+    def scan_paths(scanner_name):
+        def execute(_self, source_path, covered_paths):
+            calls.append((scanner_name, source_path, tuple(covered_paths)))
+            return [
+                {
+                    "scanner": scanner_name,
+                    "file": "app.py",
+                    "rule_id": f"{scanner_name}-rule",
+                }
+            ]
+
+        return execute
+
+    monkeypatch.setattr(GitleaksScanner, "scan_paths", scan_paths("gitleaks"), raising=False)
+    monkeypatch.setattr(SemgrepScanner, "scan_paths", scan_paths("semgrep"), raising=False)
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        ("gitleaks", str(source), ("app.py",)),
+        ("semgrep", str(source), ("app.py",)),
+    ]
+    components = json.loads(result_path.read_text(encoding="utf-8"))["components"]
+    assert [item["status"] for item in components] == ["complete", "complete"]
+
+
+def test_gitleaks_partial_scope_uses_current_tree_and_only_complete_planned_files(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "app.py").write_text("token = 'complete-file'\n", encoding="utf-8")
+    (source / "other.py").write_text("token = 'not-planned'\n", encoding="utf-8")
+    scanner = GitleaksScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+
+    def run_gitleaks(command, **_kwargs):
+        assert command[:2] == ["gitleaks", "dir"]
+        scoped_root = Path(command[2])
+        assert (scoped_root / "app.py").read_text(encoding="utf-8") == "token = 'complete-file'\n"
+        assert not (scoped_root / "other.py").exists()
+        report_path = Path(command[command.index("--report-path") + 1])
+        report_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "RuleID": "generic-api-key",
+                        "Match": "complete-file",
+                        "File": str(scoped_root / "app.py"),
+                        "StartLine": 1,
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 1, "", "")
+
+    monkeypatch.setattr("ez_appsec.external_scanners.subprocess.run", run_gitleaks)
+    findings = scanner.scan_paths(str(source), ["app.py"])
+
+    assert len(findings) == 1
+    assert findings[0]["file"] == "app.py"
+
+
+def test_semgrep_partial_scope_uses_only_complete_planned_files(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "app.py").write_text("eval(user_input)\n", encoding="utf-8")
+    (source / "other.py").write_text("print('not planned')\n", encoding="utf-8")
+    scanner = SemgrepScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+
+    def run_semgrep(command, **_kwargs):
+        assert command[0] == "semgrep"
+        scoped_root = Path(command[-1])
+        assert (scoped_root / "app.py").read_text(encoding="utf-8") == "eval(user_input)\n"
+        assert not (scoped_root / "other.py").exists()
+        report_path = Path(command[command.index("--output") + 1])
+        report_path.write_text(
+            json.dumps(
+                {
+                    "errors": [],
+                    "results": [
+                        {
+                            "check_id": "python.lang.security.audit.eval-detected",
+                            "path": str(scoped_root / "app.py"),
+                            "start": {"line": 1},
+                            "extra": {
+                                "severity": "ERROR",
+                                "message": "eval detected",
+                                "metadata": {"cwe": "CWE-95"},
+                            },
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("ez_appsec.external_scanners.subprocess.run", run_semgrep)
+    findings = scanner.scan_paths(str(source), ["app.py"])
+
+    assert len(findings) == 1
+    assert findings[0]["file"] == "app.py"
+    assert findings[0]["finding_id"] == compute_finding_id(
+        "python.lang.security.audit.eval-detected", "app.py", 1
+    )
+
+
+def test_partial_component_rejects_finding_outside_covered_paths(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _partial_sast_plan(head_sha)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+    monkeypatch.setattr(
+        GitleaksScanner,
+        "scan_paths",
+        lambda self, source_path, paths: [
+            {"scanner": "gitleaks", "file": "other.py", "rule_id": "outside"}
+        ],
+    )
+    monkeypatch.setattr(
+        SemgrepScanner,
+        "scan_paths",
+        lambda self, source_path, paths: [],
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+
+    assert result.exit_code == 1
+    component = json.loads(result_path.read_text(encoding="utf-8"))["components"][0]
+    assert component["status"] == "failed"
+    assert component["diagnostic_code"] == "finding_scope_mismatch"
+    assert component["findings"] == []
+
+
+def test_semgrep_partial_javascript_scope_preserves_full_scan_rule_selection(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "app.js").write_text("eval(userInput)\n", encoding="utf-8")
+    scanner = SemgrepScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+    commands = []
+
+    def run_semgrep(command, **_kwargs):
+        commands.append(command)
+        report_path = Path(command[command.index("--output") + 1])
+        report_path.write_text('{"errors":[],"results":[]}', encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("ez_appsec.external_scanners.subprocess.run", run_semgrep)
+    full_findings, full_output = scanner.scan_with_raw_output(str(source))
+    Path(full_output).unlink()
+    assert full_findings == []
+    assert scanner.scan_paths(str(source), ["app.js"]) == []
+    full_configs = [item for item in commands[0] if item.startswith("--config=")]
+    partial_configs = [item for item in commands[1] if item.startswith("--config=")]
+    assert partial_configs == full_configs
+    assert not any(item.endswith("js-semgrep-rules.yaml") for item in full_configs)
+
+
+def test_gitleaks_partial_scope_uses_repository_config(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "app.py").write_text("token = 'candidate'\n", encoding="utf-8")
+    config = source / ".gitleaks.toml"
+    config.write_text("[allowlist]\npaths = ['app.py']\n", encoding="utf-8")
+    scanner = GitleaksScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+
+    def run_gitleaks(command, **_kwargs):
+        assert command[command.index("--config") + 1] == str(config)
+        report_path = Path(command[command.index("--report-path") + 1])
+        report_path.write_text("[]", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("ez_appsec.external_scanners.subprocess.run", run_gitleaks)
+    assert scanner.scan_paths(str(source), ["app.py"]) == []
+
+
+def test_contract_scan_accepts_planned_reuse_without_executing_component(
+    tmp_path, monkeypatch
+):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _partial_sast_plan(head_sha)
+    plan["components"][0].update(
+        {
+            "mode": "reuse",
+            "reason": "component_unchanged",
+            "covered_paths": [],
+        }
+    )
+    _redigest(plan)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+
+    def unexpected(*_args):
+        raise AssertionError("reuse component executed")
+
+    monkeypatch.setattr(GitleaksScanner, "scan_paths", unexpected)
+    monkeypatch.setattr(
+        SemgrepScanner,
+        "scan_paths",
+        lambda self, source_path, paths: [],
+    )
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    components = json.loads(result_path.read_text(encoding="utf-8"))["components"]
+    assert components[0]["status"] == "not_run"
+    assert components[0]["diagnostic_code"] == "component_unchanged"
+    assert components[1]["status"] == "complete"
+
+
+def test_deleted_only_partial_scope_completes_without_scanner_execution(
+    tmp_path, monkeypatch
+):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _full_plan(head_sha)
+    plan["mode"] = "incremental"
+    plan["baseline"] = {
+        "run_id": 7,
+        "sha": head_sha,
+        "age_seconds": 60,
+        "same_ref": True,
+        "ancestor": True,
+        "applied": True,
+        "complete": True,
+    }
+    plan["components"][0].update(
+        {
+            "mode": "partial",
+            "reason": "component_scope_changed",
+            "covered_paths": [],
+            "deleted_paths": ["deleted.py"],
+        }
+    )
+    _redigest(plan)
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+
+    def unexpected(*_args):
+        raise AssertionError("deleted-only component executed")
+
+    monkeypatch.setattr(GitleaksScanner, "scan_paths", unexpected)
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    component = json.loads(result_path.read_text(encoding="utf-8"))["components"][0]
+    assert component["status"] == "complete"
+    assert component["findings"] == []
+    assert component["deleted_paths"] == ["deleted.py"]
+
+
+def test_gitleaks_partial_scope_uses_repository_ignore_file(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "app.py").write_text("token = 'candidate'\n", encoding="utf-8")
+    ignore_file = source / ".gitleaksignore"
+    ignore_file.write_text("fingerprint:app.py:generic-api-key:1\n", encoding="utf-8")
+    scanner = GitleaksScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+
+    def run_gitleaks(command, **_kwargs):
+        assert command[command.index("--gitleaks-ignore-path") + 1] == str(ignore_file)
+        report_path = Path(command[command.index("--report-path") + 1])
+        report_path.write_text("[]", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("ez_appsec.external_scanners.subprocess.run", run_gitleaks)
+    assert scanner.scan_paths(str(source), ["app.py"]) == []
+
+
+def test_semgrep_partial_scope_preserves_repository_ignore_rules(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "app.py").write_text("eval(user_input)\n", encoding="utf-8")
+    (source / ".semgrepignore").write_text("app.py\n", encoding="utf-8")
+    scanner = SemgrepScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+
+    def run_semgrep(command, **_kwargs):
+        scoped_root = Path(command[-1])
+        assert (scoped_root / ".semgrepignore").read_text(encoding="utf-8") == "app.py\n"
+        report_path = Path(command[command.index("--output") + 1])
+        report_path.write_text('{"errors":[],"results":[]}', encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("ez_appsec.external_scanners.subprocess.run", run_semgrep)
+    assert scanner.scan_paths(str(source), ["app.py"]) == []
+
+
+def test_custom_php_partial_scope_scans_only_complete_planned_files(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    vulnerable = "<?php mysql_query($_GET['id']); SELECT * FROM users; ?>\n"
+    (source / "app.php").write_text(vulnerable, encoding="utf-8")
+    (source / "other.php").write_text(vulnerable, encoding="utf-8")
+
+    findings = PHPVulnScanner().scan_paths(str(source), ["app.php"])
+
+    assert findings
+    assert {finding["file"] for finding in findings} == {"app.php"}
+    assert all(finding["scanner"] == "php-vuln-scanner" for finding in findings)

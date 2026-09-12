@@ -74,8 +74,11 @@ _DIAGNOSTIC_CODES = ScannerExecutionError.VALID_CODES | {
     "unsupported_mode",
     "findings_limit_exceeded",
     "finding_ownership_mismatch",
+    "finding_scope_mismatch",
     "execution_limit_exceeded",
+    "component_unchanged",
 }
+_PARTIAL_COMPONENTS = {"gitleaks", "semgrep", "custom_php"}
 
 
 class IncrementalContractError(ValueError):
@@ -447,14 +450,35 @@ def execute_scan_plan(
     total_findings = 0
     for component in plan["components"]:
         name = component["name"]
-        if component["mode"] != "full":
+        mode = component["mode"]
+        if mode == "reuse":
+            findings = []
+            status = "not_run"
+            diagnostic_code = "component_unchanged"
+        elif (
+            mode == "partial"
+            and name in _PARTIAL_COMPONENTS
+            and not component["covered_paths"]
+        ):
+            findings = []
+            status = "complete"
+            diagnostic_code = None
+        elif mode == "partial" and name not in _PARTIAL_COMPONENTS:
             findings = []
             status = "not_run"
             diagnostic_code = "unsupported_mode"
         else:
             scanner = manager.scanners[COMPONENT_NAMES[name]]
             try:
-                findings = scanner.scan(source_path)
+                findings = (
+                    scanner.scan_paths(source_path, component["covered_paths"])
+                    if mode == "partial"
+                    else (
+                        scanner.scan_current_tree(source_path)
+                        if name == "gitleaks"
+                        else scanner.scan(source_path)
+                    )
+                )
                 if (
                     time.monotonic() - started_monotonic
                     > plan["limits"]["max_execution_seconds"]
@@ -474,6 +498,14 @@ def execute_scan_plan(
                     findings = []
                     status = "failed"
                     diagnostic_code = "finding_ownership_mismatch"
+                elif mode == "partial" and any(
+                    not _valid_path(finding.get("file"))
+                    or finding["file"] not in component["covered_paths"]
+                    for finding in findings
+                ):
+                    findings = []
+                    status = "failed"
+                    diagnostic_code = "finding_scope_mismatch"
                 elif total_findings + len(findings) > plan["limits"]["max_findings"]:
                     findings = []
                     status = "failed"
@@ -617,11 +649,29 @@ def validate_result_envelope(
             )
             or not isinstance(component["findings"], list)
             or (status != "complete" and component["findings"])
+            or (
+                planned["mode"] == "reuse"
+                and (
+                    status != "not_run"
+                    or component["diagnostic_code"] != "component_unchanged"
+                )
+            )
+            or (
+                planned["mode"] != "reuse"
+                and status == "not_run"
+                and component["diagnostic_code"] != "unsupported_mode"
+            )
         ):
             _result_invalid()
         if any(
             not isinstance(finding, dict)
             or finding.get("scanner") not in _FINDING_SCANNERS[component["name"]]
+            for finding in component["findings"]
+        ):
+            _result_invalid()
+        if planned["mode"] == "partial" and any(
+            not _valid_path(finding.get("file"))
+            or finding["file"] not in planned["covered_paths"]
             for finding in component["findings"]
         ):
             _result_invalid()
