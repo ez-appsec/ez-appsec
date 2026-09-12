@@ -64,6 +64,25 @@ def test_timeout_is_a_bounded_failure(tmp_path):
     assert str(tmp_path) not in str(raised.value)
 
 
+def test_contract_deadline_caps_external_scanner_timeout(monkeypatch):
+    scanner = GitleaksScanner()
+    scanner.set_execution_deadline(101.5)
+    monkeypatch.setattr("ez_appsec.external_scanners.time.monotonic", lambda: 100.0)
+
+    assert scanner._timeout(60) == 1.5
+
+
+def test_expired_contract_deadline_fails_before_starting_tool(monkeypatch):
+    scanner = GitleaksScanner()
+    scanner.set_execution_deadline(100.0)
+    monkeypatch.setattr("ez_appsec.external_scanners.time.monotonic", lambda: 100.0)
+
+    with pytest.raises(ScannerExecutionError) as raised:
+        scanner.is_installed()
+
+    assert raised.value.code == "timeout"
+
+
 def test_invalid_json_is_not_empty_success(tmp_path):
     scanner = SemgrepScanner()
     completed = subprocess.CompletedProcess([], 0, "", "")
