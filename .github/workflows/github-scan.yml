@@ -83,6 +83,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Use checked-out scanner when dogfooding
+        if: github.repository == 'ez-appsec/ez-appsec'
+        run: pip install --no-deps -e .
+
       - name: Run ez-appsec scan
         id: scan
         run: |

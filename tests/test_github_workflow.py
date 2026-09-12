@@ -14,6 +14,7 @@ from ez_appsec.converters import (
 
 
 SELF_SCAN_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "self-scan.yml"
+CUSTOMER_SCAN_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "github-scan.yml"
 
 
 def test_self_scan_installs_pinned_external_toolchain():
@@ -30,6 +31,13 @@ def test_self_scan_installs_pinned_external_toolchain():
     assert 'docker cp "${KICS_CONTAINER}:/app/bin/kics"' in workflow
     assert 'docker cp "${KICS_CONTAINER}:/app/bin/assets/."' in workflow
     assert "v0.110.0" in workflow
+
+
+def test_customer_workflow_dogfoods_checked_out_scanner_only_in_this_repository():
+    workflow = CUSTOMER_SCAN_WORKFLOW.read_text()
+
+    assert "if: github.repository == 'ez-appsec/ez-appsec'" in workflow
+    assert "run: pip install --no-deps -e ." in workflow
 
 
 def test_sarif_format_validation():
