@@ -1109,6 +1109,35 @@ def test_kics_partial_scope_rejects_unplanned_local_module_reference(
     assert invoked == []
 
 
+def test_kics_partial_scope_rejects_unparsed_terraform_module(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    unit = source / "infra"
+    unit.mkdir(parents=True)
+    (unit / "main.tf").write_text(
+        'module /* planner cannot safely parse this */ "shared" {\n'
+        '  source = "../shared"\n}\n',
+        encoding="utf-8",
+    )
+    shared = source / "shared"
+    shared.mkdir()
+    (shared / "main.tf").write_text('resource "null_resource" "shared" {}\n')
+    scanner = KicsScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+    invoked = []
+    monkeypatch.setattr(
+        "ez_appsec.external_scanners.subprocess.run",
+        lambda *args, **kwargs: invoked.append(args),
+    )
+
+    try:
+        scanner.scan_units(str(source), ["infra"])
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "scope_unresolved"
+    else:
+        raise AssertionError("unparsed Terraform module was scanned")
+    assert invoked == []
+
+
 def test_kics_partial_scope_rejects_unplanned_tf_json_module_reference(
     tmp_path, monkeypatch
 ):
@@ -1137,6 +1166,60 @@ def test_kics_partial_scope_rejects_unplanned_tf_json_module_reference(
     else:
         raise AssertionError("unplanned tf.json module reference was scanned")
     assert invoked == []
+
+
+def test_kics_partial_scope_rejects_unplanned_kustomize_resource(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source"
+    deploy = source / "deploy"
+    deploy.mkdir(parents=True)
+    (deploy / "kustomization.yaml").write_text(
+        "resources:\n  - deployment.yaml\n", encoding="utf-8"
+    )
+    (deploy / "deployment.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\n", encoding="utf-8"
+    )
+    scanner = KicsScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+    invoked = []
+    monkeypatch.setattr(
+        "ez_appsec.external_scanners.subprocess.run",
+        lambda *args, **kwargs: invoked.append(args),
+    )
+
+    try:
+        scanner.scan_units(str(source), ["deploy/kustomization.yaml"])
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "scope_unresolved"
+    else:
+        raise AssertionError("incomplete Kustomize unit was scanned")
+    assert invoked == []
+
+
+def test_kics_partial_scope_accepts_complete_kustomize_unit(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    deploy = source / "deploy"
+    deploy.mkdir(parents=True)
+    (deploy / "kustomization.yaml").write_text(
+        "resources:\n  - deployment.yaml\n", encoding="utf-8"
+    )
+    (deploy / "deployment.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\n", encoding="utf-8"
+    )
+    scanner = KicsScanner()
+    monkeypatch.setattr(scanner, "is_installed", lambda: True)
+    monkeypatch.setattr(scanner, "_find_assets_path", lambda: tmp_path / "assets")
+
+    def run_kics(command, **_kwargs):
+        output_dir = Path(command[command.index("-o") + 1])
+        (output_dir / "results.json").write_text(
+            '{"queries": []}', encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("ez_appsec.external_scanners.subprocess.run", run_kics)
+    assert scanner.scan_units(str(source), ["deploy"]) == []
 
 
 def test_contract_scan_rejects_kics_finding_outside_planned_unit(tmp_path, monkeypatch):

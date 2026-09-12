@@ -7,6 +7,7 @@ import tempfile
 import shutil
 import os
 import re
+import yaml
 from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Dict, Any, Iterator, Optional, Tuple
@@ -91,7 +92,8 @@ def _validate_local_terraform_references(scoped_root: Path, units: List[str]) ->
             content = terraform_file.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
             raise ValueError("IaC scope cannot be resolved") from exc
-        for block in module_blocks.finditer(content):
+        blocks = list(module_blocks.finditer(content))
+        for block in blocks:
             source = source_value.search(block.group("body"))
             if source is None or not source.group("value").startswith('"'):
                 raise ValueError("IaC scope cannot be resolved")
@@ -101,6 +103,9 @@ def _validate_local_terraform_references(scoped_root: Path, units: List[str]) ->
                 resolved_root,
                 units,
             )
+        unmatched = module_blocks.sub("", content)
+        if re.search(r'\bmodule\b', unmatched):
+            raise ValueError("IaC scope cannot be resolved")
     for terraform_json in scoped_root.rglob("*.tf.json"):
         try:
             body = json.loads(terraform_json.read_text(encoding="utf-8"))
@@ -118,6 +123,75 @@ def _validate_local_terraform_references(scoped_root: Path, units: List[str]) ->
                 resolved_root,
                 units,
             )
+
+
+def _kustomize_reference_values(body: Dict[str, Any]) -> Iterator[Any]:
+    """Yield file and directory references that affect a Kustomize unit."""
+    for key in (
+        "resources",
+        "bases",
+        "components",
+        "patchesStrategicMerge",
+        "configurations",
+        "crds",
+        "generators",
+        "transformers",
+        "validators",
+    ):
+        values = body.get(key, [])
+        if not isinstance(values, list):
+            raise ValueError("IaC scope cannot be resolved")
+        yield from values
+    patches = body.get("patches", [])
+    if not isinstance(patches, list):
+        raise ValueError("IaC scope cannot be resolved")
+    for patch in patches:
+        if isinstance(patch, str):
+            yield patch
+        elif isinstance(patch, dict) and "path" in patch:
+            yield patch["path"]
+    for key in ("configMapGenerator", "secretGenerator"):
+        generators = body.get(key, [])
+        if not isinstance(generators, list):
+            raise ValueError("IaC scope cannot be resolved")
+        for generator in generators:
+            if not isinstance(generator, dict):
+                raise ValueError("IaC scope cannot be resolved")
+            for source_key in ("files", "envs"):
+                values = generator.get(source_key, [])
+                if not isinstance(values, list):
+                    raise ValueError("IaC scope cannot be resolved")
+                for value in values:
+                    if isinstance(value, str) and "=" in value:
+                        value = value.split("=", 1)[1]
+                    yield value
+
+
+def _validate_kustomize_references(scoped_root: Path, units: List[str]) -> None:
+    """Require every Kustomize input to be present in the planned unit set."""
+    resolved_root = scoped_root.resolve()
+    candidates = {
+        *scoped_root.rglob("kustomization.yaml"),
+        *scoped_root.rglob("kustomization.yml"),
+        *scoped_root.rglob("Kustomization"),
+    }
+    for manifest in candidates:
+        try:
+            body = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            raise ValueError("IaC scope cannot be resolved") from exc
+        if not isinstance(body, dict):
+            raise ValueError("IaC scope cannot be resolved")
+        for value in _kustomize_reference_values(body):
+            if not isinstance(value, str) or "://" in value:
+                raise ValueError("IaC scope cannot be resolved")
+            referenced = (manifest.parent / value).resolve()
+            try:
+                relative = referenced.relative_to(resolved_root).as_posix()
+            except ValueError as exc:
+                raise ValueError("IaC scope cannot be resolved") from exc
+            if not referenced.exists() or not _path_in_units(relative, units):
+                raise ValueError("IaC scope cannot be resolved")
 
 
 @contextmanager
@@ -160,6 +234,7 @@ def _scoped_iac_tree(source_root: str, units: List[str]) -> Iterator[Path]:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(candidate, destination)
         _validate_local_terraform_references(scoped_root, units)
+        _validate_kustomize_references(scoped_root, units)
         yield scoped_root
 
 
