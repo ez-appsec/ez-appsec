@@ -572,6 +572,9 @@ def execute_scan_plan(
             diagnostic_code = "unsupported_mode"
         else:
             scanner = manager.scanners[COMPONENT_NAMES[name]]
+            scanner.set_execution_deadline(
+                started_monotonic + plan["limits"]["max_execution_seconds"]
+            )
             try:
                 if mode == "partial" and name == "kics":
                     findings = scanner.scan_units(source_path, component["iac_units"])
@@ -588,6 +591,7 @@ def execute_scan_plan(
                     findings = []
                     status = "failed"
                     diagnostic_code = "execution_limit_exceeded"
+                    cancelled = True
                 elif not isinstance(findings, list):
                     findings = []
                     status = "failed"

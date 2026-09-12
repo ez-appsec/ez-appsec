@@ -1285,7 +1285,9 @@ def test_contract_scan_rejects_duplicate_component_findings(tmp_path, monkeypatc
         "file": "app.py",
         "line": 1,
     }
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [finding, finding])
+    monkeypatch.setattr(
+        GitleaksScanner, "scan_current_tree", lambda self, path: [finding, finding]
+    )
 
     result = CliRunner().invoke(
         main,
@@ -1316,7 +1318,7 @@ def test_contract_scan_bounds_finding_metadata(tmp_path, monkeypatch):
     plan_path.write_bytes(_canonical(plan))
     monkeypatch.setattr(
         GitleaksScanner,
-        "scan",
+        "scan_current_tree",
         lambda self, path: [
             {
                 "scanner": "gitleaks",
@@ -1361,7 +1363,7 @@ def test_contract_scan_records_component_cancellation(tmp_path, monkeypatch):
     def cancel(_self, _path):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(GitleaksScanner, "scan", cancel)
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", cancel)
     result = CliRunner().invoke(
         main,
         [
@@ -1389,7 +1391,7 @@ def test_result_validator_rejects_malformed_component_status(tmp_path, monkeypat
     plan_path = tmp_path / "plan.json"
     result_path = tmp_path / "result.json"
     plan_path.write_bytes(_canonical(plan))
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [])
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", lambda self, path: [])
     result = CliRunner().invoke(
         main,
         [
@@ -1430,7 +1432,9 @@ def test_result_validator_rejects_duplicate_findings_from_external_envelope(
         "file": "app.py",
         "line": 1,
     }
-    monkeypatch.setattr(GitleaksScanner, "scan", lambda self, path: [finding])
+    monkeypatch.setattr(
+        GitleaksScanner, "scan_current_tree", lambda self, path: [finding]
+    )
     result = CliRunner().invoke(
         main,
         [

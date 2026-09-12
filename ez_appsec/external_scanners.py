@@ -7,6 +7,7 @@ import tempfile
 import shutil
 import os
 import re
+import time
 import yaml
 from contextlib import contextmanager
 from pathlib import Path
@@ -266,6 +267,20 @@ class ScannerWrapper(ABC):
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
         self.name = getattr(self, "component_name", self.__class__.__name__.lower())
+        self._execution_deadline: Optional[float] = None
+
+    def set_execution_deadline(self, deadline: float) -> None:
+        """Limit subsequent tool calls to an absolute monotonic deadline."""
+        self._execution_deadline = deadline
+
+    def _timeout(self, scanner_ceiling: float) -> float:
+        """Return the smaller scanner timeout and remaining contract budget."""
+        if self._execution_deadline is None:
+            return scanner_ceiling
+        remaining = self._execution_deadline - time.monotonic()
+        if remaining <= 0:
+            self._fail("timeout")
+        return min(scanner_ceiling, remaining)
 
     def _fail(self, code: str) -> None:
         """Raise a stable failure without including command output or source data."""
@@ -349,8 +364,15 @@ class GitleaksScanner(ScannerWrapper):
     def is_installed(self) -> bool:
         """Check if gitleaks is installed"""
         try:
-            subprocess.run(["gitleaks", "version"], capture_output=True, check=True)
+            subprocess.run(
+                ["gitleaks", "version"],
+                capture_output=True,
+                check=True,
+                timeout=self._timeout(30),
+            )
             return True
+        except subprocess.TimeoutExpired:
+            self._fail("timeout")
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
     
@@ -471,7 +493,7 @@ class GitleaksScanner(ScannerWrapper):
                 command,
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=self._timeout(60),
             )
 
             # Gitleaks uses exit 1 to report that leaks were found. Other exit
@@ -669,8 +691,15 @@ class SemgrepScanner(ScannerWrapper):
     def is_installed(self) -> bool:
         """Check if semgrep is installed"""
         try:
-            subprocess.run(["semgrep", "--version"], capture_output=True, check=True)
+            subprocess.run(
+                ["semgrep", "--version"],
+                capture_output=True,
+                check=True,
+                timeout=self._timeout(30),
+            )
             return True
+        except subprocess.TimeoutExpired:
+            self._fail("timeout")
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
@@ -772,7 +801,7 @@ class SemgrepScanner(ScannerWrapper):
                 ["semgrep"] + config_flags + ["--json", "--output", raw_output_path, path],
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=self._timeout(300),
             )
 
             # Semgrep reserves exit 1 for blocking findings. Fatal errors use
@@ -1050,8 +1079,15 @@ class KicsScanner(ScannerWrapper):
     def is_installed(self) -> bool:
         """Check if kics is installed"""
         try:
-            subprocess.run(["kics", "version"], capture_output=True, check=True)
+            subprocess.run(
+                ["kics", "version"],
+                capture_output=True,
+                check=True,
+                timeout=self._timeout(30),
+            )
             return self._find_assets_path() is not None
+        except subprocess.TimeoutExpired:
+            self._fail("timeout")
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
@@ -1121,7 +1157,7 @@ class KicsScanner(ScannerWrapper):
                 ],
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=self._timeout(120),
             )
 
             # KICS uses 20-60 for successful scans that found results.
@@ -1317,8 +1353,15 @@ class GrypeScanner(ScannerWrapper):
     def is_installed(self) -> bool:
         """Check if grype is installed"""
         try:
-            subprocess.run(["grype", "--version"], capture_output=True, check=True)
+            subprocess.run(
+                ["grype", "--version"],
+                capture_output=True,
+                check=True,
+                timeout=self._timeout(30),
+            )
             return True
+        except subprocess.TimeoutExpired:
+            self._fail("timeout")
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
@@ -1344,7 +1387,13 @@ class GrypeScanner(ScannerWrapper):
                     return
                 logger.info(f"Generating dependency manifest via: {' '.join(cmd)}")
                 try:
-                    result = subprocess.run(cmd, capture_output=True, text=True, cwd=path, timeout=300)
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        cwd=path,
+                        timeout=self._timeout(300),
+                    )
                 except FileNotFoundError:
                     self._fail("not_installed")
                 if result.returncode != 0:
@@ -1366,10 +1415,18 @@ class GrypeScanner(ScannerWrapper):
         completed = False
 
         try:
-            db_check = subprocess.run(["grype", "db", "status"], capture_output=True)
+            db_check = subprocess.run(
+                ["grype", "db", "status"],
+                capture_output=True,
+                timeout=self._timeout(30),
+            )
             if db_check.returncode != 0:
                 logger.info("grype database missing, updating...")
-                db_update = subprocess.run(["grype", "db", "update"], capture_output=True, timeout=120)
+                db_update = subprocess.run(
+                    ["grype", "db", "update"],
+                    capture_output=True,
+                    timeout=self._timeout(120),
+                )
                 if db_update.returncode != 0:
                     self._fail("execution_failed")
 
@@ -1379,7 +1436,7 @@ class GrypeScanner(ScannerWrapper):
                 ["grype", "dir:" + path, "-o", "json", "--file", raw_output_path],
                 capture_output=True,
                 text=True,
-                timeout=300
+                timeout=self._timeout(300),
             )
 
             # Exit 1 is a complete report when fail-on-severity is configured.
