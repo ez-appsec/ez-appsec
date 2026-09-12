@@ -237,6 +237,33 @@ def scan(path, ai_prompt, languages, severity, output, config_file, baseline_pat
         sys.exit(1)
 
 
+@main.command("contract-scan")
+@click.argument("path", type=click.Path(exists=True, file_okay=False))
+@click.option("--plan", "plan_path", type=click.Path(exists=True, dir_okay=False), required=True)
+@click.option("--result-envelope", type=click.Path(dir_okay=False), required=True)
+@click.option("--scanner-image", envvar="EZ_APPSEC_SCANNER_IMAGE", required=True)
+def contract_scan(path, plan_path, result_envelope, scanner_image):
+    """Execute a versioned SourceBastion scan plan and emit its result envelope."""
+    from ez_appsec.incremental_contract import (
+        IncrementalContractError,
+        execute_scan_plan,
+        load_scan_plan,
+        write_result_envelope,
+    )
+
+    try:
+        plan = load_scan_plan(plan_path)
+        envelope = execute_scan_plan(path, plan, scanner_image)
+        write_result_envelope(result_envelope, envelope)
+    except IncrementalContractError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    incomplete = any(item["status"] != "complete" for item in envelope["components"])
+    if incomplete:
+        raise click.ClickException("scan_component_incomplete")
+    click.echo(f"Result envelope saved to: {result_envelope}")
+
+
 @main.command()
 @click.argument("path", type=click.Path(exists=True), default=".")
 @click.option("--ai-prompt", help="Custom AI prompt for security analysis")

@@ -176,7 +176,7 @@ class GitleaksScanner(ScannerWrapper):
                     "type": "Secrets",
                     "rule_id": match.get("RuleID", "exposed-secret"),
                     "title": f"Exposed {match.get('RuleID', 'Secret')}",
-                    "description": f"Potential secret found: {match.get('Match', '')[:50]}...",
+                    "description": "Potential secret found; detected value redacted.",
                     "file": match.get("File", "unknown"),
                     "line": match.get("StartLine", 1),
                     "severity": "critical",
