@@ -480,10 +480,18 @@ class GitleaksScanner(ScannerWrapper):
                 self._fail("execution_failed")
             
             try:
-                with open(raw_output_path) as f:
-                    data = json.load(f)
+                with open(raw_output_path, encoding="utf-8") as report:
+                    encoded_report = report.read()
             except FileNotFoundError:
                 self._fail("output_missing")
+
+            if not encoded_report.strip():
+                if result.returncode == 0:
+                    data = []
+                else:
+                    self._fail("invalid_output")
+            else:
+                data = json.loads(encoded_report)
 
             if not isinstance(data, list):
                 self._fail("invalid_output")

@@ -99,6 +99,35 @@ def test_tool_specific_finding_exit_codes_are_complete(tmp_path):
         os.unlink(raw_path)
 
 
+def test_gitleaks_success_with_empty_report_is_complete(tmp_path):
+    scanner = GitleaksScanner()
+    completed = subprocess.CompletedProcess([], 0, "", "")
+    with (
+        patch.object(scanner, "is_installed", return_value=True),
+        patch("ez_appsec.external_scanners.subprocess.run", return_value=completed),
+    ):
+        issues, raw_path = scanner.scan_with_raw_output(str(tmp_path))
+
+    try:
+        assert issues == []
+        assert Path(raw_path).read_text() == ""
+    finally:
+        os.unlink(raw_path)
+
+
+def test_gitleaks_finding_exit_with_empty_report_fails_closed(tmp_path):
+    scanner = GitleaksScanner()
+    completed = subprocess.CompletedProcess([], 1, "", "")
+    with (
+        patch.object(scanner, "is_installed", return_value=True),
+        patch("ez_appsec.external_scanners.subprocess.run", return_value=completed),
+    ):
+        with pytest.raises(ScannerExecutionError) as raised:
+            scanner.scan_with_raw_output(str(tmp_path))
+
+    assert raised.value.code == "invalid_output"
+
+
 def test_semgrep_finding_exit_code_is_complete(tmp_path):
     scanner = SemgrepScanner()
 
