@@ -179,6 +179,7 @@ def test_grype_missing_bundled_database_fails_without_runtime_download(tmp_path)
         return subprocess.CompletedProcess(command, 1, "", "")
 
     with (
+        patch.dict(os.environ, {"GRYPE_DB_AUTO_UPDATE": "false"}),
         patch.object(scanner, "is_installed", return_value=True),
         patch(
             "ez_appsec.external_scanners.subprocess.run",
@@ -193,11 +194,47 @@ def test_grype_missing_bundled_database_fails_without_runtime_download(tmp_path)
 
 
 def test_grype_uses_the_immutable_bundled_database_snapshot():
-    environment = GrypeScanner._offline_env()
+    with patch.dict(
+        os.environ,
+        {
+            "GRYPE_DB_AUTO_UPDATE": "false",
+            "GRYPE_DB_VALIDATE_AGE": "false",
+        },
+        clear=True,
+    ):
+        environment = GrypeScanner._runtime_env()
 
     assert environment["GRYPE_CHECK_FOR_APP_UPDATE"] == "false"
     assert environment["GRYPE_DB_AUTO_UPDATE"] == "false"
     assert environment["GRYPE_DB_VALIDATE_AGE"] == "false"
+
+
+def test_grype_connected_runtime_bootstraps_a_missing_database(tmp_path):
+    scanner = GrypeScanner()
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        if command[:3] == ["grype", "db", "status"]:
+            return subprocess.CompletedProcess(command, 1, "", "")
+        if command[:3] == ["grype", "db", "update"]:
+            return subprocess.CompletedProcess(command, 0, "", "")
+        report_path = Path(command[command.index("--file") + 1])
+        report_path.write_text('{"matches": []}')
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch.object(scanner, "is_installed", return_value=True),
+        patch("ez_appsec.external_scanners.subprocess.run", side_effect=run),
+    ):
+        issues, raw_path = scanner.scan_with_raw_output(str(tmp_path))
+
+    try:
+        assert issues == []
+        assert ["grype", "db", "update"] in commands
+    finally:
+        Path(raw_path).unlink()
 
 
 def test_gitleaks_finding_exit_with_empty_report_fails_closed(tmp_path):

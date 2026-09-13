@@ -1308,13 +1308,11 @@ class GrypeScanner(ScannerWrapper):
     component_name = "grype"
 
     @staticmethod
-    def _offline_env() -> Dict[str, str]:
-        """Keep the credential-free scanner from reaching out during execution."""
+    def _runtime_env() -> Dict[str, str]:
+        """Preserve the caller's database policy and suppress update telemetry."""
         return {
             **os.environ,
             "GRYPE_CHECK_FOR_APP_UPDATE": "false",
-            "GRYPE_DB_AUTO_UPDATE": "false",
-            "GRYPE_DB_VALIDATE_AGE": "false",
         }
 
     def _add_ai_remediation_fields(
@@ -1398,21 +1396,34 @@ class GrypeScanner(ScannerWrapper):
         completed = False
 
         try:
+            runtime_env = self._runtime_env()
             db_check = subprocess.run(
                 ["grype", "db", "status"],
                 capture_output=True,
                 timeout=self._timeout(30),
-                env=self._offline_env(),
+                env=runtime_env,
             )
             if db_check.returncode != 0:
-                self._fail("execution_failed")
+                auto_update_disabled = runtime_env.get(
+                    "GRYPE_DB_AUTO_UPDATE", ""
+                ).lower() in {"0", "false", "no", "off"}
+                if auto_update_disabled:
+                    self._fail("execution_failed")
+                db_update = subprocess.run(
+                    ["grype", "db", "update"],
+                    capture_output=True,
+                    timeout=self._timeout(120),
+                    env=runtime_env,
+                )
+                if db_update.returncode != 0:
+                    self._fail("execution_failed")
 
             result = subprocess.run(
                 ["grype", "dir:" + path, "-o", "json", "--file", raw_output_path],
                 capture_output=True,
                 text=True,
                 timeout=self._timeout(300),
-                env=self._offline_env(),
+                env=runtime_env,
             )
 
             # Exit 1 is a complete report when fail-on-severity is configured.
