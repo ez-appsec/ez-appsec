@@ -28,7 +28,12 @@ FROM alpine:3.18
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    SEMGREP_ENABLE_VERSION_CHECK=0 \
+    GRYPE_CHECK_FOR_APP_UPDATE=false \
+    GRYPE_DB_AUTO_UPDATE=false \
+    GRYPE_DB_VALIDATE_AGE=false \
+    GRYPE_DB_CACHE_DIR=/opt/grype-db
 
 # Install runtime dependencies (pinned versions)
 RUN apk add --no-cache \
@@ -59,8 +64,12 @@ RUN ARCH=$(uname -m) && \
     chmod +x /usr/local/bin/gitleaks && \
     gitleaks version
 
-RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin && \
-    grype version
+RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin v0.118.0 && \
+    grype version && \
+    mkdir -p "$GRYPE_DB_CACHE_DIR" && \
+    GRYPE_DB_AUTO_UPDATE=true grype db update && \
+    grype db status && \
+    chmod -R a+rX,a-w "$GRYPE_DB_CACHE_DIR"
 
 # semgrep via pip (pinned)
 RUN pip install --no-cache-dir semgrep==1.157.0 && \

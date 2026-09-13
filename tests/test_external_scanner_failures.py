@@ -134,6 +134,72 @@ def test_gitleaks_success_with_empty_report_is_complete(tmp_path):
         os.unlink(raw_path)
 
 
+def test_gitleaks_current_tree_uses_the_bundled_8_18_no_git_mode(tmp_path):
+    scanner = GitleaksScanner()
+    observed = []
+
+    def write_empty_report(command, **_kwargs):
+        observed.append(command)
+        report_path = Path(command[command.index("--report-path") + 1])
+        report_path.write_text("[]")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    with (
+        patch.object(scanner, "is_installed", return_value=True),
+        patch(
+            "ez_appsec.external_scanners.subprocess.run",
+            side_effect=write_empty_report,
+        ),
+    ):
+        assert scanner.scan_current_tree(str(tmp_path)) == []
+
+    command = observed[0]
+    assert command[:2] == ["gitleaks", "detect"]
+    assert "--no-git" in command
+    assert command[command.index("--source") + 1] == str(tmp_path)
+
+
+def test_semgrep_disables_the_network_version_check_for_hosted_execution():
+    scanner = SemgrepScanner()
+
+    def completed(_command, **kwargs):
+        assert kwargs["env"]["SEMGREP_ENABLE_VERSION_CHECK"] == "0"
+        return subprocess.CompletedProcess([], 0, "1.157.0", "")
+
+    with patch("ez_appsec.external_scanners.subprocess.run", side_effect=completed):
+        assert scanner.is_installed() is True
+
+
+def test_grype_missing_bundled_database_fails_without_runtime_download(tmp_path):
+    scanner = GrypeScanner()
+    commands = []
+
+    def missing_database(command, **_kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 1, "", "")
+
+    with (
+        patch.object(scanner, "is_installed", return_value=True),
+        patch(
+            "ez_appsec.external_scanners.subprocess.run",
+            side_effect=missing_database,
+        ),
+    ):
+        with pytest.raises(ScannerExecutionError) as raised:
+            scanner.scan(str(tmp_path))
+
+    assert raised.value.code == "execution_failed"
+    assert ["grype", "db", "update"] not in commands
+
+
+def test_grype_uses_the_immutable_bundled_database_snapshot():
+    environment = GrypeScanner._offline_env()
+
+    assert environment["GRYPE_CHECK_FOR_APP_UPDATE"] == "false"
+    assert environment["GRYPE_DB_AUTO_UPDATE"] == "false"
+    assert environment["GRYPE_DB_VALIDATE_AGE"] == "false"
+
+
 def test_gitleaks_finding_exit_with_empty_report_fails_closed(tmp_path):
     scanner = GitleaksScanner()
     completed = subprocess.CompletedProcess([], 1, "", "")
@@ -233,7 +299,7 @@ def test_kics_passes_matching_query_and_library_paths(tmp_path):
         os.unlink(raw_path)
 
 
-def test_grype_dependency_preparation_failure_is_explicit(tmp_path):
+def test_grype_scan_invocation_failure_is_explicit(tmp_path):
     (tmp_path / "package.json").write_text("{}")
     scanner = GrypeScanner()
     db_ready = subprocess.CompletedProcess([], 0, "", "")
@@ -248,7 +314,7 @@ def test_grype_dependency_preparation_failure_is_explicit(tmp_path):
             scanner.scan(str(tmp_path))
 
     assert raised.value.scanner == "grype"
-    assert raised.value.code == "not_installed"
+    assert raised.value.code == "execution_failed"
     assert "npm" not in str(raised.value)
 
 

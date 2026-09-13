@@ -1,5 +1,7 @@
 """Tests for external scanner wrappers"""
 
+import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -267,18 +269,37 @@ class TestSemgrepAIRemediation:
         assert result["fix_complexity"] == "moderate"
 
 
-class TestGrypeDependencyInstall:
-    def test_missing_package_manager_fails_component(self, tmp_path):
-        """Missing preparation tools cannot produce a complete dependency result."""
-        (tmp_path / "package.json").write_text('{"name":"demo","dependencies":{"left-pad":"1.3.0"}}')
+class TestGrypeReadOnlySource:
+    def test_scan_never_installs_customer_dependencies(self, tmp_path):
+        """Hosted source is read-only and networkless; Grype must inspect manifests."""
+        (tmp_path / "requirements.txt").write_text("requests==2.20.0\n")
         scanner = GrypeScanner()
+        commands = []
 
-        with patch("ez_appsec.external_scanners.subprocess.run", side_effect=FileNotFoundError("npm")):
-            with pytest.raises(ScannerExecutionError) as raised:
-                scanner._install_dependencies(str(tmp_path))
+        def run(command, **_kwargs):
+            commands.append(command)
+            if command[:3] == ["grype", "db", "status"]:
+                return subprocess.CompletedProcess(command, 0, "", "")
+            if command[0] in {"npm", "pip", "pipenv", "go", "bundle"}:
+                return subprocess.CompletedProcess(command, 0, "", "")
+            report_path = Path(command[command.index("--file") + 1])
+            report_path.write_text('{"matches": []}')
+            return subprocess.CompletedProcess(command, 0, "", "")
 
-        assert raised.value.scanner == "grype"
-        assert raised.value.code == "not_installed"
+        with (
+            patch.object(scanner, "is_installed", return_value=True),
+            patch("ez_appsec.external_scanners.subprocess.run", side_effect=run),
+        ):
+            issues, raw_path = scanner.scan_with_raw_output(str(tmp_path))
+
+        try:
+            assert issues == []
+            assert not any(
+                command[0] in {"npm", "pip", "pipenv", "go", "bundle"}
+                for command in commands
+            )
+        finally:
+            Path(raw_path).unlink()
 
 
 class TestKicsAIRemediation:

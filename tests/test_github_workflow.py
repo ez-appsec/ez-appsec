@@ -16,6 +16,7 @@ from ez_appsec.converters import (
 SELF_SCAN_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "self-scan.yml"
 CUSTOMER_SCAN_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "github-scan.yml"
 DOCKER_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "docker.yml"
+STANDARD_DOCKERFILE = Path(__file__).parents[1] / "images" / "Dockerfile"
 
 
 def test_self_scan_installs_pinned_external_toolchain():
@@ -48,6 +49,21 @@ def test_docker_smoke_uses_the_full_sha_tag_that_the_build_publishes():
     assert "type=sha,format=long,prefix=" in workflow
     assert "${{ env.IMAGE_NAME }}:${{ github.sha }} --version" in workflow
     assert "${{ env.IMAGE_NAME }}:${{ github.sha }} --help" in workflow
+
+
+def test_standard_image_bundles_scanner_data_for_networkless_contract_runs():
+    dockerfile = STANDARD_DOCKERFILE.read_text()
+    workflow = DOCKER_WORKFLOW.read_text()
+
+    assert "GRYPE_DB_AUTO_UPDATE=false" in dockerfile
+    assert "GRYPE_CHECK_FOR_APP_UPDATE=false" in dockerfile
+    assert "GRYPE_DB_VALIDATE_AGE=false" in dockerfile
+    assert "sh -s -- -b /usr/local/bin v0.118.0" in dockerfile
+    assert "grype db update" in dockerfile
+    assert 'chmod -R a+rX,a-w "$GRYPE_DB_CACHE_DIR"' in dockerfile
+    assert "Run networkless contract smoke in standard image" in workflow
+    assert "--network none" in workflow
+    assert "scripts/verify-contract-runtime.py" in workflow
 
 
 def test_sarif_format_validation():

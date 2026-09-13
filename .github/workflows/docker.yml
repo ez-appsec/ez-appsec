@@ -288,6 +288,12 @@ jobs:
             -v "$PWD:/workspace:ro" -w /workspace \
             ez-appsec:standard-rule-test scripts/verify-scanner-integration.py
 
+      - name: Run networkless contract smoke in standard image
+        run: |
+          docker run --rm --network none --entrypoint python3 \
+            -e HOME=/tmp -v "$PWD:/workspace:ro" -w /workspace \
+            ez-appsec:standard-rule-test scripts/verify-contract-runtime.py
+
       - name: Test image functionality
         if: github.event_name != 'pull_request'
         run: |
