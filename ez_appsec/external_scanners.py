@@ -465,8 +465,10 @@ class GitleaksScanner(ScannerWrapper):
             if current_tree:
                 command = [
                     "gitleaks",
-                    "dir",
+                    "detect",
+                    "--source",
                     path,
+                    "--no-git",
                     "--report-path",
                     raw_output_path,
                     "--report-format",
@@ -696,6 +698,7 @@ class SemgrepScanner(ScannerWrapper):
                 capture_output=True,
                 check=True,
                 timeout=self._timeout(30),
+                env={**os.environ, "SEMGREP_ENABLE_VERSION_CHECK": "0"},
             )
             return True
         except subprocess.TimeoutExpired:
@@ -802,6 +805,7 @@ class SemgrepScanner(ScannerWrapper):
                 capture_output=True,
                 text=True,
                 timeout=self._timeout(300),
+                env={**os.environ, "SEMGREP_ENABLE_VERSION_CHECK": "0"},
             )
 
             # Semgrep reserves exit 1 for blocking findings. Fatal errors use
@@ -1303,6 +1307,14 @@ class GrypeScanner(ScannerWrapper):
 
     component_name = "grype"
 
+    @staticmethod
+    def _runtime_env() -> Dict[str, str]:
+        """Preserve the caller's database policy and suppress update telemetry."""
+        return {
+            **os.environ,
+            "GRYPE_CHECK_FOR_APP_UPDATE": "false",
+        }
+
     def _add_ai_remediation_fields(
         self,
         finding: Dict[str, Any],
@@ -1369,37 +1381,6 @@ class GrypeScanner(ScannerWrapper):
         """Return installation command"""
         return "brew install grype  # or: curl https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh"
 
-    def _install_dependencies(self, path: str) -> None:
-        """Install project dependencies so grype/syft can enumerate packages."""
-        p = Path(path)
-        installers = [
-            (p / "package-lock.json", None),
-            (p / "yarn.lock",         None),
-            (p / "package.json",      ["npm", "install", "--ignore-scripts", "--package-lock-only"]),
-            (p / "Pipfile.lock",      ["pipenv", "install", "--deploy"]),
-            (p / "requirements.txt",  ["pip", "install", "-r", str(p / "requirements.txt"), "--target", str(p / ".grype-deps")]),
-            (p / "go.sum",            ["go", "mod", "download"]),
-            (p / "Gemfile.lock",      ["bundle", "install"]),
-        ]
-        for marker, cmd in installers:
-            if marker.exists():
-                if cmd is None:
-                    return
-                logger.info(f"Generating dependency manifest via: {' '.join(cmd)}")
-                try:
-                    result = subprocess.run(
-                        cmd,
-                        capture_output=True,
-                        text=True,
-                        cwd=path,
-                        timeout=self._timeout(300),
-                    )
-                except FileNotFoundError:
-                    self._fail("not_installed")
-                if result.returncode != 0:
-                    self._fail("execution_failed")
-                return
-
     def scan(self, path: str) -> List[Dict[str, Any]]:
         """Run grype scan"""
         issues, _ = self.scan_with_raw_output(path)
@@ -1415,28 +1396,34 @@ class GrypeScanner(ScannerWrapper):
         completed = False
 
         try:
+            runtime_env = self._runtime_env()
             db_check = subprocess.run(
                 ["grype", "db", "status"],
                 capture_output=True,
                 timeout=self._timeout(30),
+                env=runtime_env,
             )
             if db_check.returncode != 0:
-                logger.info("grype database missing, updating...")
+                auto_update_disabled = runtime_env.get(
+                    "GRYPE_DB_AUTO_UPDATE", ""
+                ).lower() in {"0", "false", "no", "off"}
+                if auto_update_disabled:
+                    self._fail("execution_failed")
                 db_update = subprocess.run(
                     ["grype", "db", "update"],
                     capture_output=True,
                     timeout=self._timeout(120),
+                    env=runtime_env,
                 )
                 if db_update.returncode != 0:
                     self._fail("execution_failed")
-
-            self._install_dependencies(path)
 
             result = subprocess.run(
                 ["grype", "dir:" + path, "-o", "json", "--file", raw_output_path],
                 capture_output=True,
                 text=True,
                 timeout=self._timeout(300),
+                env=runtime_env,
             )
 
             # Exit 1 is a complete report when fail-on-severity is configured.
