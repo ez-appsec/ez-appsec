@@ -1,3 +1,10 @@
+## [1.7.30](https://github.com/ez-appsec/ez-appsec/compare/v1.7.29...v1.7.30) (2026-09-13)
+
+
+### Bug Fixes
+
+* **ci:** smoke the Docker tag that was published ([#79](https://github.com/ez-appsec/ez-appsec/issues/79)) ([01a0d63](https://github.com/ez-appsec/ez-appsec/commit/01a0d63df8326d990f6aa0447167d0a7e8ff1c42))
+
 ## [1.7.29](https://github.com/ez-appsec/ez-appsec/compare/v1.7.28...v1.7.29) (2026-09-12)
 
 
