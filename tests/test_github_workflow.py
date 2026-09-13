@@ -15,6 +15,7 @@ from ez_appsec.converters import (
 
 SELF_SCAN_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "self-scan.yml"
 CUSTOMER_SCAN_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "github-scan.yml"
+DOCKER_WORKFLOW = Path(__file__).parents[1] / ".github" / "workflows" / "docker.yml"
 
 
 def test_self_scan_installs_pinned_external_toolchain():
@@ -38,6 +39,15 @@ def test_customer_workflow_dogfoods_checked_out_scanner_only_in_this_repository(
 
     assert "if: github.repository == 'ez-appsec/ez-appsec'" in workflow
     assert "run: pip install --no-deps -e ." in workflow
+
+
+def test_docker_smoke_uses_the_full_sha_tag_that_the_build_publishes():
+    """A post-push smoke test must name a tag emitted by metadata-action."""
+    workflow = DOCKER_WORKFLOW.read_text()
+
+    assert "type=sha,format=long,prefix=" in workflow
+    assert "${{ env.IMAGE_NAME }}:${{ github.sha }} --version" in workflow
+    assert "${{ env.IMAGE_NAME }}:${{ github.sha }} --help" in workflow
 
 
 def test_sarif_format_validation():
