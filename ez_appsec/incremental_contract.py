@@ -18,6 +18,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Dict
 
 from ez_appsec.external_scanners import ExternalScannerManager, ScannerExecutionError
+from ez_appsec.scanner_identity import (
+    GRYPE_REUSE_FIELDS,
+    ScannerIdentityError,
+    component_identity,
+    validate_component_identity,
+)
 
 
 PLAN_VERSION = "sourcebastion.scan-plan.v1"
@@ -86,8 +92,17 @@ _DIAGNOSTIC_CODES = ScannerExecutionError.VALID_CODES | {
     "execution_limit_exceeded",
     "component_unchanged",
     "cancelled",
+    "identity_mismatch",
+    "identity_unavailable",
+    "identity_unbound",
 }
+_IDENTITY_DIAGNOSTICS = {"identity_mismatch", "identity_unavailable", "identity_unbound"}
 _PARTIAL_COMPONENTS = {"gitleaks", "semgrep", "custom_php", "kics"}
+# Reuse of a dependency result is only as safe as the advisory database and
+# cataloguer configuration it was produced with, and those live in this image
+# rather than in the repository. A plan must therefore pin every one of them
+# before Grype may be skipped; an unpinned reuse fails closed.
+_REUSE_IDENTITY_REQUIRED = {"grype": GRYPE_REUSE_FIELDS}
 
 
 class IncrementalContractError(ValueError):
@@ -278,6 +293,8 @@ def _validate_scan_plan(plan: Dict[str, Any]) -> None:
     path_bytes = 0
     incremental = False
     for component in components:
+        if not isinstance(component, dict):
+            _invalid()
         component = _exact_dict(
             component,
             {
@@ -288,9 +305,19 @@ def _validate_scan_plan(plan: Dict[str, Any]) -> None:
                 "covered_paths",
                 "deleted_paths",
                 "iac_units",
+                *(("identity",) if "identity" in component else ()),
             },
         )
         name = component["name"]
+        if "identity" in component:
+            # Optional in plan v1: the exact runtime identity the planner
+            # fingerprinted. Present or absent, it is covered by the digest.
+            if name not in COMPONENT_NAMES:
+                _invalid()
+            try:
+                validate_component_identity(name, component["identity"])
+            except ScannerIdentityError:
+                _invalid()
         mode = component["mode"]
         reason = component["reason"]
         if (
@@ -436,6 +463,12 @@ def _validate_source_tree(source_path: str, max_source_bytes: int) -> None:
         raise IncrementalContractError("source_tree_invalid") from exc
 
 
+def _reuse_identity_bound(component: Dict[str, Any]) -> bool:
+    """Whether a planned reuse pins every identity input its component needs."""
+    required = _REUSE_IDENTITY_REQUIRED.get(component["name"], frozenset())
+    return required <= set(component.get("identity") or {})
+
+
 def _finding_in_component_scope(finding: Dict[str, Any], component: Dict[str, Any]) -> bool:
     """Check finding ownership against file or complete-IaC unit coverage."""
     path = finding.get("file")
@@ -546,6 +579,26 @@ def execute_scan_plan(
     total_findings = 0
     finding_metadata_bytes = 0
     cancelled = False
+    observed_identities: Dict[str, Dict[str, str]] = {}
+
+    def identity_diagnostic(component: Dict[str, Any]) -> str | None:
+        """Check the plan's pinned identity against this runtime, if any."""
+        name = component["name"]
+        expected = component.get("identity")
+        if component["mode"] == "reuse" and not _reuse_identity_bound(component):
+            return "identity_unbound"
+        if expected is None:
+            return None
+        if name not in observed_identities:
+            try:
+                observed_identities[name] = component_identity(name)
+            except Exception:
+                return "identity_unavailable"
+        observed = observed_identities[name]
+        if any(observed.get(field) != value for field, value in expected.items()):
+            return "identity_mismatch"
+        return None
+
     for component in plan["components"]:
         name = component["name"]
         mode = component["mode"]
@@ -553,6 +606,10 @@ def execute_scan_plan(
             findings = []
             status = "failed"
             diagnostic_code = "cancelled"
+        elif (identity_code := identity_diagnostic(component)) is not None:
+            findings = []
+            status = "failed"
+            diagnostic_code = identity_code
         elif mode == "reuse":
             findings = []
             status = "not_run"
@@ -766,6 +823,9 @@ def validate_result_envelope(
             "result_envelope_invalid",
         )
         status = component["status"]
+        identity_failure = (
+            status == "failed" and component["diagnostic_code"] in _IDENTITY_DIAGNOSTICS
+        )
         if (
             component["name"] != planned["name"]
             or component["compatibility_key"] != planned["compatibility_key"]
@@ -782,10 +842,17 @@ def validate_result_envelope(
             or (status != "complete" and component["findings"])
             or (
                 planned["mode"] == "reuse"
+                and not identity_failure
+                and component["diagnostic_code"] != "cancelled"
                 and (
                     status != "not_run"
                     or component["diagnostic_code"] != "component_unchanged"
                 )
+            )
+            or (
+                planned["mode"] == "reuse"
+                and status == "not_run"
+                and not _reuse_identity_bound(planned)
             )
             or (
                 planned["mode"] != "reuse"

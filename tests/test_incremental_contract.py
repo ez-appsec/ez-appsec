@@ -5,11 +5,13 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 from ez_appsec.cli import main
 from ez_appsec.external_scanners import (
     GitleaksScanner,
+    GrypeScanner,
     KicsScanner,
     PHPVulnScanner,
     SemgrepScanner,
@@ -1460,3 +1462,251 @@ def test_result_validator_rejects_duplicate_findings_from_external_envelope(
         assert str(exc) == "result_envelope_invalid"
     else:
         raise AssertionError("duplicate external finding was accepted")
+
+
+GRYPE_IDENTITY = {
+    "tool_version": "0.118.0",
+    "syft_version": "1.51.1",
+    "advisory_schema": "v6.1.9",
+    "advisory_built_at": "2026-09-13T06:31:42Z",
+    "advisory_checksum": "sha256:" + "7" * 64,
+    "cataloger_config_digest": "sha256:" + "d" * 64,
+    "policy_digest": "sha256:" + "e" * 64,
+}
+
+
+def _grype_reuse_plan(head_sha, identity=GRYPE_IDENTITY):
+    plan = _partial_sast_plan(head_sha)
+    plan["scanner"]["enabled_components"] = ["grype", "semgrep"]
+    grype = {
+        "name": "grype",
+        "mode": "reuse",
+        "reason": "component_unchanged",
+        "compatibility_key": "5" * 64,
+        "covered_paths": [],
+        "deleted_paths": [],
+        "iac_units": [],
+    }
+    if identity is not None:
+        grype["identity"] = identity
+    plan["components"] = [grype, plan["components"][1]]
+    return _redigest(plan)
+
+
+def _run_contract_scan(source, plan, tmp_path):
+    plan_path = tmp_path / "plan.json"
+    result_path = tmp_path / "result.json"
+    plan_path.write_bytes(_canonical(plan))
+    result = CliRunner().invoke(
+        main,
+        [
+            "contract-scan",
+            str(source),
+            "--plan",
+            str(plan_path),
+            "--result-envelope",
+            str(result_path),
+            "--scanner-image",
+            SCANNER_IMAGE,
+        ],
+    )
+    envelope = (
+        json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else None
+    )
+    return result, envelope
+
+
+def _pin_runtime_identity(monkeypatch, identities):
+    from ez_appsec import incremental_contract
+
+    def observed(name):
+        value = identities[name]
+        if isinstance(value, Exception):
+            raise value
+        return dict(value)
+
+    monkeypatch.setattr(incremental_contract, "component_identity", observed)
+    monkeypatch.setattr(SemgrepScanner, "scan_paths", lambda self, source_path, paths: [])
+    monkeypatch.setattr(
+        GrypeScanner,
+        "scan",
+        lambda self, path: (_ for _ in ()).throw(AssertionError("grype executed")),
+    )
+
+
+def test_grype_reuse_with_matching_runtime_identity_skips_execution(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    _pin_runtime_identity(monkeypatch, {"grype": GRYPE_IDENTITY})
+
+    result, envelope = _run_contract_scan(source, _grype_reuse_plan(head_sha), tmp_path)
+
+    assert result.exit_code == 0, result.output
+    grype, semgrep = envelope["components"]
+    assert (grype["status"], grype["diagnostic_code"]) == ("not_run", "component_unchanged")
+    assert semgrep["status"] == "complete"
+    # The pinned identity is part of the plan the envelope is bound to.
+    plan = _grype_reuse_plan(head_sha)
+    assert envelope["plan_digest"] == plan["plan_digest"]
+    assert validate_result_envelope(envelope, plan) == envelope
+
+
+def test_grype_reuse_without_identity_binding_fails_closed(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    _pin_runtime_identity(monkeypatch, {"grype": GRYPE_IDENTITY})
+
+    plan = _grype_reuse_plan(head_sha, identity=None)
+    result, envelope = _run_contract_scan(source, plan, tmp_path)
+
+    assert result.exit_code == 1
+    assert "scan_component_incomplete" in result.output
+    grype = envelope["components"][0]
+    assert (grype["status"], grype["diagnostic_code"]) == ("failed", "identity_unbound")
+    assert grype["findings"] == []
+    assert validate_result_envelope(envelope, plan) == envelope
+
+    # An envelope that claims the unbound reuse succeeded is not a valid result.
+    forged = json.loads(json.dumps(envelope))
+    forged["components"][0].update({"status": "not_run", "diagnostic_code": "component_unchanged"})
+    _redigest_result(forged)
+    try:
+        validate_result_envelope(forged, plan)
+    except IncrementalContractError as exc:
+        assert str(exc) == "result_envelope_invalid"
+    else:
+        raise AssertionError("unbound reuse accepted as not_run")
+
+
+def test_grype_reuse_requires_every_advisory_and_configuration_input(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    _pin_runtime_identity(monkeypatch, {"grype": GRYPE_IDENTITY})
+    partial = {key: value for key, value in GRYPE_IDENTITY.items() if key != "advisory_checksum"}
+
+    result, envelope = _run_contract_scan(
+        source, _grype_reuse_plan(head_sha, identity=partial), tmp_path
+    )
+
+    assert result.exit_code == 1
+    grype = envelope["components"][0]
+    assert (grype["status"], grype["diagnostic_code"]) == ("failed", "identity_unbound")
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        {"advisory_built_at": "2026-09-14T06:31:42Z"},
+        {"advisory_checksum": "sha256:" + "8" * 64},
+        {"advisory_schema": "v6.2.0"},
+        {"cataloger_config_digest": "sha256:" + "f" * 64},
+        {"policy_digest": "sha256:" + "f" * 64},
+        {"tool_version": "0.119.0"},
+        {"syft_version": "1.52.0"},
+    ],
+)
+def test_grype_reuse_with_drifted_runtime_fails_closed(tmp_path, monkeypatch, drift):
+    source, head_sha = _source_tree(tmp_path)
+    _pin_runtime_identity(monkeypatch, {"grype": {**GRYPE_IDENTITY, **drift}})
+
+    plan = _grype_reuse_plan(head_sha)
+    result, envelope = _run_contract_scan(source, plan, tmp_path)
+
+    assert result.exit_code == 1
+    grype = envelope["components"][0]
+    assert (grype["status"], grype["diagnostic_code"]) == ("failed", "identity_mismatch")
+    assert grype["findings"] == []
+    assert validate_result_envelope(envelope, plan) == envelope
+
+
+def test_grype_reuse_with_unavailable_runtime_identity_fails_closed(tmp_path, monkeypatch):
+    from ez_appsec.scanner_identity import ScannerIdentityError
+
+    source, head_sha = _source_tree(tmp_path)
+    _pin_runtime_identity(
+        monkeypatch, {"grype": ScannerIdentityError("grype", "identity_unavailable")}
+    )
+
+    result, envelope = _run_contract_scan(source, _grype_reuse_plan(head_sha), tmp_path)
+
+    assert result.exit_code == 1
+    grype = envelope["components"][0]
+    assert (grype["status"], grype["diagnostic_code"]) == ("failed", "identity_unavailable")
+
+
+def test_full_component_with_pinned_identity_is_verified_before_execution(
+    tmp_path, monkeypatch
+):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _full_plan(head_sha)
+    plan["components"][0]["identity"] = {"tool_version": "8.18.0"}
+    _redigest(plan)
+    from ez_appsec import incremental_contract
+
+    monkeypatch.setattr(
+        incremental_contract, "component_identity", lambda name: {"tool_version": "8.19.0"}
+    )
+
+    def unexpected(self, path):
+        raise AssertionError("component executed with a drifted identity")
+
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", unexpected)
+    result, envelope = _run_contract_scan(source, plan, tmp_path)
+
+    assert result.exit_code == 1
+    gitleaks = envelope["components"][0]
+    assert (gitleaks["status"], gitleaks["diagnostic_code"]) == ("failed", "identity_mismatch")
+    assert validate_result_envelope(envelope, plan) == envelope
+
+
+def test_pinned_identity_only_compares_supplied_fields(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _full_plan(head_sha)
+    plan["components"][0]["identity"] = {"tool_version": "8.18.0"}
+    _redigest(plan)
+    from ez_appsec import incremental_contract
+
+    monkeypatch.setattr(
+        incremental_contract, "component_identity", lambda name: {"tool_version": "8.18.0"}
+    )
+    monkeypatch.setattr(GitleaksScanner, "scan_current_tree", lambda self, path: [])
+    result, envelope = _run_contract_scan(source, plan, tmp_path)
+
+    assert result.exit_code == 0, result.output
+    assert envelope["components"][0]["status"] == "complete"
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        {},
+        {"tool_version": "8.18.0", "unexpected": "value"},
+        {"advisory_checksum": "sha256:" + "7" * 64},
+        {"tool_version": "8.18.0 beta"},
+        {"tool_version": None},
+        "8.18.0",
+    ],
+)
+def test_plan_rejects_unbindable_component_identity(tmp_path, identity):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _full_plan(head_sha)
+    plan["components"][0]["identity"] = identity
+    _redigest(plan)
+
+    result, envelope = _run_contract_scan(source, plan, tmp_path)
+
+    assert result.exit_code == 1
+    assert "scan_plan_invalid" in result.output
+    assert envelope is None
+
+
+def test_plan_identity_is_covered_by_the_plan_digest(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    plan = _grype_reuse_plan(head_sha)
+    plan["components"][0]["identity"] = {
+        **GRYPE_IDENTITY,
+        "advisory_built_at": "2026-09-14T06:31:42Z",
+    }
+
+    result, envelope = _run_contract_scan(source, plan, tmp_path)
+
+    assert result.exit_code == 1
+    assert "scan_plan_digest_mismatch" in result.output
+    assert envelope is None
