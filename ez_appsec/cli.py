@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import click
 import sys
 from pathlib import Path
@@ -266,6 +267,32 @@ def contract_scan(path, plan_path, result_envelope, scanner_image):
     if incomplete:
         raise click.ClickException("scan_component_incomplete")
     click.echo(f"Result envelope saved to: {result_envelope}")
+
+
+@main.command("contract-identity")
+@click.option("--output", "output_path", type=click.Path(dir_okay=False), required=True)
+@click.option("--scanner-image", envvar="EZ_APPSEC_SCANNER_IMAGE", required=True)
+def contract_identity(output_path, scanner_image):
+    """Describe this image's scanner components for SourceBastion planning.
+
+    The trusted platform pins the document per image digest and fingerprints
+    every component from it; a plan may echo those values back so a drifted
+    runtime (for example a refreshed advisory database) fails closed.
+    """
+    from ez_appsec.incremental_contract import (
+        IncrementalContractError,
+        write_result_envelope,
+    )
+    from ez_appsec.scanner_identity import ScannerIdentityError, scanner_identity
+
+    if not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", scanner_image):
+        raise click.ClickException("scanner_image_invalid")
+    try:
+        document = scanner_identity(scanner_image)
+        write_result_envelope(output_path, document)
+    except (ScannerIdentityError, IncrementalContractError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Scanner identity saved to: {output_path}")
 
 
 @main.command()

@@ -34,9 +34,27 @@ incomplete. Planned `reuse` is represented as an expected `not_run` result;
 S03/T04 adds KICS execution over complete planned IaC files or directories.
 Local Terraform module references must resolve inside the planned unit set;
 unresolved or out-of-scope references report `scope_unresolved` so the trusted
-platform can schedule a full fallback. Grype partial mode remains unsupported
-until its capability task lands. The existing `ez-appsec scan` JSON output is
-unchanged.
+platform can schedule a full fallback. Grype has no partial mode: a planned
+partial Grype component reports `not_run` with `unsupported_mode`. The existing
+`ez-appsec scan` JSON output is unchanged.
+
+S03/T05 binds Grype reuse to the image's runtime identity. `ez-appsec
+contract-identity --scanner-image <ref@sha256:…> --output identity.json` writes
+a `sourcebastion.scanner-identity.v1` document describing every contract
+component: tool versions, bundled rule digests for Semgrep, KICS and the custom
+PHP scanner, and for Grype the Syft version, vulnerability database schema,
+built time and archive checksum, plus digests of the cataloguing and policy
+subsets of the effective Grype configuration read from a neutral directory. The
+trusted platform pins that document per image digest and fingerprints
+compatibility keys from it. A plan component may carry an optional `identity`
+object echoing those values; the scanner recomputes its runtime identity and
+reports `failed` with `identity_mismatch` (drifted runtime, for example a
+refreshed advisory database) or `identity_unavailable` before running or
+skipping the component. A Grype `reuse` component must pin every Grype identity
+field or it reports `failed` with `identity_unbound`; the result validator
+rejects an envelope that claims an unbound Grype reuse as `not_run`. Reuse of
+any other component is unaffected. The identity document and the `identity`
+plan field are additive to plan v1 and never change the envelope shape.
 
 S03/T06 caps each finding, total finding metadata, metadata depth, and the final
 result envelope. Duplicate logical findings and malformed core finding fields
