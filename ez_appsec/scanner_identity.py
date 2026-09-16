@@ -72,7 +72,13 @@ _GRYPE_POLICY_KEYS = (
     "ignore-wontfix",
     "only-fixed",
     "only-notfixed",
+    "vex-add",
+    "vex-documents",
 )
+#: The database policy that makes a pinned advisory identity meaningful: a
+#: runtime that may refresh the database before scanning does not have the
+#: identity it reports. Digested with the cataloguer configuration.
+_GRYPE_DB_POLICY_KEYS = ("auto-update", "validate-age", "validate-by-hash-on-start")
 
 
 class ScannerIdentityError(RuntimeError):
@@ -266,7 +272,11 @@ def _grype_json(command: List[str], env: Dict[str, str], cwd: str) -> Dict[str, 
 
 
 def _grype_config(env: Dict[str, str], cwd: str) -> Dict[str, Any]:
-    output = _run("grype", ["grype", "config"], env=env, cwd=cwd)
+    # `--load` is what makes this the *effective* configuration: without it
+    # grype prints its compiled-in defaults and ignores GRYPE_* variables and
+    # configuration files, so every drift the digest exists to catch would
+    # be invisible.
+    output = _run("grype", ["grype", "config", "--load"], env=env, cwd=cwd)
     try:
         value = yaml.safe_load(output)
     except yaml.YAMLError:
@@ -305,6 +315,7 @@ def _grype_identity() -> Dict[str, str]:
         config = _grype_config(env, neutral)
     if status.get("valid") is not True:
         raise ScannerIdentityError("grype", "identity_unavailable")
+    db_config = config.get("db") if isinstance(config.get("db"), dict) else {}
     identity = {
         "tool_version": _version_token("grype", str(version.get("version", ""))),
         "syft_version": _version_token("grype", str(version.get("syftVersion", ""))),
@@ -312,7 +323,10 @@ def _grype_identity() -> Dict[str, str]:
         "advisory_built_at": str(status.get("built", "")),
         "advisory_checksum": _advisory_checksum(status),
         "cataloger_config_digest": _digest(
-            {key: config.get(key) for key in _GRYPE_CATALOGER_KEYS}
+            {
+                **{key: config.get(key) for key in _GRYPE_CATALOGER_KEYS},
+                "db": {key: db_config.get(key) for key in _GRYPE_DB_POLICY_KEYS},
+            }
         ),
         "policy_digest": _digest({key: config.get(key) for key in _GRYPE_POLICY_KEYS}),
     }

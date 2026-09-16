@@ -843,11 +843,18 @@ def validate_result_envelope(
             or (
                 planned["mode"] == "reuse"
                 and not identity_failure
-                and component["diagnostic_code"] != "cancelled"
+                and not (status == "failed" and component["diagnostic_code"] == "cancelled")
                 and (
                     status != "not_run"
                     or component["diagnostic_code"] != "component_unchanged"
                 )
+            )
+            or (
+                # Identity diagnostics only exist for a component whose plan
+                # could have bound one; anywhere else they are a forgery.
+                component["diagnostic_code"] in _IDENTITY_DIAGNOSTICS
+                and "identity" not in planned
+                and not (planned["mode"] == "reuse" and planned["name"] in _REUSE_IDENTITY_REQUIRED)
             )
             or (
                 planned["mode"] == "reuse"

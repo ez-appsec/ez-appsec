@@ -1710,3 +1710,26 @@ def test_plan_identity_is_covered_by_the_plan_digest(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "scan_plan_digest_mismatch" in result.output
     assert envelope is None
+
+
+
+def test_result_validator_rejects_forged_identity_and_cancelled_reuse_states(tmp_path, monkeypatch):
+    source, head_sha = _source_tree(tmp_path)
+    _pin_runtime_identity(monkeypatch, {"grype": GRYPE_IDENTITY})
+    plan = _grype_reuse_plan(head_sha)
+    result, envelope = _run_contract_scan(source, plan, tmp_path)
+    assert result.exit_code == 0, result.output
+
+    def rejects(mutate):
+        forged = json.loads(json.dumps(envelope))
+        mutate(forged)
+        _redigest_result(forged)
+        with pytest.raises(IncrementalContractError, match="result_envelope_invalid"):
+            validate_result_envelope(forged, plan)
+
+    # A reuse component reported not_run with a cancellation code.
+    rejects(lambda e: e["components"][0].update({"status": "not_run", "diagnostic_code": "cancelled"}))
+    # An identity diagnostic on a component whose plan pinned nothing.
+    rejects(lambda e: e["components"][1].update(
+        {"status": "failed", "findings": [], "diagnostic_code": "identity_mismatch"}
+    ))

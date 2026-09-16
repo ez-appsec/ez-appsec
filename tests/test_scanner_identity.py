@@ -73,6 +73,8 @@ def _grype_runner(*, version=None, status=None, config=None, calls=None):
         elif command[:3] == ["grype", "db", "status"]:
             stdout = json.dumps(status)
         elif command[:2] == ["grype", "config"]:
+            # Only the loaded configuration reflects the environment.
+            assert command[2:] == ["--load"], command
             stdout = config
         else:
             raise AssertionError(f"unexpected command {command}")
@@ -321,3 +323,14 @@ def test_contract_identity_cli_reports_bounded_failure(monkeypatch, tmp_path):
     assert result.exit_code == 1
     assert "grype: identity_unavailable" in result.output
     assert not output.exists()
+
+
+
+def test_grype_identity_changes_when_the_database_may_refresh_at_run_time(monkeypatch):
+    monkeypatch.setattr(scanner_identity.subprocess, "run", _grype_runner())
+    pinned = component_identity("grype")
+    refreshing = GRYPE_CONFIG.replace("auto-update: false", "auto-update: true")
+    monkeypatch.setattr(scanner_identity.subprocess, "run", _grype_runner(config=refreshing))
+    drifted = component_identity("grype")
+    assert drifted["cataloger_config_digest"] != pinned["cataloger_config_digest"]
+    assert drifted["advisory_checksum"] == pinned["advisory_checksum"]
